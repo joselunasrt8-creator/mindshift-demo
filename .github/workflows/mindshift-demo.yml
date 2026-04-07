@@ -8,37 +8,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Call Validator
+      - name: Validate Decision (Real Rules)
         run: |
-                - name: Call Validator
-        run: |
-          RESPONSE=$(curl -s -X POST https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0 \
-          -H "Content-Type: application/json" \
-          -d '{
-            "decision_id":"'"${{ secrets.DECISION_ID }}"'",
-            "repo":"'"${{ github.event.repository.name }}"'",
-            "branch":"'"${{ github.ref_name }}"'"
-          }')
+          echo "Checking Decision..."
 
-          echo "Validator response: $RESPONSE"
-
-          if [[ "$RESPONSE" != *"VALID"* ]]; then
-            echo "NULL — Validator rejected"
+          if [ -z "${{ secrets.DECISION_ID }}" ]; then
+            echo "NULL — No Decision ID"
             exit 1
           fi
 
-if [[ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]]; then
-            echo "NULL — Validator rejected"
+          if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
+            echo "NULL — Invalid Decision ID"
             exit 1
           fi
+
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "NULL — Invalid Branch"
+            exit 1
+          fi
+
+          if [ "${{ github.event.repository.name }}" != "mindshift-demo" ]; then
+            echo "NULL — Invalid Repo"
+            exit 1
+          fi
+
+          echo "VALID — All checks passed"
 
       - name: Deploy (Simulated)
         run: |
           echo "VALID — Deploying"
           echo "Deployment complete"
-
-      - name: Proof-of-Transfer
-        run: |
-          echo "PoT"
-          echo "Run ID: ${{ github.run_id }}"
-          echo "Commit: ${{ github.sha }}"
