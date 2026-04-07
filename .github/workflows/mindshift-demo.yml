@@ -8,12 +8,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate Decision (Real Rules)
+      - name: Validate Signed Authority
         run: |
-          echo "Checking Decision..."
+          echo "Checking Decision ID..."
 
           if [ -z "${{ secrets.DECISION_ID }}" ]; then
-            echo "NULL — No Decision ID"
+            echo "NULL — Missing Decision ID"
             exit 1
           fi
 
@@ -22,19 +22,41 @@ jobs:
             exit 1
           fi
 
+          echo "Checking Signature..."
+
+          if [ -z "${{ secrets.DECISION_SIGNATURE }}" ]; then
+            echo "NULL — Missing Signature"
+            exit 1
+          fi
+
+          if [ "${{ secrets.DECISION_SIGNATURE }}" != "SIG-MS-DEMO-DEPLOY-001-V1" ]; then
+            echo "NULL — Invalid Signature"
+            exit 1
+          fi
+
+          echo "Checking Branch..."
+
           if [ "${{ github.ref_name }}" != "main" ]; then
             echo "NULL — Invalid Branch"
             exit 1
           fi
+
+          echo "Checking Repository..."
 
           if [ "${{ github.event.repository.name }}" != "mindshift-demo" ]; then
             echo "NULL — Invalid Repo"
             exit 1
           fi
 
-          echo "VALID — All checks passed"
+          echo "VALID — Signed authority verified"
 
       - name: Deploy (Simulated)
         run: |
-          echo "VALID — Deploying"
+          echo "Deploying..."
           echo "Deployment complete"
+
+      - name: Proof-of-Transfer
+        run: |
+          echo "PoT"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Commit: ${{ github.sha }}"
