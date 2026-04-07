@@ -10,11 +10,22 @@ jobs:
     steps:
       - name: Call Validator
         run: |
+                - name: Call Validator
+        run: |
           RESPONSE=$(curl -s -X POST https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0 \
           -H "Content-Type: application/json" \
-          -d '{"decision_id":"'"${{ secrets.DECISION_ID }}"'"}')
+          -d '{
+            "decision_id":"'"${{ secrets.DECISION_ID }}"'",
+            "repo":"'"${{ github.event.repository.name }}"'",
+            "branch":"'"${{ github.ref_name }}"'"
+          }')
 
           echo "Validator response: $RESPONSE"
+
+          if [[ "$RESPONSE" != *"VALID"* ]]; then
+            echo "NULL — Validator rejected"
+            exit 1
+          fi
 
 if [[ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]]; then
             echo "NULL — Validator rejected"
