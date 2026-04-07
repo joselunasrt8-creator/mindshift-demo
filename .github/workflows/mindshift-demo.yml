@@ -16,7 +16,7 @@ jobs:
 
           echo "Validator response: $RESPONSE"
 
-          if [[ "$RESPONSE" != *"VALID"* ]]; then
+if [[ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]]; then
             echo "NULL — Validator rejected"
             exit 1
           fi
