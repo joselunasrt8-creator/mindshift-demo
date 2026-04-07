@@ -1,0 +1,33 @@
+name: mindshift-demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Decision ID
+        run: |
+          if [ -z "${{ secrets.DECISION_ID }}" ]; then
+            echo "NULL — No Decision ID"
+            exit 1
+          fi
+
+          if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
+            echo "NULL — Invalid Decision ID"
+            exit 1
+          fi
+
+      - name: Deploy (Simulated)
+        run: |
+          echo "VALID — Deploying"
+          echo "Deployment complete"
+
+      - name: Proof-of-Transfer
+        run: |
+          echo "PoT"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
