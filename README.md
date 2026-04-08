@@ -21,7 +21,7 @@ GitHub Actions serves as the execution runtime. The validator API enforces gover
 
 A minimal Node.js/Express server that validates execution authority before allowing governed actions to proceed.
 
-### Run locally
+### Running as a standalone local service
 
 ```bash
 npm install
@@ -30,7 +30,18 @@ npm start
 
 The server listens on port `3000` by default. Set the `PORT` environment variable to override.
 
-### Test with curl
+#### Check service health
+
+```bash
+curl -s http://localhost:3000/health
+```
+
+Expected response:
+```json
+{ "status": "ok" }
+```
+
+#### Validate an execution request
 
 **Valid request:**
 ```bash
@@ -46,7 +57,8 @@ curl -s -X POST http://localhost:3000/validate \
       "scope": "production",
       "validation": "approved",
       "target": "api",
-      "finality": "confirmed"
+      "finality": "confirmed",
+      "expires_at": "2027-01-01T00:00:00Z"
     }
   }'
 ```
@@ -78,13 +90,14 @@ Expected response:
 
 ### Validation rules
 
-| Field         | Required value / rule                                  |
-|---------------|--------------------------------------------------------|
-| `decision_id` | Must equal `MS-DEMO-DEPLOY-001`                        |
-| `signature`   | Must equal `demo-signature-v1`                         |
-| `repo`        | Must equal `mindshift-demo`                            |
-| `branch`      | Must equal `main`                                      |
-| `aeo`         | Object containing `intent`, `scope`, `validation`, `target`, `finality` |
+| Field         | Required value / rule                                                                          |
+|---------------|-----------------------------------------------------------------------------------------------|
+| `decision_id` | Must equal `MS-DEMO-DEPLOY-001`                                                               |
+| `signature`   | Must equal `demo-signature-v1`                                                                |
+| `repo`        | Must equal `mindshift-demo`                                                                   |
+| `branch`      | Must equal `main`                                                                             |
+| `aeo`         | Object containing `intent`, `scope`, `validation`, `target`, `finality`, and `expires_at`    |
+| `expires_at`  | ISO 8601 string inside `aeo`; must be a future date                                           |
 
 The API is fail-closed: any missing or invalid field returns `{ "status": "NULL", "reason": "..." }`.
 
