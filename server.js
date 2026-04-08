@@ -10,10 +10,6 @@ app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
 const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality', 'expires_at'];
 
 app.post('/validate', (req, res) => {
