@@ -32,6 +32,16 @@ The server listens on port `3000` by default. Set the `PORT` environment variabl
 
 ### Test with curl
 
+**Health check:**
+```bash
+curl -s http://localhost:3000/health
+```
+
+Expected response:
+```json
+{ "status": "ok" }
+```
+
 **Valid request:**
 ```bash
 curl -s -X POST http://localhost:3000/validate \
