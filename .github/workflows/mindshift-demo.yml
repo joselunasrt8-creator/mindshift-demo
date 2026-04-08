@@ -8,34 +8,54 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate Authority
-        run: |
-          echo "Checking Decision ID..."
+      - name: - name: Validate Authority
+  run: |
+    echo "Checking Decision ID..."
 
-          if [ -z "${{ secrets.DECISION_ID }}" ]; then
-            echo "NULL — No Decision ID"
-            exit 1
-          fi
+    if [ -z "${{ secrets.DECISION_ID }}" ]; then
+      echo "NULL — No Decision ID"
+      exit 1
+    fi
 
-          if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
-            echo "NULL — Invalid Decision ID"
-            exit 1
-          fi
+    if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
+      echo "NULL — Invalid Decision ID"
+      exit 1
+    fi
 
-          echo "Checking Signature..."
+    echo "Checking Signature..."
 
-          if [ -z "${{ secrets.SIGNATURE }}" ]; then
-            echo "NULL — Missing Signature"
-            exit 1
-          fi
+    if [ -z "${{ secrets.SIGNATURE }}" ]; then
+      echo "NULL — Missing Signature"
+      exit 1
+    fi
 
-          if [ "${{ secrets.SIGNATURE }}" != "demo-signature-v1" ]; then
-            echo "NULL — Invalid Signature"
-            exit 1
-          fi
+    if [ "${{ secrets.SIGNATURE }}" != "demo-signature-v1" ]; then
+      echo "NULL — Invalid Signature"
+      exit 1
+    fi
 
-          echo "VALID — Authority accepted"
+    echo "Checking Repo..."
 
+    if [ "${{ github.event.repository.name }}" != "mindshift-demo" ]; then
+      echo "NULL — Invalid Repo"
+      exit 1
+    fi
+
+    echo "Checking Branch..."
+
+    if [ "${{ github.event_name }}" = "pull_request" ]; then
+      if [ "${{ github.base_ref }}" != "main" ]; then
+        echo "NULL — Invalid Base Branch"
+        exit 1
+      fi
+    else
+      if [ "${{ github.ref_name }}" != "main" ]; then
+        echo "NULL — Invalid Branch"
+        exit 1
+      fi
+    fi
+
+    echo "VALID — Authority accepted"
       - name: Deploy (Simulated)
         run: |
           echo "VALID — Deploying"
