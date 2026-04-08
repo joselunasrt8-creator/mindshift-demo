@@ -143,7 +143,7 @@ jobs:
               timestamp: $timestamp,
               decision_id_hash: $decision_id_hash,
               aeo_hash: $aeo_hash,
-              execution_surfaces: ["webhook","api"],
+              execution_surfaces: ["webhook", "api"],
               validation_status: "valid"
             }' \
             > proof/proof-of-transfer.json
