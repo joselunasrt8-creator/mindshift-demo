@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,10 +21,6 @@ app.post('/validate', (req, res) => {
     return res.json({ status: 'NULL', reason: 'Invalid or missing decision_id' });
   }
 
-  if (!signature || signature !== 'demo-signature-v1') {
-    return res.json({ status: 'NULL', reason: 'Invalid or missing signature' });
-  }
-
   if (!repo || repo !== 'mindshift-demo') {
     return res.json({ status: 'NULL', reason: 'Invalid or missing repo' });
   }
@@ -34,6 +31,15 @@ app.post('/validate', (req, res) => {
 
   if (!aeo || typeof aeo !== 'object' || Array.isArray(aeo)) {
     return res.json({ status: 'NULL', reason: 'Missing or invalid aeo' });
+  }
+
+  const expectedSignature = crypto
+    .createHash('sha256')
+    .update(decision_id + JSON.stringify(aeo))
+    .digest('hex');
+
+  if (!signature || signature !== expectedSignature) {
+    return res.json({ status: 'NULL', reason: 'Signature verification failed' });
   }
 
   for (const field of REQUIRED_AEO_FIELDS) {
