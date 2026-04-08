@@ -102,18 +102,24 @@ jobs:
           DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
           AEO_HASH=$(echo -n "$SIGNATURE" | sha256sum | cut -d' ' -f1)
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          cat > proof/proof-of-transfer.json <<EOF
-{
-  "run_id": "${{ github.run_id }}",
-  "commit_sha": "${{ github.sha }}",
-  "repository": "${{ github.repository }}",
-  "timestamp": "$TIMESTAMP",
-  "decision_id_hash": "$DECISION_ID_HASH",
-  "aeo_hash": "$AEO_HASH",
-  "execution_surfaces": ["webhook"],
-  "validation_status": "valid"
-}
-EOF
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg commit_sha "${{ github.sha }}" \
+            --arg repository "${{ github.repository }}" \
+            --arg timestamp "$TIMESTAMP" \
+            --arg decision_id_hash "$DECISION_ID_HASH" \
+            --arg aeo_hash "$AEO_HASH" \
+            '{
+              run_id: $run_id,
+              commit_sha: $commit_sha,
+              repository: $repository,
+              timestamp: $timestamp,
+              decision_id_hash: $decision_id_hash,
+              aeo_hash: $aeo_hash,
+              execution_surfaces: ["webhook"],
+              validation_status: "valid"
+            }' \
+            > proof/proof-of-transfer.json
 
       - name: Upload Proof Artifact
         uses: actions/upload-artifact@v4
