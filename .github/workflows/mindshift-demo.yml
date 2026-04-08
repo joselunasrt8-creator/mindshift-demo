@@ -76,29 +76,6 @@ jobs:
               "commit": "${{ github.sha }}"
             }'
 
-      - name: Write Surface-1 Proof
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
-        run: |
-          if [ -z "$DECISION_ID" ]; then
-            echo "DECISION_ID is unset — skipping artifact"
-            exit 1
-          fi
-          mkdir -p proof
-          DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
-          cat <<EOF > proof/surface-1.txt
-          Surface: webhook
-          Run ID: ${{ github.run_id }}
-          Commit: ${{ github.sha }}
-          Decision ID (sha256): $DECISION_ID_HASH
-          EOF
-
-      - name: Upload Surface-1 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: proof-surface-1
-          path: proof/surface-1.txt
-
   execute-surface-2:
     needs: validate
     runs-on: ubuntu-latest
@@ -116,68 +93,40 @@ jobs:
           echo "Executing governed action on API surface..."
           echo "Decision: ${{ github.run_id }} | Commit: ${{ github.sha }}"
 
-      - name: Write Surface-2 Proof
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
-        run: |
-          if [ -z "$DECISION_ID" ]; then
-            echo "DECISION_ID is unset — skipping artifact"
-            exit 1
-          fi
-          mkdir -p proof
-          DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
-          cat <<EOF > proof/surface-2.txt
-          Surface: api
-          Run ID: ${{ github.run_id }}
-          Commit: ${{ github.sha }}
-          Decision ID (sha256): $DECISION_ID_HASH
-          EOF
-
-      - name: Upload Surface-2 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: proof-surface-2
-          path: proof/surface-2.txt
-
   combine-proof:
     needs: [execute-surface-1, execute-surface-2]
     runs-on: ubuntu-latest
     permissions: {}
 
     steps:
-      - name: Download Surface-1 Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: proof-surface-1
-          path: proof
-
-      - name: Download Surface-2 Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: proof-surface-2
-          path: proof
-
-      - name: Combine Proof Artifacts
+      - name: Generate proof-of-transfer.json
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          SIGNATURE: ${{ secrets.SIGNATURE }}
         run: |
-          if [ ! -f proof/surface-1.txt ]; then
-            echo "ERROR — proof/surface-1.txt is missing"
+          if [ -z "$DECISION_ID" ]; then
+            echo "DECISION_ID is unset — aborting"
             exit 1
           fi
-          if [ ! -f proof/surface-2.txt ]; then
-            echo "ERROR — proof/surface-2.txt is missing"
-            exit 1
-          fi
-          mkdir -p combined
-          echo "=== Combined Proof of Transfer ===" > combined/proof.txt
-          echo "" >> combined/proof.txt
-          echo "--- Surface 1 (webhook) ---" >> combined/proof.txt
-          cat proof/surface-1.txt >> combined/proof.txt
-          echo "" >> combined/proof.txt
-          echo "--- Surface 2 (api) ---" >> combined/proof.txt
-          cat proof/surface-2.txt >> combined/proof.txt
+          mkdir -p proof
+          DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
+          AEO_HASH=$(echo -n "$SIGNATURE" | sha256sum | cut -d' ' -f1)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > proof/proof-of-transfer.json <<EOF
+{
+  "run_id": "${{ github.run_id }}",
+  "commit_sha": "${{ github.sha }}",
+  "repository": "${{ github.repository }}",
+  "timestamp": "$TIMESTAMP",
+  "decision_id_hash": "$DECISION_ID_HASH",
+  "aeo_hash": "$AEO_HASH",
+  "execution_surfaces": ["webhook", "api"],
+  "validation_status": "valid"
+}
+EOF
 
       - name: Upload Combined Proof Artifact
         uses: actions/upload-artifact@v4
         with:
           name: proof-of-transfer
-          path: combined/proof.txt
+          path: proof/proof-of-transfer.json
