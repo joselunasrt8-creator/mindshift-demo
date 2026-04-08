@@ -69,9 +69,24 @@ jobs:
               "commit": "${{ github.sha }}"
             }'
 
-      - name: Proof-of-Transfer
+      - name: Write Proof Artifact
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
         run: |
-          echo "PoT"
-          echo "Run ID: ${{ github.run_id }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Webhook delivered"
+          if [ -z "$DECISION_ID" ]; then
+            echo "DECISION_ID is unset — skipping artifact"
+            exit 1
+          fi
+          mkdir -p proof
+          DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
+          cat <<EOF > proof/proof.txt
+          Run ID: ${{ github.run_id }}
+          Commit: ${{ github.sha }}
+          Decision ID (sha256): $DECISION_ID_HASH
+          EOF
+
+      - name: Upload Proof Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-of-transfer
+          path: proof/proof.txt
