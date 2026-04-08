@@ -9,6 +9,7 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions: {}
 
     steps:
       - name: Validate Authority
@@ -61,7 +62,7 @@ jobs:
     steps:
       - name: Execute Webhook
         run: |
-          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
+          curl --fail -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
             -H "Content-Type: application/json" \
             -d '{
               "event": "mindshift_governed_execution",
@@ -83,12 +84,12 @@ jobs:
           DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           cat <<EOF > proof/proof-of-transfer.txt
-          Run ID: ${{ github.run_id }}
-          Commit SHA: ${{ github.sha }}
-          Repository: ${{ github.repository }}
-          Timestamp: $TIMESTAMP
-          Decision ID (sha256): $DECISION_ID_HASH
-          EOF
+Run ID: ${{ github.run_id }}
+Commit SHA: ${{ github.sha }}
+Repository: ${{ github.repository }}
+Timestamp: $TIMESTAMP
+Decision ID (sha256): $DECISION_ID_HASH
+EOF
 
       - name: Upload Proof Artifact
         uses: actions/upload-artifact@v4
