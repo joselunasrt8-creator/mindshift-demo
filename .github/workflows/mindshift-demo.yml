@@ -58,13 +58,20 @@ jobs:
 
           echo "VALID — Authority accepted"
 
-      - name: Deploy (Simulated)
+      - name: Execute Webhook
         run: |
-          echo "VALID — Deploying"
-          echo "Deployment complete"
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "event": "mindshift_governed_execution",
+              "decision_id": "${{ secrets.DECISION_ID }}",
+              "run_id": "${{ github.run_id }}",
+              "commit": "${{ github.sha }}"
+            }'
 
       - name: Proof-of-Transfer
         run: |
           echo "PoT"
           echo "Run ID: ${{ github.run_id }}"
           echo "Commit: ${{ github.sha }}"
+          echo "Webhook delivered"
