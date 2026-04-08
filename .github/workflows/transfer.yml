@@ -52,7 +52,11 @@ jobs:
           SIGNATURE=$(node -e "
             const crypto = require('crypto');
             const aeo = JSON.parse(require('fs').readFileSync('./aeo.json', 'utf8'));
-            process.stdout.write(crypto.createHash('sha256').update(process.env.DECISION_ID + JSON.stringify(aeo)).digest('hex'));
+            function canonicalJson(v) {
+              if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
+              return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+            }
+            process.stdout.write(crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex'));
           ")
 
           RESPONSE=$(curl -s -X POST ${{ env.VALIDATOR_URL }}/validate \

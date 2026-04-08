@@ -14,6 +14,21 @@ app.get('/health', healthHandler);
 
 const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality', 'expires_at'];
 
+/**
+ * Produce a canonical JSON string with keys sorted alphabetically at every
+ * level of nesting. This eliminates any dependency on key-insertion order so
+ * the same logical object always produces the same byte sequence.
+ * Whitespace is intentionally omitted to keep the representation compact and
+ * byte-for-byte deterministic across all JSON serializers.
+ */
+function canonicalJson(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
+}
+
 app.post('/validate', (req, res) => {
   const { decision_id, signature, repo, branch, aeo } = req.body || {};
 
@@ -33,12 +48,16 @@ app.post('/validate', (req, res) => {
     return res.json({ status: 'NULL', reason: 'Missing or invalid aeo' });
   }
 
+  if (!signature) {
+    return res.json({ status: 'NULL', reason: 'Missing signature' });
+  }
+
   const expectedSignature = crypto
     .createHash('sha256')
-    .update(decision_id + JSON.stringify(aeo))
+    .update(decision_id + canonicalJson(aeo))
     .digest('hex');
 
-  if (!signature || signature !== expectedSignature) {
+  if (signature !== expectedSignature) {
     return res.json({ status: 'NULL', reason: 'Signature verification failed' });
   }
 
