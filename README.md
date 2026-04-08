@@ -43,6 +43,16 @@ Expected response:
 
 #### Validate an execution request
 
+**Health check:**
+```bash
+curl -s http://localhost:3000/health
+```
+
+Expected response:
+```json
+{ "status": "ok" }
+```
+
 **Valid request:**
 ```bash
 curl -s -X POST http://localhost:3000/validate \
