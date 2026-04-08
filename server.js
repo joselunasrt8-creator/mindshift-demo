@@ -6,6 +6,10 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality', 'expires_at'];
 
 app.post('/validate', (req, res) => {
@@ -35,6 +39,10 @@ app.post('/validate', (req, res) => {
     if (aeo[field] == null || aeo[field] === '') {
       return res.json({ status: 'NULL', reason: `Missing aeo field: ${field}` });
     }
+  }
+
+  if (typeof aeo.expires_at !== 'string') {
+    return res.json({ status: 'NULL', reason: 'Invalid expires_at: must be a string' });
   }
 
   const expiresAt = new Date(aeo.expires_at);
