@@ -48,11 +48,15 @@ Expected response:
 First compute the signature (see [Computing the signature](#computing-the-signature) below), then include it in the request:
 
 ```bash
-# Compute signature
+# Compute canonical signature from aeo.json
 SIGNATURE=$(node -e "
   const crypto = require('crypto');
   const aeo = JSON.parse(require('fs').readFileSync('./aeo.json', 'utf8'));
-  process.stdout.write(crypto.createHash('sha256').update('MS-DEMO-DEPLOY-001' + JSON.stringify(aeo)).digest('hex'));
+  function canonicalJson(v) {
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
+    return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+  }
+  process.stdout.write(crypto.createHash('sha256').update('MS-DEMO-DEPLOY-001' + canonicalJson(aeo)).digest('hex'));
 ")
 
 curl -s -X POST http://localhost:3000/validate \
@@ -63,22 +67,48 @@ curl -s -X POST http://localhost:3000/validate \
     \"repo\": \"mindshift-demo\",
     \"branch\": \"main\",
     \"aeo\": {
+      \"expires_at\": \"2027-01-01T00:00:00Z\",
+      \"finality\": \"confirmed\",
       \"intent\": \"deploy\",
       \"scope\": \"production\",
-      \"validation\": \"approved\",
       \"target\": \"api\",
-      \"finality\": \"confirmed\",
-      \"expires_at\": \"2027-01-01T00:00:00Z\"
+      \"validation\": \"approved\"
     }
   }"
 ```
+
+> **Note:** The AEO fields in the request body must be in alphabetical key order to match the canonical signature. If you are using a client that may reorder keys, compute the signature server-side from the same canonical representation.
 
 Expected response:
 ```json
 { "status": "VALID" }
 ```
 
-**Invalid request (missing aeo field):**
+**Invalid request (missing signature):**
+```bash
+curl -s -X POST http://localhost:3000/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision_id": "MS-DEMO-DEPLOY-001",
+    "repo": "mindshift-demo",
+    "branch": "main",
+    "aeo": {
+      "intent": "deploy",
+      "scope": "production",
+      "validation": "approved",
+      "target": "api",
+      "finality": "confirmed",
+      "expires_at": "2027-01-01T00:00:00Z"
+    }
+  }'
+```
+
+Expected response:
+```json
+{ "status": "NULL", "reason": "Missing signature" }
+```
+
+**Invalid request (wrong signature):**
 ```bash
 curl -s -X POST http://localhost:3000/validate \
   -H "Content-Type: application/json" \
@@ -103,7 +133,7 @@ Expected response:
 | Field         | Required value / rule                                                                          |
 |---------------|-----------------------------------------------------------------------------------------------|
 | `decision_id` | Must equal `MS-DEMO-DEPLOY-001`                                                               |
-| `signature`   | SHA-256 hex digest of `decision_id + JSON.stringify(aeo)`                                     |
+| `signature`   | SHA-256 hex digest of `decision_id + canonicalJson(aeo)` (keys sorted alphabetically)    |
 | `repo`        | Must equal `mindshift-demo`                                                                   |
 | `branch`      | Must equal `main`                                                                             |
 | `aeo`         | Object containing `intent`, `scope`, `validation`, `target`, `finality`, and `expires_at`    |
@@ -113,7 +143,11 @@ The API is fail-closed: any missing or invalid field returns `{ "status": "NULL"
 
 #### Computing the signature
 
-The `signature` field must be the SHA-256 hex digest of the concatenation of `decision_id` and the JSON-serialized `aeo` object. Use the Node.js built-in `crypto` module:
+The `signature` field is the SHA-256 hex digest of the concatenation of `decision_id` and the **canonical JSON** of the `aeo` object. Canonical JSON is produced by recursively sorting all object keys alphabetically and serializing without whitespace. This makes the signature fully deterministic regardless of the insertion order of keys.
+
+For `aeo.json` the canonical key order is: `expires_at`, `finality`, `intent`, `scope`, `target`, `validation`.
+
+Use the Node.js built-in `crypto` module to reproduce the exact signature:
 
 ```js
 const crypto = require('crypto');
@@ -122,9 +156,17 @@ const fs = require('fs');
 const decisionId = 'MS-DEMO-DEPLOY-001';
 const aeo = JSON.parse(fs.readFileSync('./aeo.json', 'utf8'));
 
+function canonicalJson(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
+}
+
 const signature = crypto
   .createHash('sha256')
-  .update(decisionId + JSON.stringify(aeo))
+  .update(decisionId + canonicalJson(aeo))
   .digest('hex');
 
 console.log(signature);
