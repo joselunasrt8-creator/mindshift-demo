@@ -9,50 +9,63 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
 
     steps:
-      - name: Validate Authority
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install validator dependencies
+        run: npm install
+
+      - name: Start validator API
+        run: node server.js > /tmp/validator.log 2>&1 &
+        env:
+          PORT: 3000
+
+      - name: Wait for validator to be ready
         run: |
-          echo "Checking Decision ID..."
+          for i in $(seq 1 10); do
+            curl -s -o /dev/null http://localhost:3000/ && break
+            sleep 1
+          done
 
-          if [ -z "${{ secrets.DECISION_ID }}" ]; then
-            echo "NULL — No Decision ID"
+      - name: Call validator API
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          SIGNATURE: ${{ secrets.SIGNATURE }}
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:3000/validate \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"decision_id\": \"$DECISION_ID\",
+              \"signature\": \"$SIGNATURE\",
+              \"repo\": \"${{ github.event.repository.name }}\",
+              \"branch\": \"${{ github.ref_name }}\",
+              \"aeo\": {
+                \"intent\": \"deploy\",
+                \"scope\": \"production\",
+                \"validation\": \"approved\",
+                \"target\": \"api\",
+                \"finality\": \"confirmed\"
+              }
+            }")
+
+          echo "Validator response: $RESPONSE"
+
+          if [ "$(echo "$RESPONSE" | jq -r '.status')" = "VALID" ]; then
+            echo "VALID — Authority accepted"
+          else
+            echo "NULL — Validation failed"
+            cat /tmp/validator.log
             exit 1
           fi
-
-          if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
-            echo "NULL — Invalid Decision ID"
-            exit 1
-          fi
-
-          echo "Checking Signature..."
-
-          if [ -z "${{ secrets.SIGNATURE }}" ]; then
-            echo "NULL — Missing Signature"
-            exit 1
-          fi
-
-          if [ "${{ secrets.SIGNATURE }}" != "demo-signature-v1" ]; then
-            echo "NULL — Invalid Signature"
-            exit 1
-          fi
-
-          echo "Checking Repo..."
-
-          if [ "${{ github.event.repository.name }}" != "mindshift-demo" ]; then
-            echo "NULL — Invalid Repo"
-            exit 1
-          fi
-
-          echo "Checking Branch..."
-
-          if [ "${{ github.ref_name }}" != "main" ]; then
-            echo "NULL — Invalid Branch"
-            exit 1
-          fi
-
-          echo "VALID — Authority accepted"
 
   transfer:
     needs: validate
