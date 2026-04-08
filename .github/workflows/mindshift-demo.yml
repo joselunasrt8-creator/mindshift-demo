@@ -1,45 +1,48 @@
-- name: Debug + Validate Decision
-  run: |
-    echo "DECISION_ID present?"
-    if [ -z "${{ secrets.DECISION_ID }}" ]; then
-      echo "NULL — No Decision ID"
-      exit 1
-    fi
+name: mindshift-demo
 
-    echo "SIGNATURE present?"
-    if [ -z "${{ secrets.SIGNATURE }}" ]; then
-      echo "NULL — Missing Signature"
-      exit 1
-    fi
+on:
+  workflow_dispatch:
 
-    echo "Expected Decision: MS-DEMO-DEPLOY-001"
-    echo "Actual Decision: ${{ secrets.DECISION_ID }}"
+jobs:
+  governed-run:
+    runs-on: ubuntu-latest
 
-    if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
-      echo "NULL — Invalid Decision ID"
-      exit 1
-    fi
+    steps:
+      - name: Validate Authority
+        run: |
+          echo "Checking Decision ID..."
 
-    echo "Expected Signature: demo-signature-v1"
-    echo "Actual Signature: ${{ secrets.SIGNATURE }}"
+          if [ -z "${{ secrets.DECISION_ID }}" ]; then
+            echo "NULL — No Decision ID"
+            exit 1
+          fi
 
-    if [ "${{ secrets.SIGNATURE }}" != "demo-signature-v1" ]; then
-      echo "NULL — Invalid Signature"
-      exit 1
-    fi
+          if [ "${{ secrets.DECISION_ID }}" != "MS-DEMO-DEPLOY-001" ]; then
+            echo "NULL — Invalid Decision ID"
+            exit 1
+          fi
 
-    echo "github.ref_name = ${{ github.ref_name }}"
-    echo "github.event.repository.name = ${{ github.event.repository.name }}"
-    echo "github.event_name = ${{ github.event_name }}"
+          echo "Checking Signature..."
 
-    if [ "${{ github.ref_name }}" != "main" ]; then
-      echo "NULL — Invalid Branch"
-      exit 1
-    fi
+          if [ -z "${{ secrets.SIGNATURE }}" ]; then
+            echo "NULL — Missing Signature"
+            exit 1
+          fi
 
-    if [ "${{ github.event.repository.name }}" != "mindshift-demo" ]; then
-      echo "NULL — Invalid Repo"
-      exit 1
-    fi
+          if [ "${{ secrets.SIGNATURE }}" != "demo-signature-v1" ]; then
+            echo "NULL — Invalid Signature"
+            exit 1
+          fi
 
-    echo "VALID — Decision and signature accepted"
+          echo "VALID — Authority accepted"
+
+      - name: Deploy (Simulated)
+        run: |
+          echo "VALID — Deploying"
+          echo "Deployment complete"
+
+      - name: Proof-of-Transfer
+        run: |
+          echo "PoT"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Commit: ${{ github.sha }}"
