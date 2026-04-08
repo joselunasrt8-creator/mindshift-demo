@@ -1,0 +1,8 @@
+{
+  "intent": "deploy",
+  "scope": "production",
+  "validation": "approved",
+  "target": "api",
+  "finality": "confirmed",
+  "expires_at": "2027-01-01T00:00:00Z"
+}
