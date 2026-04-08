@@ -145,7 +145,7 @@ The API is fail-closed: any missing or invalid field returns `{ "status": "NULL"
 
 The `signature` field is the SHA-256 hex digest of the concatenation of `decision_id` and the **canonical JSON** of the `aeo` object. Canonical JSON is produced by recursively sorting all object keys alphabetically and serializing without whitespace. This makes the signature fully deterministic regardless of the insertion order of keys.
 
-For `aeo.json` the canonical key order is: `expires_at`, `finality`, `intent`, `scope`, `target`, `validation`.
+For `aeo.json` the canonical key order is: `expires_at`, `finality`, `intent`, `scope`, `target`, `validation`. Any additional fields that may be added in the future will also be sorted alphabetically at the same level.
 
 Use the Node.js built-in `crypto` module to reproduce the exact signature:
 

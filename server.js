@@ -18,6 +18,8 @@ const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finalit
  * Produce a canonical JSON string with keys sorted alphabetically at every
  * level of nesting. This eliminates any dependency on key-insertion order so
  * the same logical object always produces the same byte sequence.
+ * Whitespace is intentionally omitted to keep the representation compact and
+ * byte-for-byte deterministic across all JSON serializers.
  */
 function canonicalJson(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
