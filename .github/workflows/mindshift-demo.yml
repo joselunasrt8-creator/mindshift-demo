@@ -49,21 +49,17 @@ jobs:
             BRANCH="${{ github.ref_name }}"
           fi
 
+          AEO=$(cat aeo.json)
+
           RESPONSE=$(curl -s -X POST http://localhost:3000/validate \
             -H "Content-Type: application/json" \
-            -d "{
-              \"decision_id\": \"$DECISION_ID\",
-              \"signature\": \"$SIGNATURE\",
-              \"repo\": \"${{ github.event.repository.name }}\",
-              \"branch\": \"$BRANCH\",
-              \"aeo\": {
-                \"intent\": \"deploy\",
-                \"scope\": \"production\",
-                \"validation\": \"approved\",
-                \"target\": \"api\",
-                \"finality\": \"confirmed\"
-              }
-            }")
+            -d "$(jq -n \
+                  --arg decision_id "$DECISION_ID" \
+                  --arg signature "$SIGNATURE" \
+                  --arg repo "${{ github.event.repository.name }}" \
+                  --arg branch "$BRANCH" \
+                  --argjson aeo "$AEO" \
+                  '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')")
 
           echo "Validator response: $RESPONSE"
 
@@ -113,9 +109,13 @@ jobs:
   combine-proof:
     needs: [execute-surface-1, execute-surface-2]
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Generate proof-of-transfer.json
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
@@ -129,6 +129,7 @@ jobs:
           DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
           AEO_HASH=$(echo -n "$SIGNATURE" | sha256sum | cut -d' ' -f1)
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          EXPIRES_AT=$(jq -r '.expires_at' aeo.json)
           jq -n \
             --arg run_id "${{ github.run_id }}" \
             --arg commit_sha "${{ github.sha }}" \
@@ -136,6 +137,8 @@ jobs:
             --arg timestamp "$TIMESTAMP" \
             --arg decision_id_hash "$DECISION_ID_HASH" \
             --arg aeo_hash "$AEO_HASH" \
+            --arg expires_at "$EXPIRES_AT" \
+            --arg validated_at "$TIMESTAMP" \
             '{
               run_id: $run_id,
               commit_sha: $commit_sha,
@@ -144,7 +147,9 @@ jobs:
               decision_id_hash: $decision_id_hash,
               aeo_hash: $aeo_hash,
               execution_surfaces: ["webhook", "api"],
-              validation_status: "valid"
+              validation_status: "valid",
+              expires_at: $expires_at,
+              validated_at: $validated_at
             }' \
             > proof/proof-of-transfer.json
 

@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality'];
+const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality', 'expires_at'];
 
 app.post('/validate', (req, res) => {
   const { decision_id, signature, repo, branch, aeo } = req.body || {};
@@ -35,6 +35,15 @@ app.post('/validate', (req, res) => {
     if (aeo[field] == null || aeo[field] === '') {
       return res.json({ status: 'NULL', reason: `Missing aeo field: ${field}` });
     }
+  }
+
+  const expiresAt = new Date(aeo.expires_at);
+  if (isNaN(expiresAt.getTime())) {
+    return res.json({ status: 'NULL', reason: 'Invalid expires_at: not a valid ISO 8601 date' });
+  }
+
+  if (Date.now() >= expiresAt.getTime()) {
+    return res.json({ status: 'NULL', reason: 'AEO has expired' });
   }
 
   return res.json({ status: 'VALID' });
