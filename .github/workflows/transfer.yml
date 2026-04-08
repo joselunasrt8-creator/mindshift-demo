@@ -46,9 +46,14 @@ jobs:
       - name: Call validator API
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
-          SIGNATURE: ${{ secrets.SIGNATURE }}
         run: |
           AEO=$(cat aeo.json)
+
+          SIGNATURE=$(node -e "
+            const crypto = require('crypto');
+            const aeo = JSON.parse(require('fs').readFileSync('./aeo.json', 'utf8'));
+            process.stdout.write(crypto.createHash('sha256').update(process.env.DECISION_ID + JSON.stringify(aeo)).digest('hex'));
+          ")
 
           RESPONSE=$(curl -s -X POST ${{ env.VALIDATOR_URL }}/validate \
             -H "Content-Type: application/json" \
