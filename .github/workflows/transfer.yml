@@ -7,6 +7,12 @@ on:
   workflow_dispatch:
 
 env:
+  # Default fallback: local validator service.
+  # At runtime this value is overridden in priority order by:
+  #   1. secrets.VALIDATOR_URL  – external validator URL stored as a GitHub secret
+  #   2. vars.VALIDATOR_URL     – repository/environment configuration variable
+  #   3. http://localhost:3000  – local validator service (this default)
+  # See the "Resolve VALIDATOR_URL" step in the validate job for the logic.
   VALIDATOR_URL: http://localhost:3000
 
 jobs:
@@ -27,12 +33,53 @@ jobs:
       - name: Install validator dependencies
         run: npm install
 
+      # -----------------------------------------------------------------------
+      # Resolve VALIDATOR_URL
+      # Priority order (highest to lowest):
+      #   1. secrets.VALIDATOR_URL  – external validator URL (GitHub secret)
+      #   2. vars.VALIDATOR_URL     – repository/environment config variable
+      #   3. http://localhost:3000  – local validator service (default fallback)
+      #
+      # The resolved URL is exported to GITHUB_ENV so that every subsequent
+      # step in this job can read it via ${{ env.VALIDATOR_URL }}.
+      # USE_LOCAL_VALIDATOR is also exported so the local-server steps can be
+      # skipped when an external URL is configured.
+      # -----------------------------------------------------------------------
+      - name: Resolve VALIDATOR_URL
+        env:
+          SECRET_VALIDATOR_URL: ${{ secrets.VALIDATOR_URL }}
+          VARS_VALIDATOR_URL: ${{ vars.VALIDATOR_URL }}
+        run: |
+          if [ -n "$SECRET_VALIDATOR_URL" ]; then
+            RESOLVED_URL="$SECRET_VALIDATOR_URL"
+            echo "VALIDATOR_URL resolved from secret (external service)"
+          elif [ -n "$VARS_VALIDATOR_URL" ]; then
+            RESOLVED_URL="$VARS_VALIDATOR_URL"
+            echo "VALIDATOR_URL resolved from repository/environment variable"
+          else
+            RESOLVED_URL="http://localhost:3000"
+            echo "VALIDATOR_URL resolved to local fallback: $RESOLVED_URL"
+          fi
+
+          # Start the local validator API only when the resolved URL targets localhost
+          if echo "$RESOLVED_URL" | grep -qE '(localhost|127\.0\.0\.1)'; then
+            USE_LOCAL=true
+          else
+            USE_LOCAL=false
+          fi
+
+          echo "VALIDATOR_URL=$RESOLVED_URL" >> "$GITHUB_ENV"
+          echo "USE_LOCAL_VALIDATOR=$USE_LOCAL" >> "$GITHUB_ENV"
+          echo "Final VALIDATOR_URL=$RESOLVED_URL  USE_LOCAL_VALIDATOR=$USE_LOCAL"
+
       - name: Start validator API
+        if: env.USE_LOCAL_VALIDATOR == 'true'
         run: node server.js > /tmp/validator.log 2>&1 &
         env:
           PORT: 3000
 
       - name: Wait for validator to be ready
+        if: env.USE_LOCAL_VALIDATOR == 'true'
         run: |
           for i in $(seq 1 10); do
             if curl -s -o /dev/null ${{ env.VALIDATOR_URL }}/; then
