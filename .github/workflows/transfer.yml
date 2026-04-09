@@ -90,15 +90,25 @@ jobs:
     steps:
       - name: Execute Webhook
         run: |
-          curl --fail -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
             -H "Content-Type: application/json" \
-            -d '{
-              "event": "mindshift_governed_execution",
-              "surface": "webhook",
-              "decision_id": "${{ secrets.DECISION_ID }}",
-              "run_id": "${{ github.run_id }}",
-              "commit": "${{ github.sha }}"
-            }'
+            -d "$(jq -n \
+                  --arg event "mindshift_governed_execution" \
+                  --arg surface "webhook" \
+                  --arg decision_id "${{ secrets.DECISION_ID }}" \
+                  --arg run_id "${{ github.run_id }}" \
+                  --arg commit "${{ github.sha }}" \
+                  '{event: $event, surface: $surface, decision_id: $decision_id, run_id: $run_id, commit: $commit}')")
+          echo "Webhook response status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "429" ]; then
+            echo "Target is rate-limited — skipping webhook delivery"
+            exit 0
+          elif [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Webhook delivered successfully"
+          else
+            echo "Webhook failed with status $HTTP_STATUS"
+            exit 1
+          fi
 
       - name: Write Proof Artifact
         env:
