@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const express = require('express');
+const registry = require('./registry');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const VALIDATOR_TOKEN = process.env.VALIDATOR_TOKEN;
@@ -53,6 +54,13 @@ app.post('/validate', (req, res) => {
       status: body.status,
       reason: body.reason || null,
     }));
+    if (decision_id && body.status !== 'UNAUTHORIZED') {
+      registry.recordValidation(decision_id, body.status, body.reason || null, requestTimestamp);
+      if (body.status === 'VALID' && aeo) {
+        const aeoHash = crypto.createHash('sha256').update(canonicalJson(aeo)).digest('hex');
+        registry.recordDecision(decision_id, aeoHash, requestTimestamp);
+      }
+    }
     return res.status(httpStatus).json(body);
   };
 

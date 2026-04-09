@@ -2,6 +2,8 @@
 
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
+const registry = require('./registry');
 
 const app = express();
 const PORT = process.env.GATEWAY_PORT || 4000;
@@ -91,6 +93,7 @@ app.post('/execute', async (req, res) => {
     timestamp: new Date().toISOString(),
   };
   console.log(JSON.stringify(record));
+  registry.recordExecution(body.decision_id, body.target_key, body.run_id, body.commit_sha, record.timestamp);
 
   // Fail closed on non-VALID response
   if (validatorStatus !== 'VALID') {
@@ -101,6 +104,11 @@ app.post('/execute', async (req, res) => {
   try {
     const targetResponse = await axios.post(targetUrl, body);
     if (targetResponse.status >= 200 && targetResponse.status < 300) {
+      const proofHash = crypto
+        .createHash('sha256')
+        .update(body.decision_id + record.timestamp)
+        .digest('hex');
+      registry.recordProof(body.decision_id, proofHash, record.timestamp);
       return res.status(targetResponse.status).json(targetResponse.data);
     }
     return res.status(502).json({ error: 'Target returned an unexpected response' });
