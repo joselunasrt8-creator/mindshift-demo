@@ -6,9 +6,19 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.GATEWAY_PORT || 4000;
 const VALIDATOR_URL = process.env.VALIDATOR_URL;
+const REPO_NAME = process.env.REPO_NAME;
+const BRANCH_NAME = process.env.BRANCH_NAME;
 
 if (!VALIDATOR_URL) {
   console.error('Fatal: VALIDATOR_URL environment variable is not set');
+  process.exit(1);
+}
+if (!REPO_NAME) {
+  console.error('Fatal: REPO_NAME environment variable is not set');
+  process.exit(1);
+}
+if (!BRANCH_NAME) {
+  console.error('Fatal: BRANCH_NAME environment variable is not set');
   process.exit(1);
 }
 
@@ -55,12 +65,12 @@ app.post('/execute', async (req, res) => {
   // Call the validator
   let validatorStatus;
   try {
-    const validatorResponse = await axios.post(VALIDATOR_URL, {
+    const validatorResponse = await axios.post(`${VALIDATOR_URL}/validate`, {
       decision_id: body.decision_id,
       signature: body.signature,
+      repo: REPO_NAME,
+      branch: BRANCH_NAME,
       aeo: body.aeo,
-      run_id: body.run_id,
-      commit_sha: body.commit_sha,
     });
     validatorStatus = validatorResponse.data && validatorResponse.data.status;
   } catch (err) {
@@ -74,6 +84,8 @@ app.post('/execute', async (req, res) => {
     run_id: body.run_id,
     commit_sha: body.commit_sha,
     decision_id: body.decision_id,
+    repo: REPO_NAME,
+    branch: BRANCH_NAME,
     target_key: body.target_key,
     validator_status: validatorStatus,
     timestamp: new Date().toISOString(),

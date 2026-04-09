@@ -35,7 +35,7 @@ jobs:
       - name: Wait for validator to be ready
         run: |
           for i in $(seq 1 10); do
-            if curl -s -o /dev/null ${{ env.VALIDATOR_URL }}/; then
+            if curl -s -o /dev/null ${{ env.VALIDATOR_URL }}/health; then
               exit 0
             fi
             sleep 1
@@ -108,7 +108,7 @@ jobs:
           fi
           mkdir -p proof
           DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
-          AEO_HASH=$(echo -n "$SIGNATURE" | sha256sum | cut -d' ' -f1)
+          AEO_HASH=$(jq -c . aeo.json | sha256sum | cut -d' ' -f1)
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           EXPIRES_AT=$(jq -r '.expires_at' aeo.json)
           jq -n \

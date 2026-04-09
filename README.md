@@ -4,18 +4,18 @@ MindShift execution boundary demo
 ## Architecture
 
 ```
-GitHub Actions
-      ↓
-Validator API
-      ↓
- VALID | NULL
-      ↓
-Execution surfaces
-      ↓
-Proof-of-transfer
+Authority
+    ↓
+   AEO
+    ↓
+Validator
+    ↓
+Execution Surface
+    ↓
+Proof-of-Transfer
 ```
 
-GitHub Actions serves as the execution runtime. The validator API enforces governed execution rules before any surface is reached.
+GitHub Actions serves as the execution runtime. The validator API enforces governed execution rules before any surface is reached. The gateway enforces the same contract for programmatic callers.
 
 ## Validator API
 
@@ -128,6 +128,18 @@ Expected response:
 { "status": "NULL", "reason": "Signature verification failed" }
 ```
 
+### Validator request structure
+
+The validator expects a JSON body with the following fields:
+
+| Field         | Type   | Description                                                                 |
+|---------------|--------|-----------------------------------------------------------------------------|
+| `decision_id` | string | Must equal `MS-DEMO-DEPLOY-001`                                             |
+| `signature`   | string | SHA-256 hex digest of `decision_id + canonicalJson(aeo)`                    |
+| `repo`        | string | Repository name (must equal `mindshift-demo`)                               |
+| `branch`      | string | Branch name (must equal `main`)                                             |
+| `aeo`         | object | AEO object with `intent`, `scope`, `validation`, `target`, `finality`, `expires_at` |
+
 ### Validation rules
 
 | Field         | Required value / rule                                                                          |
@@ -172,17 +184,79 @@ const signature = crypto
 console.log(signature);
 ```
 
+## MindShift Gateway
+
+The gateway (`gateway.js`) is the programmatic execution surface. It validates every incoming request through the validator before forwarding to an allowlisted target.
+
+### Environment variables
+
+| Variable        | Required | Description                                                        |
+|-----------------|----------|--------------------------------------------------------------------|
+| `VALIDATOR_URL` | Yes      | Base URL of the validator API, without trailing slash (e.g. `http://localhost:3000`) |
+| `REPO_NAME`     | Yes      | Repository name bound to this gateway instance (e.g. `mindshift-demo`) |
+| `BRANCH_NAME`   | Yes      | Branch name bound to this gateway instance (e.g. `main`)          |
+| `GATEWAY_PORT`  | No       | Port for the gateway to listen on (default: `4000`)                |
+
+The gateway fails closed (exits immediately) if any of `VALIDATOR_URL`, `REPO_NAME`, or `BRANCH_NAME` are unset.
+
+### Running the gateway locally
+
+```bash
+VALIDATOR_URL=http://localhost:3000 \
+REPO_NAME=mindshift-demo \
+BRANCH_NAME=main \
+node gateway.js
+```
+
+The gateway listens on port `4000` by default. Set the `GATEWAY_PORT` environment variable to override.
+
+### Gateway execution endpoint
+
+**POST /execute**
+
+Request body:
+
+| Field         | Type   | Required | Description                                        |
+|---------------|--------|----------|----------------------------------------------------|
+| `decision_id` | string | Yes      | Decision identifier                                |
+| `signature`   | string | Yes      | SHA-256 hex digest of `decision_id + canonicalJson(aeo)` |
+| `target_key`  | string | Yes      | Allowlisted target key (e.g. `api-production`)     |
+| `aeo`         | object | Yes      | AEO object                                         |
+| `run_id`      | string | Yes      | Run identifier for audit log                       |
+| `commit_sha`  | string | Yes      | Commit SHA for audit log                           |
+
+The gateway enforces that `repo` and `branch` come from its own environment — callers cannot override these values.
+
+### Gateway execution log
+
+Every request produces a structured log entry:
+
+```json
+{
+  "event": "execution_attempt",
+  "run_id": "string",
+  "commit_sha": "string",
+  "decision_id": "string",
+  "repo": "string",
+  "branch": "string",
+  "target_key": "string",
+  "validator_status": "string",
+  "timestamp": "ISO 8601 string"
+}
+```
+
 ## Proof-of-transfer artifact
 
 Every successful workflow run produces a `proof-of-transfer.json` artifact containing:
 
-| Field                | Description                              |
-|----------------------|------------------------------------------|
-| `run_id`             | GitHub Actions run ID                    |
-| `commit_sha`         | Commit SHA that triggered the run        |
-| `repository`         | Repository full name                     |
-| `timestamp`          | ISO 8601 UTC timestamp                   |
-| `decision_id_hash`   | SHA-256 of the decision ID               |
-| `aeo_hash`           | SHA-256 of the execution signature       |
-| `execution_surfaces` | List of surfaces that were executed      |
-| `validation_status`  | `valid` when all checks pass             |
+| Field                | Description                                   |
+|----------------------|-----------------------------------------------|
+| `run_id`             | GitHub Actions run ID                         |
+| `commit_sha`         | Commit SHA that triggered the run             |
+| `repository`         | Repository full name                          |
+| `timestamp`          | ISO 8601 UTC timestamp                        |
+| `decision_id_hash`   | SHA-256 of the decision ID                    |
+| `aeo_hash`           | SHA-256 of the canonical aeo.json content     |
+| `execution_surfaces` | List of surfaces that were executed           |
+| `validation_status`  | `valid` when all checks pass                  |
+
