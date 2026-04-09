@@ -31,33 +31,49 @@ function canonicalJson(value) {
 }
 
 app.post('/validate', (req, res) => {
+  const requestTimestamp = new Date().toISOString();
+
   const authHeader = req.headers['authorization'] || '';
   const bearerMatch = authHeader.match(/^\s*Bearer\s+(.+?)\s*$/i);
   const token = bearerMatch ? bearerMatch[1].trim() : null;
   if (!VALIDATOR_TOKEN || token !== VALIDATOR_TOKEN) {
+    console.log(JSON.stringify({ event: 'validate_request', timestamp: requestTimestamp, status: 'UNAUTHORIZED', reason: 'Missing or invalid Authorization token' }));
     return res.status(401).json({ status: 'UNAUTHORIZED', reason: 'Missing or invalid Authorization token' });
   }
 
   const { decision_id, signature, repo, branch, aeo } = req.body || {};
 
+  const logAndRespond = (httpStatus, body) => {
+    console.log(JSON.stringify({
+      event: 'validate_request',
+      timestamp: requestTimestamp,
+      decision_id: decision_id || null,
+      repo: repo || null,
+      branch: branch || null,
+      status: body.status,
+      reason: body.reason || null,
+    }));
+    return res.status(httpStatus).json(body);
+  };
+
   if (!decision_id || decision_id !== 'MS-DEMO-DEPLOY-001') {
-    return res.json({ status: 'NULL', reason: 'Invalid or missing decision_id' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Invalid or missing decision_id' });
   }
 
   if (!repo || repo !== 'mindshift-demo') {
-    return res.json({ status: 'NULL', reason: 'Invalid or missing repo' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Invalid or missing repo' });
   }
 
   if (!branch || branch !== 'main') {
-    return res.json({ status: 'NULL', reason: 'Invalid or missing branch' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Invalid or missing branch' });
   }
 
   if (!aeo || typeof aeo !== 'object' || Array.isArray(aeo)) {
-    return res.json({ status: 'NULL', reason: 'Missing or invalid aeo' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Missing or invalid aeo' });
   }
 
   if (!signature) {
-    return res.json({ status: 'NULL', reason: 'Missing signature' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Missing signature' });
   }
 
   const expectedSignature = crypto
@@ -66,29 +82,29 @@ app.post('/validate', (req, res) => {
     .digest('hex');
 
   if (signature !== expectedSignature) {
-    return res.json({ status: 'NULL', reason: 'Signature verification failed' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Signature verification failed' });
   }
 
   for (const field of REQUIRED_AEO_FIELDS) {
     if (aeo[field] == null || aeo[field] === '') {
-      return res.json({ status: 'NULL', reason: `Missing aeo field: ${field}` });
+      return logAndRespond(200, { status: 'NULL', reason: `Missing aeo field: ${field}` });
     }
   }
 
   if (typeof aeo.expires_at !== 'string') {
-    return res.json({ status: 'NULL', reason: 'Invalid expires_at: must be a string' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Invalid expires_at: must be a string' });
   }
 
   const expiresAt = new Date(aeo.expires_at);
   if (isNaN(expiresAt.getTime())) {
-    return res.json({ status: 'NULL', reason: 'Invalid expires_at: not a valid ISO 8601 date' });
+    return logAndRespond(200, { status: 'NULL', reason: 'Invalid expires_at: not a valid ISO 8601 date' });
   }
 
   if (Date.now() >= expiresAt.getTime()) {
-    return res.json({ status: 'NULL', reason: 'AEO has expired' });
+    return logAndRespond(200, { status: 'NULL', reason: 'AEO has expired' });
   }
 
-  return res.json({ status: 'VALID' });
+  return logAndRespond(200, { status: 'VALID' });
 });
 
 app.listen(PORT, () => {
