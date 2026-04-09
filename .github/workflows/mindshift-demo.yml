@@ -29,6 +29,7 @@ jobs:
         run: node server.js > /tmp/validator.log 2>&1 &
         env:
           PORT: 3000
+          VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
 
       - name: Wait for validator to be ready
         run: |
@@ -44,6 +45,7 @@ jobs:
       - name: Call validator API
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
+          VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BRANCH="${{ github.base_ref }}"
@@ -65,6 +67,7 @@ jobs:
 
           RESPONSE=$(curl -s -X POST ${{ env.VALIDATOR_URL }}/validate \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $VALIDATOR_TOKEN" \
             -d "$(jq -n \
                   --arg decision_id "$DECISION_ID" \
                   --arg signature "$SIGNATURE" \

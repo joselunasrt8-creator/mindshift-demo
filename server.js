@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
+const VALIDATOR_TOKEN = process.env.VALIDATOR_TOKEN;
 
 app.use(express.json());
 
@@ -30,6 +31,13 @@ function canonicalJson(value) {
 }
 
 app.post('/validate', (req, res) => {
+  const authHeader = req.headers['authorization'] || '';
+  const bearerMatch = authHeader.match(/^\s*Bearer\s+(.+?)\s*$/i);
+  const token = bearerMatch ? bearerMatch[1].trim() : null;
+  if (!VALIDATOR_TOKEN || token !== VALIDATOR_TOKEN) {
+    return res.status(401).json({ status: 'UNAUTHORIZED', reason: 'Missing or invalid Authorization token' });
+  }
+
   const { decision_id, signature, repo, branch, aeo } = req.body || {};
 
   if (!decision_id || decision_id !== 'MS-DEMO-DEPLOY-001') {
@@ -84,5 +92,8 @@ app.post('/validate', (req, res) => {
 });
 
 app.listen(PORT, () => {
+  if (!VALIDATOR_TOKEN) {
+    console.warn('WARNING: VALIDATOR_TOKEN is not set — all /validate requests will be rejected with 401');
+  }
   console.log(`Validator API running on port ${PORT}`);
 });
