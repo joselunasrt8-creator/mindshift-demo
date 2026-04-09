@@ -125,11 +125,11 @@ how to audit it
 
 So now Copilot won’t just understand the repo.
 It will start checking it for:
-\t•\tvalidator bypasses
-\t•\tfail-open mistakes
-\t•\tweak auth
-\t•\tscope drift
-\t•\tproof drift
+	•	v validator bypasses
+	•	v fail-open mistakes
+	•	v weak auth
+	•	v scope drift
+	•	v proof drift
 
 Best setup
 
@@ -139,8 +139,8 @@ Use both files:
 .github/instructions/audit.instructions.md
 
 That combination gives you:
-\t•\tarchitecture awareness
-\t•\taudit behavior
+	•	architecture awareness
+	•	audit behavior
 
 What you can ask Copilot after that
 
