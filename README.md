@@ -17,9 +17,27 @@ Proof-of-Transfer
 
 GitHub Actions serves as the execution runtime. The validator API enforces governed execution rules before any surface is reached. The gateway enforces the same contract for programmatic callers.
 
+## External Validator Configuration
+
+The workflows expect the validator to be running as an always-on external service. No validator process is started inside GitHub Actions.
+
+### Required GitHub secrets
+
+Add the following secrets to the repository under **Settings → Secrets and variables → Actions**:
+
+| Secret            | Description                                                                                   |
+|-------------------|-----------------------------------------------------------------------------------------------|
+| `VALIDATOR_URL`   | Base URL of the external validator service, without trailing slash (e.g. `https://validator.example.com`) |
+| `VALIDATOR_TOKEN` | Bearer token used to authenticate requests to the external validator service                  |
+
+The `validate` job in each workflow will:
+1. Call `GET $VALIDATOR_URL/health` and fail immediately if the request fails or the HTTP status is non-2xx.
+2. POST the execution request to `$VALIDATOR_URL/validate` with an `Authorization: Bearer $VALIDATOR_TOKEN` header.
+3. Fail closed if the HTTP request fails or the response is anything other than `{ "status": "VALID" }`.
+
 ## Validator API
 
-A minimal Node.js/Express server that validates execution authority before allowing governed actions to proceed.
+A minimal Node.js/Express server that validates execution authority before allowing governed actions to proceed. This can be deployed as a standalone service and exposed via `VALIDATOR_URL`.
 
 ### Running as a standalone local service
 

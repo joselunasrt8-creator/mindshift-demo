@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
   pull_request:
 
-env:
-  VALIDATOR_URL: http://localhost:3000
-
 jobs:
   validate:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      VALIDATOR_URL: ${{ secrets.VALIDATOR_URL }}
+      VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
 
     steps:
       - name: Checkout
@@ -22,24 +22,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install validator dependencies
-        run: npm install
-
-      - name: Start validator API
-        run: node server.js > /tmp/validator.log 2>&1 &
-        env:
-          PORT: 3000
-
-      - name: Wait for validator to be ready
+      - name: Health check
         run: |
-          for i in $(seq 1 10); do
-            if curl -s -o /dev/null ${{ env.VALIDATOR_URL }}/health; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Validator API did not start within timeout" >&2
-          exit 1
+          if ! curl -sf -o /dev/null "$VALIDATOR_URL/health"; then
+            echo "Validator health check failed" >&2
+            exit 1
+          fi
 
       - name: Call validator API
         env:
@@ -63,15 +51,17 @@ jobs:
             process.stdout.write(crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex'));
           ")
 
-          RESPONSE=$(curl -s -X POST ${{ env.VALIDATOR_URL }}/validate \
+          RESPONSE=$(curl -sf -X POST "$VALIDATOR_URL/validate" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $VALIDATOR_TOKEN" \
             -d "$(jq -n \
                   --arg decision_id "$DECISION_ID" \
                   --arg signature "$SIGNATURE" \
                   --arg repo "${{ github.event.repository.name }}" \
                   --arg branch "$BRANCH" \
                   --argjson aeo "$AEO" \
-                  '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')")
+                  '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')") \
+            || { echo "NULL — Validator request failed" >&2; exit 1; }
 
           echo "Validator response: $RESPONSE"
 
@@ -79,7 +69,6 @@ jobs:
             echo "VALID — Authority accepted"
           else
             echo "NULL — Validation failed"
-            cat /tmp/validator.log
             exit 1
           fi
 
