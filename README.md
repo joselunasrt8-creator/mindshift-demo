@@ -245,6 +245,67 @@ Every request produces a structured log entry:
 }
 ```
 
+## Deploying the validator as an always-on service
+
+The validator can be containerized and deployed to any platform that runs Docker containers.
+
+### Environment variables
+
+| Variable          | Required | Description                                                   |
+|-------------------|----------|---------------------------------------------------------------|
+| `VALIDATOR_TOKEN` | Yes      | Bearer token required for all `POST /validate` requests       |
+| `PORT`            | No       | Port the server listens on (default: `3000`)                  |
+
+### Building and running with Docker locally
+
+```bash
+docker build -t mindshift-validator .
+docker run -p 3000:3000 -e VALIDATOR_TOKEN=your-secret-token mindshift-validator
+```
+
+### Deploying to Render
+
+1. Push this repository to GitHub (already done).
+2. Go to [https://render.com](https://render.com) and create a new **Web Service**.
+3. Connect your GitHub repository.
+4. Set the following in the Render dashboard:
+   - **Runtime**: Docker
+   - **Environment variables**:
+     - `VALIDATOR_TOKEN` → your secret token
+     - `PORT` → `3000` (Render injects `PORT` automatically; leaving it unset is also fine)
+5. Click **Deploy**. Render will build the Docker image and start the service.
+6. Health check path: `GET /health`
+
+### Deploying to Fly.io
+
+1. Install the Fly CLI: `curl -L https://fly.io/install.sh | sh`
+2. Authenticate: `fly auth login`
+3. From the repository root, launch the app (first time only):
+
+   ```bash
+   fly launch --name mindshift-validator --dockerfile Dockerfile --no-deploy
+   ```
+
+4. Set the required secret:
+
+   ```bash
+   fly secrets set VALIDATOR_TOKEN=your-secret-token
+   ```
+
+5. Deploy:
+
+   ```bash
+   fly deploy
+   ```
+
+6. Verify the service is healthy:
+
+   ```bash
+   curl https://mindshift-validator.fly.dev/health
+   ```
+
+   Expected response: `{"status":"ok"}`
+
 ## Proof-of-transfer artifact
 
 Every successful workflow run produces a `proof-of-transfer.json` artifact containing:
