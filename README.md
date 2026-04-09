@@ -306,6 +306,39 @@ docker run -p 3000:3000 -e VALIDATOR_TOKEN=your-secret-token mindshift-validator
 
    Expected response: `{"status":"ok"}`
 
+## Execution Registry (SQLite)
+
+The validator API and gateway maintain a local SQLite database that persists every validation event, execution event, and proof-of-transfer record.
+
+### Database schema
+
+| Table | Columns | Description |
+|---|---|---|
+| `decisions` | `decision_id` (PK), `aeo_hash`, `created_at` | One row per unique decision. Inserted on first VALID validation. |
+| `validation_events` | `id`, `decision_id`, `result`, `reason`, `timestamp` | Every call to `POST /validate` that carries a `decision_id`. |
+| `execution_events` | `id`, `decision_id`, `surface`, `run_id`, `commit_sha`, `timestamp` | Every execution attempt processed by the gateway. |
+| `proof_records` | `id`, `decision_id`, `proof_hash`, `timestamp` | SHA-256 proof generated after each successful target forward. |
+
+### Database location
+
+The registry is stored in `registry.db` (in the repository root) by default. Set the `REGISTRY_DB` environment variable to use a different path:
+
+```bash
+REGISTRY_DB=/var/data/mindshift.db npm start
+```
+
+The file is excluded from version control via `.gitignore`.
+
+### Environment setup for contributors
+
+Install all dependencies including `sqlite3`:
+
+```bash
+npm install
+```
+
+`sqlite3` is a native addon. It compiles automatically during `npm install` using `node-gyp`. Make sure you have a C++ build toolchain available (`build-essential` on Linux, Xcode Command Line Tools on macOS).
+
 ## Proof-of-transfer artifact
 
 Every successful workflow run produces a `proof-of-transfer.json` artifact containing:
