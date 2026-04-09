@@ -32,7 +32,8 @@ function canonicalJson(value) {
 
 app.post('/validate', (req, res) => {
   const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const bearerMatch = authHeader.match(/^\s*Bearer\s+(.+?)\s*$/i);
+  const token = bearerMatch ? bearerMatch[1].trim() : null;
   if (!VALIDATOR_TOKEN || token !== VALIDATOR_TOKEN) {
     return res.status(401).json({ status: 'UNAUTHORIZED', reason: 'Missing or invalid Authorization token' });
   }
