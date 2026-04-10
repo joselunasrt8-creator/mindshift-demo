@@ -7,12 +7,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Default fallback: local validator service.
-  # At runtime this value is overridden in priority order by:
-  #   1. secrets.VALIDATOR_URL  – external validator URL stored as a GitHub secret
-  #   2. vars.VALIDATOR_URL     – repository/environment configuration variable
-  #   3. http://localhost:3000  – local validator service (this default)
-  # See the "Resolve VALIDATOR_URL" step in the validate job for the logic.
   VALIDATOR_URL: http://localhost:3000
 
 jobs:
@@ -33,27 +27,17 @@ jobs:
       - name: Install validator dependencies
         run: npm install
 
-      # -----------------------------------------------------------------------
-      # Resolve VALIDATOR_URL
-      # Priority order (highest to lowest):
-      #   1. secrets.VALIDATOR_URL  – external validator URL (GitHub secret)
-      #   2. vars.VALIDATOR_URL     – repository/environment config variable
-      #   3. http://localhost:3000  – local validator service (default fallback)
-      #
-      # The resolved URL is exported to GITHUB_ENV so that every subsequent
-      # step in this job can read it via ${{ env.VALIDATOR_URL }}.
-      # USE_LOCAL_VALIDATOR is also exported so the local-server steps can be
-      # skipped when an external URL is configured.
-      # -----------------------------------------------------------------------
       - name: Resolve VALIDATOR_URL
         env:
           SECRET_VALIDATOR_URL: ${{ secrets.VALIDATOR_URL }}
           VARS_VALIDATOR_URL: ${{ vars.VALIDATOR_URL }}
         run: |
-          if [ -n "$SECRET_VALIDATOR_URL" ]; then
+          set -euo pipefail
+
+          if [ -n "${SECRET_VALIDATOR_URL:-}" ]; then
             RESOLVED_URL="$SECRET_VALIDATOR_URL"
             echo "VALIDATOR_URL resolved from secret (external service)"
-          elif [ -n "$VARS_VALIDATOR_URL" ]; then
+          elif [ -n "${VARS_VALIDATOR_URL:-}" ]; then
             RESOLVED_URL="$VARS_VALIDATOR_URL"
             echo "VALIDATOR_URL resolved from repository/environment variable"
           else
@@ -61,7 +45,6 @@ jobs:
             echo "VALIDATOR_URL resolved to local fallback: $RESOLVED_URL"
           fi
 
-          # Start the local validator API only when the resolved URL targets localhost
           if echo "$RESOLVED_URL" | grep -qE '(localhost|127\.0\.0\.1)'; then
             USE_LOCAL=true
           else
@@ -70,7 +53,7 @@ jobs:
 
           echo "VALIDATOR_URL=$RESOLVED_URL" >> "$GITHUB_ENV"
           echo "USE_LOCAL_VALIDATOR=$USE_LOCAL" >> "$GITHUB_ENV"
-          echo "Final VALIDATOR_URL=$RESOLVED_URL  USE_LOCAL_VALIDATOR=$USE_LOCAL"
+          echo "Final VALIDATOR_URL=$RESOLVED_URL USE_LOCAL_VALIDATOR=$USE_LOCAL"
 
       - name: Start validator API
         if: env.USE_LOCAL_VALIDATOR == 'true'
@@ -82,13 +65,18 @@ jobs:
       - name: Wait for validator to be ready
         if: env.USE_LOCAL_VALIDATOR == 'true'
         run: |
+          set -euo pipefail
+
           for i in $(seq 1 10); do
-            if curl -s -o /dev/null ${{ env.VALIDATOR_URL }}/health; then
+            if curl -s -o /dev/null "$VALIDATOR_URL/health"; then
+              echo "Validator ready"
               exit 0
             fi
             sleep 1
           done
+
           echo "Validator API did not start within timeout" >&2
+          [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
           exit 1
 
       - name: Call validator API
@@ -96,19 +84,45 @@ jobs:
           DECISION_ID: ${{ secrets.DECISION_ID }}
           VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
         run: |
-          AEO=$(cat aeo.json)
+          set -euo pipefail
 
-          SIGNATURE=$(node -e "
+          if [ -z "${DECISION_ID:-}" ]; then
+            echo "DECISION_ID is unset — failing."
+            exit 1
+          fi
+
+          if [ -z "${VALIDATOR_TOKEN:-}" ]; then
+            echo "VALIDATOR_TOKEN is unset — failing."
+            exit 1
+          fi
+
+          if [ -z "${VALIDATOR_URL:-}" ]; then
+            echo "VALIDATOR_URL is unset — failing."
+            exit 1
+          fi
+
+          if [ ! -f "aeo.json" ]; then
+            echo "aeo.json not found — failing."
+            exit 1
+          fi
+
+          AEO="$(cat aeo.json)"
+
+          SIGNATURE="$(node -e "
             const crypto = require('crypto');
-            const aeo = JSON.parse(require('fs').readFileSync('./aeo.json', 'utf8'));
+            const fs = require('fs');
+            const aeo = JSON.parse(fs.readFileSync('./aeo.json', 'utf8'));
             function canonicalJson(v) {
               if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
               return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
             }
-            process.stdout.write(crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex'));
-          ")
+            process.stdout.write(
+              crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex')
+            );
+          ")"
 
-          RESPONSE=$(curl -s -X POST ${{ env.VALIDATOR_URL }}/validate \
+          RESPONSE="$(curl --silent --show-error --write-out '\nHTTP_STATUS_CODE:%{http_code}' \
+            -X POST "$VALIDATOR_URL/validate" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $VALIDATOR_TOKEN" \
             -d "$(jq -n \
@@ -117,17 +131,38 @@ jobs:
                   --arg repo "${{ github.event.repository.name }}" \
                   --arg branch "${{ github.ref_name }}" \
                   --argjson aeo "$AEO" \
-                  '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')")
+                  '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')" )"
 
-          echo "Validator response: $RESPONSE"
+          HTTP_STATUS_CODE="$(echo "$RESPONSE" | awk -F: '/HTTP_STATUS_CODE/ {print $2}')"
+          VALIDATOR_BODY="$(echo "$RESPONSE" | sed '/HTTP_STATUS_CODE/d')"
 
-          if [ "$(echo "$RESPONSE" | jq -r '.status')" = "VALID" ]; then
-            echo "VALID — Authority accepted"
-          else
-            echo "NULL — Validation failed"
-            cat /tmp/validator.log
+          echo "Resolved VALIDATOR_URL=$VALIDATOR_URL"
+          echo "HTTP Status Code=$HTTP_STATUS_CODE"
+          echo "Validator Response Body=$VALIDATOR_BODY"
+
+          if [ -z "$HTTP_STATUS_CODE" ]; then
+            echo "Validator may be unreachable."
+            [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
             exit 1
           fi
+
+          if [ "$HTTP_STATUS_CODE" != "200" ]; then
+            echo "Validation failed (HTTP $HTTP_STATUS_CODE)"
+            echo "$VALIDATOR_BODY"
+            [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
+            exit 1
+          fi
+
+          VALIDATION_STATUS="$(echo "$VALIDATOR_BODY" | jq -r '.status')"
+
+          if [ "$VALIDATION_STATUS" != "VALID" ]; then
+            echo "Validation failed: $VALIDATION_STATUS"
+            echo "$VALIDATOR_BODY"
+            [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
+            exit 1
+          fi
+
+          echo "VALID — Authority accepted"
 
   transfer:
     needs: validate
