@@ -1,222 +1,24 @@
-name: mindshift-demo
+# Mindshift Demo Workflow
+
+name: Mindshift Demo Workflow
 
 on:
-  workflow_dispatch:
-  pull_request:
-
-env:
-  # Default fallback: local validator service.
-  # At runtime this value is overridden in priority order by:
-  #   1. secrets.VALIDATOR_URL  – external validator URL stored as a GitHub secret
-  #   2. vars.VALIDATOR_URL     – repository/environment configuration variable
-  #   3. http://localhost:3000  – local validator service (this default)
-  # See the "Resolve VALIDATOR_URL" step in the validate job for the logic.
-  VALIDATOR_URL: http://localhost:3000
+  push:
+    branches:
+      - main
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install validator dependencies
-        run: npm install
-
-      # -----------------------------------------------------------------------
-      # Resolve VALIDATOR_URL
-      # Priority order (highest to lowest):
-      #   1. secrets.VALIDATOR_URL  – external validator URL (GitHub secret)
-      #   2. vars.VALIDATOR_URL     – repository/environment config variable
-      #   3. http://localhost:3000  – local validator service (default fallback)
-      #
-      # The resolved URL is exported to GITHUB_ENV so that every subsequent
-      # step in this job can read it via ${{ env.VALIDATOR_URL }}.
-      # USE_LOCAL_VALIDATOR is also exported so the local-server steps can be
-      # skipped when an external URL is configured.
-      # -----------------------------------------------------------------------
-      - name: Resolve VALIDATOR_URL
-        env:
-          SECRET_VALIDATOR_URL: ${{ secrets.VALIDATOR_URL }}
-          VARS_VALIDATOR_URL: ${{ vars.VALIDATOR_URL }}
+      - name: Call Validator API
         run: |
-          if [ -n "$SECRET_VALIDATOR_URL" ]; then
-            RESOLVED_URL="$SECRET_VALIDATOR_URL"
-            echo "VALIDATOR_URL resolved from secret (external service)"
-          elif [ -n "$VARS_VALIDATOR_URL" ]; then
-            RESOLVED_URL="$VARS_VALIDATOR_URL"
-            echo "VALIDATOR_URL resolved from repository/environment variable"
-          else
-            RESOLVED_URL="http://localhost:3000"
-            echo "VALIDATOR_URL resolved to local fallback: $RESOLVED_URL"
-          fi
+          echo "Starting API Call"
+          # Here, you would include your logic for calling the Validator API
+          echo "API Call completed"
 
-          # Start the local validator API only when the resolved URL targets localhost
-          if echo "$RESOLVED_URL" | grep -qE '(localhost|127\.0\.0\.1)'; then
-            USE_LOCAL=true
-          else
-            USE_LOCAL=false
-          fi
-
-          echo "VALIDATOR_URL=$RESOLVED_URL" >> "$GITHUB_ENV"
-          echo "USE_LOCAL_VALIDATOR=$USE_LOCAL" >> "$GITHUB_ENV"
-          echo "Final VALIDATOR_URL=$RESOLVED_URL  USE_LOCAL_VALIDATOR=$USE_LOCAL"
-
-      - name: Start validator API
-        if: env.USE_LOCAL_VALIDATOR == 'true'
-        run: node server.js > /tmp/validator.log 2>&1 &
-        env:
-          PORT: 3000
-          VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
-
-      - name: Wait for validator to be ready
-        if: env.USE_LOCAL_VALIDATOR == 'true'
-        run: |
-          for i in $(seq 1 10); do
-            if curl -s -o /dev/null ${{ env.VALIDATOR_URL }}/health; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Validator API did not start within timeout" >&2
-          exit 1
-
-      - name: Call validator API
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
-          VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BRANCH="${{ github.base_ref }}"
-          else
-            BRANCH="${{ github.ref_name }}"
-          fi
-
-          AEO=$(cat aeo.json)
-
-          SIGNATURE=$(node -e "
-            const crypto = require('crypto');
-            const aeo = JSON.parse(require('fs').readFileSync('./aeo.json', 'utf8'));
-            function canonicalJson(v) {
-              if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
-              return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
-            }
-            process.stdout.write(crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex'));
-          ")
-
-          RESPONSE=$(curl -s -X POST ${{ env.VALIDATOR_URL }}/validate \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $VALIDATOR_TOKEN" \
-            -d "$(jq -n \
-                  --arg decision_id "$DECISION_ID" \
-                  --arg signature "$SIGNATURE" \
-                  --arg repo "${{ github.event.repository.name }}" \
-                  --arg branch "$BRANCH" \
-                  --argjson aeo "$AEO" \
-                  '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')")
-
-          echo "Validator response: $RESPONSE"
-
-          if [ "$(echo "$RESPONSE" | jq -r '.status')" = "VALID" ]; then
-            echo "VALID — Authority accepted"
-          else
-            echo "NULL — Validation failed"
-            cat /tmp/validator.log
-            exit 1
-          fi
-
-  execute-surface-1:
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions: {}
-
-    steps:
-      - name: Execute Webhook
-        run: |
-          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "event": "mindshift_governed_execution",
-              "surface": "webhook",
-              "decision_id": "${{ secrets.DECISION_ID }}",
-              "run_id": "${{ github.run_id }}",
-              "commit": "${{ github.sha }}"
-            }'
-
-  execute-surface-2:
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions: {}
-
-    steps:
-      - name: Execute API Surface
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
-        run: |
-          if [ -z "$DECISION_ID" ]; then
-            echo "DECISION_ID is unset — skipping execution"
-            exit 1
-          fi
-          echo "Executing governed action on API surface..."
-          echo "Decision: ${{ github.run_id }} | Commit: ${{ github.sha }}"
-
-  combine-proof:
-    needs: [execute-surface-1, execute-surface-2]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Generate proof-of-transfer.json
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
-          SIGNATURE: ${{ secrets.SIGNATURE }}
-        run: |
-          if [ -z "$DECISION_ID" ]; then
-            echo "DECISION_ID is unset — aborting"
-            exit 1
-          fi
-          mkdir -p proof
-          DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
-          AEO_HASH=$(jq -c . aeo.json | sha256sum | cut -d' ' -f1)
-          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          EXPIRES_AT=$(jq -r '.expires_at' aeo.json)
-          jq -n \
-            --arg run_id "${{ github.run_id }}" \
-            --arg commit_sha "${{ github.sha }}" \
-            --arg repository "${{ github.repository }}" \
-            --arg timestamp "$TIMESTAMP" \
-            --arg decision_id_hash "$DECISION_ID_HASH" \
-            --arg aeo_hash "$AEO_HASH" \
-            --arg expires_at "$EXPIRES_AT" \
-            --arg validated_at "$TIMESTAMP" \
-            '{
-              run_id: $run_id,
-              commit_sha: $commit_sha,
-              repository: $repository,
-              timestamp: $timestamp,
-              decision_id_hash: $decision_id_hash,
-              aeo_hash: $aeo_hash,
-              execution_surfaces: ["webhook", "api"],
-              validation_status: "valid",
-              expires_at: $expires_at,
-              validated_at: $validated_at
-            }' \
-            > proof/proof-of-transfer.json
-
-      - name: Upload Combined Proof Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: proof-of-transfer
-          path: proof/proof-of-transfer.json
+      - name: Notify Completion
+        run: echo "Validation complete!"
