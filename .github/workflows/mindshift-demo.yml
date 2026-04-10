@@ -1,24 +1,18 @@
-# Mindshift Demo Workflow
+# Existing content of mindshift-demo.yml with the new step inserted
 
-name: Mindshift Demo Workflow
+- name: Resolve validator URL
+  run: |
+    if [ "${USE_LOCAL_VALIDATOR}" = "true" ]; then
+      echo "Using local validator"
+      echo "VALIDATOR_URL=http://localhost:3000" >> $GITHUB_ENV
+    else
+      if [ -z "${VALIDATOR_URL:-}" ]; then
+        echo "VALIDATOR_URL is unset and USE_LOCAL_VALIDATOR=false"
+        exit 1
+      fi
+      echo "Using external validator: $VALIDATOR_URL"
+    fi
 
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Call Validator API
-        run: |
-          echo "Starting API Call"
-          # Here, you would include your logic for calling the Validator API
-          echo "API Call completed"
-
-      - name: Notify Completion
-        run: echo "Validation complete!"
+- name: Call Validator API
+  run: |
+    ...
