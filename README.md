@@ -31,9 +31,9 @@ Add the following secrets to the repository under **Settings → Secrets and var
 | `VALIDATOR_TOKEN` | Bearer token used to authenticate requests to the external validator service                  |
 
 The `validate` job in each workflow will:
-1. Call `GET $VALIDATOR_URL/health` and fail immediately if the request fails or the HTTP status is non-2xx.
+1. Call `GET $VALIDATOR_URL/health` and fail immediately if the request fails or the HTTP status is 4xx/5xx.
 2. POST the execution request to `$VALIDATOR_URL/validate` with an `Authorization: Bearer $VALIDATOR_TOKEN` header.
-3. Fail closed if the HTTP request fails or the response is anything other than `{ "status": "VALID" }`.
+3. Fail closed if the request fails or the response body is anything other than `{ "status": "VALID" }`.
 
 ## Validator API
 
