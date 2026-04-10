@@ -26,11 +26,18 @@ jobs:
 
       - name: Health check
         run: |
-          if ! curl -sf -o /dev/null "$VALIDATOR_URL/health"; then
+          HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$VALIDATOR_URL/health") || {
             echo "Validator health check failed" >&2
             exit 1
-          fi
+          }
 
+          case "$HTTP_CODE" in
+            2??) ;;
+            *)
+              echo "Validator health check failed with HTTP status $HTTP_CODE" >&2
+              exit 1
+              ;;
+          esac
       - name: Call validator API
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
