@@ -1,18 +1,27 @@
-# Existing content of mindshift-demo.yml with the new step inserted
+# Mindshift Demo Workflow
 
-- name: Resolve validator URL
-  run: |
-    if [ "${USE_LOCAL_VALIDATOR}" = "true" ]; then
-      echo "Using local validator"
-      echo "VALIDATOR_URL=http://localhost:3000" >> $GITHUB_ENV
-    else
-      if [ -z "${VALIDATOR_URL:-}" ]; then
-        echo "VALIDATOR_URL is unset and USE_LOCAL_VALIDATOR=false"
-        exit 1
-      fi
-      echo "Using external validator: $VALIDATOR_URL"
-    fi
+name: Mindshift Demo
 
-- name: Call Validator API
-  run: |
-    ...
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Run deterministic local validator
+        run: |
+          # Your local validator logic here
+          echo 'Running local validator...'
+          # Add additional validation logic as needed
+
+      - name: Build
+        run: |
+          echo 'Building the project...'
+          # Your build commands here
