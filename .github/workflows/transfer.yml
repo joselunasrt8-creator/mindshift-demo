@@ -19,6 +19,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Enforce MindShift Lock
+        run: |
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "NULL — Lock file missing"
+            exit 1
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:

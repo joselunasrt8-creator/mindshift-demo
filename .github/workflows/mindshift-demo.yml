@@ -17,6 +17,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Enforce MindShift Lock
+        run: |
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "NULL — Lock file missing"
+            exit 1
+          fi
+
       - name: Deterministic local validator
         id: validate
         shell: bash
