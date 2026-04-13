@@ -20,6 +20,8 @@ jobs:
       - name: Deterministic local validator
         id: validate
         shell: bash
+        env:
+          ACTUAL_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -53,8 +55,6 @@ jobs:
             echo "verdict=NULL" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-
-          ACTUAL_BRANCH="${{ github.base_ref || github.ref_name }}"
 
           if [ "$ACTUAL_BRANCH" != "$EXPECTED_BRANCH" ]; then
             echo "NULL — Invalid Branch"
