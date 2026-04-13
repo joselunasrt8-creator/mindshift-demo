@@ -54,7 +54,9 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ github.ref_name }}" != "$EXPECTED_BRANCH" ]; then
+          ACTUAL_BRANCH="${{ github.base_ref || github.ref_name }}"
+
+          if [ "$ACTUAL_BRANCH" != "$EXPECTED_BRANCH" ]; then
             echo "NULL — Invalid Branch"
             echo "verdict=NULL" >> "$GITHUB_OUTPUT"
             exit 1
