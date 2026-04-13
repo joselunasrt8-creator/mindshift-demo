@@ -122,8 +122,10 @@ if curl -s -o /dev/null "$CLEAN_URL/health"; then
             );
           ")"
 
-CLEAN_URL="${VALIDATOR_URL%/}"
--X POST "$CLEAN_URL/validate" \
+          CLEAN_URL="${VALIDATOR_URL%/}"
+
+          RESPONSE="$(curl --silent --show-error --write-out '\nHTTP_STATUS_CODE:%{http_code}' \
+            -X POST "$CLEAN_URL/validate" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $VALIDATOR_TOKEN" \
             -d "$(jq -n \
