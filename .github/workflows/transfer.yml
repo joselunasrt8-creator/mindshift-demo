@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
 
           for i in $(seq 1 10); do
-            if curl -s -o /dev/null "$VALIDATOR_URL/health"; then
+if curl -s -o /dev/null "${VALIDATOR_URL%/}/health"; then
               echo "Validator ready"
               exit 0
             fi
@@ -122,7 +122,7 @@ jobs:
           ")"
 
           RESPONSE="$(curl --silent --show-error --write-out '\nHTTP_STATUS_CODE:%{http_code}' \
-            -X POST "$VALIDATOR_URL/validate" \
+-X POST "${VALIDATOR_URL%/}/validate" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $VALIDATOR_TOKEN" \
             -d "$(jq -n \
