@@ -239,3 +239,11 @@ CLEAN_URL="${VALIDATOR_URL%/}"
         with:
           name: proof-of-transfer
           path: proof/proof-of-transfer.json
+
+      - name: Verify System Lock
+        run: |
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing — system drift detected"
+            exit 1
+          fi
+          echo "Lock present — baseline recorded"
