@@ -169,3 +169,14 @@ jobs:
         with:
           name: proof-of-transfer
           path: combined/proof-of-transfer.json
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify System Lock
+        run: |
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing — system drift detected"
+            exit 1
+          fi
+          echo "Lock present — baseline recorded"
