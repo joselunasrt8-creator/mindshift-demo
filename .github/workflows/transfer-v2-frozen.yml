@@ -206,11 +206,30 @@ jobs:
       - name: Write Proof-of-Transfer
         run: |
           mkdir -p proof
+
+          AEO_HASH=$(node -e "
+            const crypto = require('crypto');
+            const fs = require('fs');
+            const aeo = JSON.parse(fs.readFileSync('./aeo.json', 'utf8'));
+            function canonicalJson(v) {
+              if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
+              return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+            }
+            process.stdout.write(
+              crypto.createHash('sha256').update(canonicalJson(aeo)).digest('hex')
+            );
+          ")
+
           jq -n \
             --arg run_id "${{ github.run_id }}" \
             --arg commit "${{ github.sha }}" \
-            '{run_id: $run_id, commit: $commit, status: "VALID"}' \
-            > proof/proof.json
+            --arg aeo_hash "$AEO_HASH" \
+            '{
+              run_id: $run_id,
+              commit: $commit,
+              status: "VALID",
+              aeo_hash: $aeo_hash
+            }' > proof/proof.json
 
       - name: Validate Proof Schema
         run: |
@@ -218,6 +237,32 @@ jobs:
           ajv validate \
             -s mindshift/proof.schema.json \
             -d proof/proof.json
+
+      - name: Verify AEO Hash Binding
+        run: |
+          set -euo pipefail
+
+          EXPECTED_HASH=$(node -e "
+            const crypto = require('crypto');
+            const fs = require('fs');
+            const aeo = JSON.parse(fs.readFileSync('./aeo.json', 'utf8'));
+            function canonicalJson(v) {
+              if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
+              return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+            }
+            process.stdout.write(
+              crypto.createHash('sha256').update(canonicalJson(aeo)).digest('hex')
+            );
+          ")
+
+          PROOF_HASH=$(jq -r '.aeo_hash' proof/proof.json)
+
+          if [ "$EXPECTED_HASH" != "$PROOF_HASH" ]; then
+            echo "AEO hash mismatch"
+            exit 1
+          fi
+
+          echo "AEO hash verified"
 
       - name: Upload Proof
         uses: actions/upload-artifact@v4
