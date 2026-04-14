@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MindShift Proof-of-Transfer",
+  "type": "object",
+  "required": [
+    "run_id",
+    "commit_sha",
+    "repository",
+    "timestamp",
+    "decision_id_hash",
+    "aeo_hash",
+    "execution_surfaces",
+    "validation_status"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "commit_sha": { "type": "string" },
+    "repository": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "decision_id_hash": { "type": "string" },
+    "aeo_hash": { "type": "string" },
+    "execution_surfaces": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "validation_status": {
+      "type": "string",
+      "enum": ["VALID"]
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
