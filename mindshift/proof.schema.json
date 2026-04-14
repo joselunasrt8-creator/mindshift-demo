@@ -1,11 +1,15 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["run_id", "commit", "status"],
+  "required": ["run_id", "commit", "status", "aeo_hash"],
   "properties": {
     "run_id": { "type": "string" },
     "commit": { "type": "string" },
-    "status": { "type": "string", "enum": ["VALID"] }
+    "status": { "type": "string", "enum": ["VALID"] },
+    "aeo_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
   },
   "additionalProperties": false
 }
