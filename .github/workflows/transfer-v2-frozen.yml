@@ -211,7 +211,13 @@ jobs:
             --arg commit "${{ github.sha }}" \
             '{run_id: $run_id, commit: $commit, status: "VALID"}' \
             > proof/proof.json
+- name: Validate Proof Schema
+  run: |
+    npm install -g ajv-cli
 
+    ajv validate \
+      -s mindshift/proof.schema.json \
+      -d proof/proof.json
       - name: Upload Proof
         uses: actions/upload-artifact@v4
         with:
