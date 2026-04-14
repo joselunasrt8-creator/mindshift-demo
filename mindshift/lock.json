@@ -1,16 +1,5 @@
 {
-  "system_status": "VALID",
-  "locked_at": "",
-  "commit_sha": "",
-  "workflows": [
-    ".github/workflows/mindshift-demo.yml",
-    ".github/workflows/transfer.yml"
-  ],
-  "invariants": [
-    "Validator must return VALID or NULL only",
-    "All execution paths must pass through validator",
-    "No direct execution without validation",
-    "Proof artifact must be generated on successful execution",
-    "Branch resolution must support pull_request and main"
-  ]
+  "system": "mindshift",
+  "version": "v2",
+  "sealed": true
 }
