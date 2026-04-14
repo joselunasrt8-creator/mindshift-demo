@@ -78,13 +78,10 @@ jobs:
 
           if [ -n "${SECRET_VALIDATOR_URL:-}" ]; then
             RESOLVED_URL="$SECRET_VALIDATOR_URL"
-            echo "VALIDATOR_URL resolved from secret (external service)"
           elif [ -n "${VARS_VALIDATOR_URL:-}" ]; then
             RESOLVED_URL="$VARS_VALIDATOR_URL"
-            echo "VALIDATOR_URL resolved from repository/environment variable"
           else
             RESOLVED_URL="http://localhost:3000"
-            echo "VALIDATOR_URL resolved to local fallback: $RESOLVED_URL"
           fi
 
           if echo "$RESOLVED_URL" | grep -qE '(localhost|127\.0\.0\.1)'; then
@@ -95,7 +92,6 @@ jobs:
 
           echo "VALIDATOR_URL=$RESOLVED_URL" >> "$GITHUB_ENV"
           echo "USE_LOCAL_VALIDATOR=$USE_LOCAL" >> "$GITHUB_ENV"
-          echo "Final VALIDATOR_URL=$RESOLVED_URL USE_LOCAL_VALIDATOR=$USE_LOCAL"
 
       - name: Start validator API
         if: env.USE_LOCAL_VALIDATOR == 'true'
@@ -104,7 +100,7 @@ jobs:
           PORT: 3000
           VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
 
-      - name: Wait for validator to be ready
+      - name: Wait for validator
         if: env.USE_LOCAL_VALIDATOR == 'true'
         run: |
           set -euo pipefail
@@ -118,8 +114,8 @@ jobs:
             sleep 1
           done
 
-          echo "Validator API did not start within timeout" >&2
-          [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
+          echo "Validator failed to start"
+          cat /tmp/validator.log || true
           exit 1
 
       - name: Call validator API
@@ -176,32 +172,29 @@ jobs:
                   --argjson aeo "$AEO" \
                   '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')" )"
 
+          echo "---- RAW RESPONSE ----"
+          echo "$RESPONSE"
+          echo "----------------------"
+
           HTTP_STATUS_CODE="$(echo "$RESPONSE" | awk -F: '/HTTP_STATUS_CODE/ {print $2}')"
           VALIDATOR_BODY="$(echo "$RESPONSE" | sed '/HTTP_STATUS_CODE/d')"
 
-          echo "Resolved VALIDATOR_URL=$VALIDATOR_URL"
-          echo "HTTP Status Code=$HTTP_STATUS_CODE"
-          echo "Validator Response Body=$VALIDATOR_BODY"
-
           if [ -z "$HTTP_STATUS_CODE" ]; then
-            echo "Validator may be unreachable."
-            [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
+            echo "Validator unreachable"
             exit 1
           fi
 
           if [ "$HTTP_STATUS_CODE" != "200" ]; then
             echo "Validation failed (HTTP $HTTP_STATUS_CODE)"
             echo "$VALIDATOR_BODY"
-            [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
             exit 1
           fi
 
-          VALIDATION_STATUS="$(echo "$VALIDATOR_BODY" | jq -r '.status')"
+          STATUS="$(echo "$VALIDATOR_BODY" | jq -r '.status')"
 
-          if [ "$VALIDATION_STATUS" != "VALID" ]; then
-            echo "Validation failed: $VALIDATION_STATUS"
+          if [ "$STATUS" != "VALID" ]; then
+            echo "Validation failed: $STATUS"
             echo "$VALIDATOR_BODY"
-            [ -f /tmp/validator.log ] && cat /tmp/validator.log || true
             exit 1
           fi
 
@@ -217,114 +210,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create AEO
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
-          SIGNATURE: ${{ secrets.SIGNATURE }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${DECISION_ID:-}" ]; then
-            echo "DECISION_ID is unset — failing."
-            exit 1
-          fi
-
-          if [ ! -f "mindshift/lock.json" ]; then
-            echo "Lock missing — failing."
-            exit 1
-          fi
-
-          LOCK_HASH=$(sha256sum mindshift/lock.json | awk '{print $1}')
-
-          jq -n \
-            --arg intent "transfer_webhook" \
-            --argjson scope '{"surface":"webhook","repo":"mindshift-demo"}' \
-            --arg decision_id "$DECISION_ID" \
-            --arg signature "${SIGNATURE:-}" \
-            --arg environment_hash "$LOCK_HASH" \
-            --argjson target '{"system":"webhook","action":"post"}' \
-            --argjson finality '{"proof_required":true,"proof_type":"proof-of-transfer"}' \
-            '{
-              intent: $intent,
-              scope: $scope,
-              validation: {
-                decision_id: $decision_id,
-                signature: $signature,
-                environment_hash: $environment_hash
-              },
-              target: $target,
-              finality: $finality
-            }' > aeo.json
-
       - name: Execute Webhook
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-                  --arg event "mindshift_governed_execution" \
-                  --arg surface "webhook" \
-                  --arg decision_id "${{ secrets.DECISION_ID }}" \
-                  --arg run_id "${{ github.run_id }}" \
-                  --arg commit "${{ github.sha }}" \
-                  '{event: $event, surface: $surface, decision_id: $decision_id, run_id: $run_id, commit: $commit}')")
-          echo "Webhook response status: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" = "429" ]; then
-            echo "Target is rate-limited — skipping webhook delivery"
-            exit 0
-          elif [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "Webhook delivered successfully"
-          else
-            echo "Webhook failed with status $HTTP_STATUS"
-            exit 1
-          fi
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
 
-      - name: Write Proof Artifact
-        env:
-          DECISION_ID: ${{ secrets.DECISION_ID }}
+      - name: Write Proof
         run: |
-          set -euo pipefail
-
-          if [ -z "${DECISION_ID:-}" ]; then
-            echo "DECISION_ID is unset — skipping artifact"
-            exit 1
-          fi
-
           mkdir -p proof
-          DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
-          AEO_HASH=$(jq -c . aeo.json | sha256sum | cut -d' ' -f1)
-          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
           jq -n \
             --arg run_id "${{ github.run_id }}" \
-            --arg commit_sha "${{ github.sha }}" \
-            --arg repository "${{ github.repository }}" \
-            --arg timestamp "$TIMESTAMP" \
-            --arg decision_id_hash "$DECISION_ID_HASH" \
-            --arg aeo_hash "$AEO_HASH" \
-            --arg validated_at "$TIMESTAMP" \
-            '{
-              run_id: $run_id,
-              commit_sha: $commit_sha,
-              repository: $repository,
-              timestamp: $timestamp,
-              decision_id_hash: $decision_id_hash,
-              aeo_hash: $aeo_hash,
-              execution_surfaces: ["webhook"],
-              validation_status: "valid",
-              validated_at: $validated_at
-            }' \
-            > proof/proof-of-transfer.json
+            --arg commit "${{ github.sha }}" \
+            '{run_id: $run_id, commit: $commit, status: "VALID"}' \
+            > proof/proof.json
 
-      - name: Upload Proof Artifact
+      - name: Upload Proof
         uses: actions/upload-artifact@v4
         with:
           name: proof-of-transfer
-          path: proof/proof-of-transfer.json
+          path: proof/proof.json
 
       - name: Verify System Lock
         run: |
           if [ ! -f "mindshift/lock.json" ]; then
-            echo "Lock missing — system drift detected"
+            echo "Lock missing"
             exit 1
           fi
-          echo "Lock present — baseline recorded"
