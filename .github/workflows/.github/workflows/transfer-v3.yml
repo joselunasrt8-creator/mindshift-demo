@@ -1,0 +1,288 @@
+name: transfer-v3
+
+on:
+  workflow_dispatch:
+
+env:
+  VALIDATOR_URL: http://localhost:3000
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.validate.outputs.verdict }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create AEO
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          SIGNATURE: ${{ secrets.SIGNATURE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DECISION_ID:-}" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          LOCK_HASH=$(sha256sum mindshift/lock.json | awk '{print $1}')
+          EXPIRES_AT=$(date -u -d "+1 hour" +"%Y-%m-%dT%H:%M:%SZ")
+
+          jq -n \
+            --arg intent "multi_surface_transfer" \
+            --argjson scope '{"surfaces":["webhook-primary","webhook-secondary"],"repo":"mindshift-demo"}' \
+            --arg decision_id "$DECISION_ID" \
+            --arg signature "${SIGNATURE:-}" \
+            --arg environment_hash "$LOCK_HASH" \
+            --arg expires_at "$EXPIRES_AT" \
+            --argjson target '{"system":"multi_surface","actions":["primary_post","secondary_post"]}' \
+            --argjson finality '{"proof_required":true,"proof_type":"combined-proof-graph"}' \
+            '{
+              intent: $intent,
+              scope: $scope,
+              validation: {
+                decision_id: $decision_id,
+                signature: $signature,
+                environment_hash: $environment_hash
+              },
+              target: $target,
+              finality: $finality,
+              expires_at: $expires_at
+            }' > aeo.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install validator dependencies
+        run: npm install
+
+      - name: Resolve VALIDATOR_URL
+        env:
+          SECRET_VALIDATOR_URL: ${{ secrets.VALIDATOR_URL }}
+          VARS_VALIDATOR_URL: ${{ vars.VALIDATOR_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${SECRET_VALIDATOR_URL:-}" ]; then
+            RESOLVED_URL="$SECRET_VALIDATOR_URL"
+          elif [ -n "${VARS_VALIDATOR_URL:-}" ]; then
+            RESOLVED_URL="$VARS_VALIDATOR_URL"
+          else
+            RESOLVED_URL="http://localhost:3000"
+          fi
+
+          if echo "$RESOLVED_URL" | grep -qE '(localhost|127\.0\.0\.1)'; then
+            USE_LOCAL=true
+          else
+            USE_LOCAL=false
+          fi
+
+          echo "VALIDATOR_URL=$RESOLVED_URL" >> "$GITHUB_ENV"
+          echo "USE_LOCAL_VALIDATOR=$USE_LOCAL" >> "$GITHUB_ENV"
+
+      - name: Start validator API
+        if: env.USE_LOCAL_VALIDATOR == 'true'
+        run: node server.js > /tmp/validator.log 2>&1 &
+        env:
+          PORT: 3000
+          VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
+
+      - name: Wait for validator
+        if: env.USE_LOCAL_VALIDATOR == 'true'
+        run: |
+          set -euo pipefail
+
+          for i in $(seq 1 10); do
+            CLEAN_URL="${VALIDATOR_URL%/}"
+            if curl -s -o /dev/null "$CLEAN_URL/health"; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Validator failed to start"
+          cat /tmp/validator.log || true
+          exit 1
+
+      - name: Call validator API
+        id: validate
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          VALIDATOR_TOKEN: ${{ secrets.VALIDATOR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DECISION_ID:-}" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ -z "${VALIDATOR_TOKEN:-}" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ ! -f "aeo.json" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          AEO="$(cat aeo.json)"
+
+          SIGNATURE="$(node -e "
+            const crypto = require('crypto');
+            const fs = require('fs');
+            const aeo = JSON.parse(fs.readFileSync('./aeo.json', 'utf8'));
+            function canonicalJson(v) {
+              if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
+              return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+            }
+            process.stdout.write(
+              crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex')
+            );
+          ")"
+
+          CLEAN_URL="${VALIDATOR_URL%/}"
+
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$CLEAN_URL/validate" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $VALIDATOR_TOKEN" \
+            -d "$(jq -n \
+              --arg decision_id "$DECISION_ID" \
+              --arg signature "$SIGNATURE" \
+              --arg repo "${{ github.event.repository.name }}" \
+              --arg branch "${{ github.ref_name }}" \
+              --argjson aeo "$AEO" \
+              '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')")
+
+          HTTP_STATUS_CODE=$(echo "$RESPONSE" | awk -F: '/HTTP_STATUS/ {print $2}')
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS/d')
+
+          if [ "$HTTP_STATUS_CODE" != "200" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          STATUS=$(echo "$BODY" | jq -r '.status')
+
+          if [ "$STATUS" != "VALID" ]; then
+            echo "verdict=NULL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "verdict=VALID" >> "$GITHUB_OUTPUT"
+
+  execute-surface-1:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: needs.validate.outputs.verdict == 'VALID'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Execute primary webhook
+        run: |
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
+
+      - name: Write primary proof
+        run: |
+          mkdir -p proof
+          jq -n \
+            --arg surface "webhook-primary" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg commit "${{ github.sha }}" \
+            '{surface: $surface, run_id: $run_id, commit: $commit, status: "VALID"}' \
+            > proof/surface-1.json
+
+      - name: Upload primary proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-surface-1
+          path: proof/surface-1.json
+
+  execute-surface-2:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: needs.validate.outputs.verdict == 'VALID'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Execute secondary webhook
+        run: |
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
+
+      - name: Write secondary proof
+        run: |
+          mkdir -p proof
+          jq -n \
+            --arg surface "webhook-secondary" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg commit "${{ github.sha }}" \
+            '{surface: $surface, run_id: $run_id, commit: $commit, status: "VALID"}' \
+            > proof/surface-2.json
+
+      - name: Upload secondary proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-surface-2
+          path: proof/surface-2.json
+
+  combine-proof:
+    runs-on: ubuntu-latest
+    needs: [validate, execute-surface-1, execute-surface-2]
+    if: needs.validate.outputs.verdict == 'VALID'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download surface proofs
+        uses: actions/download-artifact@v4
+        with:
+          path: proof
+
+      - name: Write combined proof graph
+        run: |
+          mkdir -p combined
+
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg commit "${{ github.sha }}" \
+            '{
+              run_id: $run_id,
+              commit: $commit,
+              status: "VALID",
+              surfaces: [
+                "webhook-primary",
+                "webhook-secondary"
+              ]
+            }' > combined/proof-graph.json
+
+      - name: Upload combined proof graph
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-graph
+          path: combined/proof-graph.json
+
+      - name: Verify System Lock
+        run: |
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing"
+            exit 1
+          fi
+          echo "Lock present — baseline recorded"
