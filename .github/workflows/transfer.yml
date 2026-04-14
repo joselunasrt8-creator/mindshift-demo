@@ -19,50 +19,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-- name: Create AEO
-  env:
-    DECISION_ID: ${{ secrets.DECISION_ID }}
-    SIGNATURE: ${{ secrets.SIGNATURE }}
-  run: |
-    set -euo pipefail
+      - name: Create AEO
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          SIGNATURE: ${{ secrets.SIGNATURE }}
+        run: |
+          set -euo pipefail
 
-    if [ -z "${DECISION_ID:-}" ]; then
-      echo "DECISION_ID is unset — failing."
-      exit 1
-    fi
+          if [ -z "${DECISION_ID:-}" ]; then
+            echo "DECISION_ID is unset — failing."
+            exit 1
+          fi
 
-    if [ ! -f "mindshift/lock.json" ]; then
-      echo "Lock missing — failing."
-      exit 1
-    fi
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing — failing."
+            exit 1
+          fi
 
-    LOCK_HASH=$(sha256sum mindshift/lock.json | awk '{print $1}')
-    EXPIRES_AT=$(date -u -d "+1 hour" +"%Y-%m-%dT%H:%M:%SZ")
+          LOCK_HASH=$(sha256sum mindshift/lock.json | awk '{print $1}')
+          EXPIRES_AT=$(date -u -d "+1 hour" +"%Y-%m-%dT%H:%M:%SZ")
 
-    jq -n \
-      --arg intent "transfer_webhook" \
-      --argjson scope '{"surface":"webhook","repo":"mindshift-demo"}' \
-      --arg decision_id "$DECISION_ID" \
-      --arg signature "${SIGNATURE:-}" \
-      --arg environment_hash "$LOCK_HASH" \
-      --arg expires_at "$EXPIRES_AT" \
-      --argjson target '{"system":"webhook","action":"post"}' \
-      --argjson finality '{"proof_required":true,"proof_type":"proof-of-transfer"}' \
-      '{
-        intent: $intent,
-        scope: $scope,
-        validation: {
-          decision_id: $decision_id,
-          signature: $signature,
-          environment_hash: $environment_hash
-        },
-        target: $target,
-        finality: $finality,
-        expires_at: $expires_at
-      }' > aeo.json
+          jq -n \
+            --arg intent "transfer_webhook" \
+            --argjson scope '{"surface":"webhook","repo":"mindshift-demo"}' \
+            --arg decision_id "$DECISION_ID" \
+            --arg signature "${SIGNATURE:-}" \
+            --arg environment_hash "$LOCK_HASH" \
+            --arg expires_at "$EXPIRES_AT" \
+            --argjson target '{"system":"webhook","action":"post"}' \
+            --argjson finality '{"proof_required":true,"proof_type":"proof-of-transfer"}' \
+            '{
+              intent: $intent,
+              scope: $scope,
+              validation: {
+                decision_id: $decision_id,
+                signature: $signature,
+                environment_hash: $environment_hash
+              },
+              target: $target,
+              finality: $finality,
+              expires_at: $expires_at
+            }' > aeo.json
 
-    echo "AEO created:"
-    cat aeo.json
+          echo "AEO created:"
+          cat aeo.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -238,3 +238,4 @@ jobs:
             echo "Lock missing"
             exit 1
           fi
+          echo "Lock present — baseline recorded"
