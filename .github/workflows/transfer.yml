@@ -19,6 +19,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Create AEO
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          SIGNATURE: ${{ secrets.SIGNATURE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DECISION_ID:-}" ]; then
+            echo "DECISION_ID is unset — failing."
+            exit 1
+          fi
+
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing — failing."
+            exit 1
+          fi
+
+          LOCK_HASH=$(sha256sum mindshift/lock.json | awk '{print $1}')
+
+          jq -n \
+            --arg intent "transfer_webhook" \
+            --argjson scope '{"surface":"webhook","repo":"mindshift-demo"}' \
+            --arg decision_id "$DECISION_ID" \
+            --arg signature "${SIGNATURE:-}" \
+            --arg environment_hash "$LOCK_HASH" \
+            --argjson target '{"system":"webhook","action":"post"}' \
+            --argjson finality '{"proof_required":true,"proof_type":"proof-of-transfer"}' \
+            '{
+              intent: $intent,
+              scope: $scope,
+              validation: {
+                decision_id: $decision_id,
+                signature: $signature,
+                environment_hash: $environment_hash
+              },
+              target: $target,
+              finality: $finality
+            }' > aeo.json
+
+          echo "AEO created:"
+          cat aeo.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -68,8 +110,8 @@ jobs:
           set -euo pipefail
 
           for i in $(seq 1 10); do
-CLEAN_URL="${VALIDATOR_URL%/}"
-if curl -s -o /dev/null "$CLEAN_URL/health"; then
+            CLEAN_URL="${VALIDATOR_URL%/}"
+            if curl -s -o /dev/null "$CLEAN_URL/health"; then
               echo "Validator ready"
               exit 0
             fi
@@ -122,8 +164,8 @@ if curl -s -o /dev/null "$CLEAN_URL/health"; then
             );
           ")"
 
-CLEAN_URL="${VALIDATOR_URL%/}"
--X POST "$CLEAN_URL/validate" \
+          CLEAN_URL="${VALIDATOR_URL%/}"
+          RESPONSE="$(curl -s -w "\nHTTP_STATUS_CODE:%{http_code}" -X POST "$CLEAN_URL/validate" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $VALIDATOR_TOKEN" \
             -d "$(jq -n \
@@ -175,6 +217,45 @@ CLEAN_URL="${VALIDATOR_URL%/}"
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Create AEO
+        env:
+          DECISION_ID: ${{ secrets.DECISION_ID }}
+          SIGNATURE: ${{ secrets.SIGNATURE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DECISION_ID:-}" ]; then
+            echo "DECISION_ID is unset — failing."
+            exit 1
+          fi
+
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing — failing."
+            exit 1
+          fi
+
+          LOCK_HASH=$(sha256sum mindshift/lock.json | awk '{print $1}')
+
+          jq -n \
+            --arg intent "transfer_webhook" \
+            --argjson scope '{"surface":"webhook","repo":"mindshift-demo"}' \
+            --arg decision_id "$DECISION_ID" \
+            --arg signature "${SIGNATURE:-}" \
+            --arg environment_hash "$LOCK_HASH" \
+            --argjson target '{"system":"webhook","action":"post"}' \
+            --argjson finality '{"proof_required":true,"proof_type":"proof-of-transfer"}' \
+            '{
+              intent: $intent,
+              scope: $scope,
+              validation: {
+                decision_id: $decision_id,
+                signature: $signature,
+                environment_hash: $environment_hash
+              },
+              target: $target,
+              finality: $finality
+            }' > aeo.json
+
       - name: Execute Webhook
         run: |
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0" \
@@ -200,17 +281,19 @@ CLEAN_URL="${VALIDATOR_URL%/}"
       - name: Write Proof Artifact
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
-          SIGNATURE: ${{ secrets.SIGNATURE }}
         run: |
-          if [ -z "$DECISION_ID" ]; then
+          set -euo pipefail
+
+          if [ -z "${DECISION_ID:-}" ]; then
             echo "DECISION_ID is unset — skipping artifact"
             exit 1
           fi
+
           mkdir -p proof
           DECISION_ID_HASH=$(echo -n "$DECISION_ID" | sha256sum | cut -d' ' -f1)
           AEO_HASH=$(jq -c . aeo.json | sha256sum | cut -d' ' -f1)
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          EXPIRES_AT=$(jq -r '.expires_at' aeo.json)
+
           jq -n \
             --arg run_id "${{ github.run_id }}" \
             --arg commit_sha "${{ github.sha }}" \
@@ -218,7 +301,6 @@ CLEAN_URL="${VALIDATOR_URL%/}"
             --arg timestamp "$TIMESTAMP" \
             --arg decision_id_hash "$DECISION_ID_HASH" \
             --arg aeo_hash "$AEO_HASH" \
-            --arg expires_at "$EXPIRES_AT" \
             --arg validated_at "$TIMESTAMP" \
             '{
               run_id: $run_id,
@@ -229,7 +311,6 @@ CLEAN_URL="${VALIDATOR_URL%/}"
               aeo_hash: $aeo_hash,
               execution_surfaces: ["webhook"],
               validation_status: "valid",
-              expires_at: $expires_at,
               validated_at: $validated_at
             }' \
             > proof/proof-of-transfer.json
