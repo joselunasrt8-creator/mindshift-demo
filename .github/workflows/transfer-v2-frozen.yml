@@ -24,9 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # -----------------------------
-      # AEO CONSTRUCTION (FROZEN)
-      # -----------------------------
       - name: Create AEO
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
@@ -69,9 +66,6 @@ jobs:
               expires_at: $expires_at
             }' > aeo.json
 
-      # -----------------------------
-      # VALIDATOR PREP
-      # -----------------------------
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -128,9 +122,6 @@ jobs:
           cat /tmp/validator.log || true
           exit 1
 
-      # -----------------------------
-      # Ω VALIDATION
-      # -----------------------------
       - name: Call validator API
         id: validate
         env:
@@ -199,41 +190,38 @@ jobs:
 
           echo "verdict=VALID" >> "$GITHUB_OUTPUT"
 
-  # -----------------------------
-  # CONDUIT EXECUTION
-  # -----------------------------
-transfer:
-  runs-on: ubuntu-latest
-  needs: validate
-  if: needs.validate.outputs.verdict == 'VALID'
+  transfer:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: needs.validate.outputs.verdict == 'VALID'
 
-  steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Execute webhook
-      run: |
-        curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
+      - name: Execute webhook
+        run: |
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
 
-    - name: Write Proof-of-Transfer
-      run: |
-        mkdir -p proof
-        jq -n \
-          --arg run_id "${{ github.run_id }}" \
-          --arg commit "${{ github.sha }}" \
-          '{run_id: $run_id, commit: $commit, status: "VALID"}' \
-          > proof/proof.json
+      - name: Write Proof-of-Transfer
+        run: |
+          mkdir -p proof
+          jq -n \
+            --arg run_id "${{ github.run_id }}" \
+            --arg commit "${{ github.sha }}" \
+            '{run_id: $run_id, commit: $commit, status: "VALID"}' \
+            > proof/proof.json
 
-    - name: Upload Proof
-      uses: actions/upload-artifact@v4
-      with:
-        name: proof-of-transfer
-        path: proof/proof.json
+      - name: Upload Proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-of-transfer
+          path: proof/proof.json
 
-    - name: Verify System Lock
-      run: |
-        if [ ! -f "mindshift/lock.json" ]; then
-          echo "Lock missing"
-          exit 1
-        fi
-        echo "Lock present — baseline recorded"
+      - name: Verify System Lock
+        run: |
+          if [ ! -f "mindshift/lock.json" ]; then
+            echo "Lock missing"
+            exit 1
+          fi
+          echo "Lock present — baseline recorded"
