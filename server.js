@@ -1,123 +1,58 @@
-'use strict';
-
-const crypto = require('crypto');
 const express = require('express');
-const registry = require('./registry');
-const app = express();
-const PORT = process.env.PORT || 3000;
-const VALIDATOR_TOKEN = process.env.VALIDATOR_TOKEN;
+const crypto = require('crypto');
 
+const app = express();
 app.use(express.json());
 
-const healthHandler = (req, res) => res.status(200).json({ status: 'ok' });
+const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.VALIDATOR_TOKEN || "dev-token";
 
-app.get('/', healthHandler);
-app.get('/health', healthHandler);
-
-const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality', 'expires_at'];
-
-/**
- * Produce a canonical JSON string with keys sorted alphabetically at every
- * level of nesting. This eliminates any dependency on key-insertion order so
- * the same logical object always produces the same byte sequence.
- * Whitespace is intentionally omitted to keep the representation compact and
- * byte-for-byte deterministic across all JSON serializers.
- */
-function canonicalJson(value) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return JSON.stringify(value);
+function canonicalJson(v) {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+    return JSON.stringify(v);
   }
-  const keys = Object.keys(value).sort();
-  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
+  return '{' + Object.keys(v).sort().map(k =>
+    JSON.stringify(k) + ':' + canonicalJson(v[k])
+  ).join(',') + '}';
 }
 
+app.get('/health', (req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.post('/validate', (req, res) => {
-  const requestTimestamp = new Date().toISOString();
+  const auth = req.headers.authorization || "";
 
-  const authHeader = req.headers['authorization'] || '';
-  const bearerMatch = authHeader.match(/^\s*Bearer\s+(.+?)\s*$/i);
-  const token = bearerMatch ? bearerMatch[1].trim() : null;
-  if (!VALIDATOR_TOKEN || token !== VALIDATOR_TOKEN) {
-    console.log(JSON.stringify({ event: 'validate_request', timestamp: requestTimestamp, status: 'UNAUTHORIZED', reason: 'Missing or invalid Authorization token' }));
-    return res.status(401).json({ status: 'UNAUTHORIZED', reason: 'Missing or invalid Authorization token' });
+  if (auth !== `Bearer ${TOKEN}`) {
+    return res.status(401).json({ status: "NULL", reason: "Invalid token" });
   }
 
-  const { decision_id, signature, repo, branch, aeo } = req.body || {};
+  const { decision_id, signature, aeo } = req.body;
 
-  const logAndRespond = (httpStatus, body) => {
-    console.log(JSON.stringify({
-      event: 'validate_request',
-      timestamp: requestTimestamp,
-      decision_id: decision_id || null,
-      repo: repo || null,
-      branch: branch || null,
-      status: body.status,
-      reason: body.reason || null,
-    }));
-    if (decision_id && body.status !== 'UNAUTHORIZED') {
-      registry.recordValidation(decision_id, body.status, body.reason || null, requestTimestamp);
-      if (body.status === 'VALID' && aeo) {
-        const aeoHash = crypto.createHash('sha256').update(canonicalJson(aeo)).digest('hex');
-        registry.recordDecision(decision_id, aeoHash, requestTimestamp);
-      }
-    }
-    return res.status(httpStatus).json(body);
-  };
-
-  if (!decision_id || decision_id !== 'MS-DEMO-DEPLOY-001') {
-    return logAndRespond(200, { status: 'NULL', reason: 'Invalid or missing decision_id' });
+  if (!decision_id) {
+    return res.json({ status: "NULL", reason: "Missing decision_id" });
   }
 
-  if (!repo || repo !== 'mindshift-demo') {
-    return logAndRespond(200, { status: 'NULL', reason: 'Invalid or missing repo' });
+  if (!aeo) {
+    return res.json({ status: "NULL", reason: "Missing AEO" });
   }
 
-  if (!branch || branch !== 'main') {
-    return logAndRespond(200, { status: 'NULL', reason: 'Invalid or missing branch' });
+  if (!aeo.expires_at) {
+    return res.json({ status: "NULL", reason: "Missing aeo field: expires_at" });
   }
 
-  if (!aeo || typeof aeo !== 'object' || Array.isArray(aeo)) {
-    return logAndRespond(200, { status: 'NULL', reason: 'Missing or invalid aeo' });
-  }
-
-  if (!signature) {
-    return logAndRespond(200, { status: 'NULL', reason: 'Missing signature' });
-  }
-
-  const expectedSignature = crypto
+  const computed = crypto
     .createHash('sha256')
     .update(decision_id + canonicalJson(aeo))
     .digest('hex');
 
-  if (signature !== expectedSignature) {
-    return logAndRespond(200, { status: 'NULL', reason: 'Signature verification failed' });
+  if (signature !== computed) {
+    return res.json({ status: "NULL", reason: "Invalid signature" });
   }
 
-  for (const field of REQUIRED_AEO_FIELDS) {
-    if (aeo[field] == null || aeo[field] === '') {
-      return logAndRespond(200, { status: 'NULL', reason: `Missing aeo field: ${field}` });
-    }
-  }
-
-  if (typeof aeo.expires_at !== 'string') {
-    return logAndRespond(200, { status: 'NULL', reason: 'Invalid expires_at: must be a string' });
-  }
-
-  const expiresAt = new Date(aeo.expires_at);
-  if (isNaN(expiresAt.getTime())) {
-    return logAndRespond(200, { status: 'NULL', reason: 'Invalid expires_at: not a valid ISO 8601 date' });
-  }
-
-  if (Date.now() >= expiresAt.getTime()) {
-    return logAndRespond(200, { status: 'NULL', reason: 'AEO has expired' });
-  }
-
-  return logAndRespond(200, { status: 'VALID' });
+  return res.json({ status: "VALID" });
 });
 
 app.listen(PORT, () => {
-  if (!VALIDATOR_TOKEN) {
-    console.warn('WARNING: VALIDATOR_TOKEN is not set — all /validate requests will be rejected with 401');
-  }
-  console.log(`Validator API running on port ${PORT}`);
+  console.log(`Validator running on port ${PORT}`);
 });
