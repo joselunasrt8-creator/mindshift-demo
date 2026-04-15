@@ -1,0 +1,77 @@
+name: dispatcher-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      decision_id:
+        description: "Decision ID"
+        required: true
+        type: string
+      signature:
+        description: "Signature"
+        required: true
+        type: string
+      payload:
+        description: "Stringified JSON payload"
+        required: true
+        type: string
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate dispatcher inputs
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{ inputs.decision_id }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ -z "${{ inputs.signature }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ -z "${{ inputs.payload }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+      - name: Trigger governed target workflow
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "governed-dispatch-target.yml",
+              ref: "main",
+              inputs: {
+                decision_id: "${{ inputs.decision_id }}",
+                signature: "${{ inputs.signature }}",
+                payload: `${{ inputs.payload }}`
+              }
+            });
+
+      - name: Record dispatcher proof
+        run: |
+          mkdir -p dispatcher-proof
+          cat > dispatcher-proof/dispatcher.json <<EOF
+          {
+            "decision_id": "${{ inputs.decision_id }}",
+            "signature": "${{ inputs.signature }}",
+            "run_id": "${{ github.run_id }}",
+            "repo": "${{ github.repository }}",
+            "status": "DISPATCHED"
+          }
+          EOF
+
+      - name: Upload dispatcher proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatcher-proof
+          path: dispatcher-proof/dispatcher.json
