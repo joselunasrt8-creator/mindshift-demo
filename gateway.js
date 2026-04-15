@@ -24,7 +24,6 @@ if (!BRANCH_NAME) {
   process.exit(1);
 }
 
-// Internal allowlist: target_key -> actual target URL
 const ALLOWED_TARGETS = {
   'api-production': 'https://api.example.com/execute',
   'api-staging': 'https://staging.api.example.com/execute',
@@ -49,14 +48,12 @@ const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finalit
 app.post('/execute', async (req, res) => {
   const body = req.body || {};
 
-  // Validate required top-level fields
   for (const field of REQUIRED_TOP_FIELDS) {
     if (body[field] == null) {
       return res.status(400).json({ error: `Missing required field: ${field}` });
     }
   }
 
-  // Validate required aeo sub-fields
   const aeo = body.aeo;
   if (typeof aeo !== 'object' || Array.isArray(aeo)) {
     return res.status(400).json({ error: 'Invalid aeo: must be an object' });
@@ -68,13 +65,11 @@ app.post('/execute', async (req, res) => {
     }
   }
 
-  // Resolve target URL from allowlist
   const targetUrl = ALLOWED_TARGETS[body.target_key];
   if (!targetUrl) {
     return res.status(400).json({ error: `Unknown target_key: ${body.target_key}` });
   }
 
-  // Call the validator
   let validatorStatus;
   try {
     const validatorResponse = await axios.post(`${VALIDATOR_URL}/validate`, {
@@ -94,7 +89,6 @@ app.post('/execute', async (req, res) => {
     return res.status(502).json({ error: 'Validator request failed' });
   }
 
-  // Fail closed if not VALID
   if (validatorStatus !== 'VALID') {
     return res.status(403).json({
       error: 'Request not authorized by validator',
@@ -102,7 +96,6 @@ app.post('/execute', async (req, res) => {
     });
   }
 
-  // Compute exact object hash (bind execution to validated object)
   const aeoHash = crypto
     .createHash('sha256')
     .update(body.decision_id + canonicalJson(body.aeo))
@@ -110,7 +103,6 @@ app.post('/execute', async (req, res) => {
 
   const timestamp = new Date().toISOString();
 
-  // Record execution with exact object binding
   registry.recordExecution(
     body.decision_id,
     body.target_key,
@@ -123,12 +115,10 @@ app.post('/execute', async (req, res) => {
     timestamp
   );
 
-  // Forward to allowlisted target (actual execution)
   try {
     const targetResponse = await axios.post(targetUrl, body);
 
     if (targetResponse.status >= 200 && targetResponse.status < 300) {
-      // IMPORTANT: NO proof here anymore
       return res.status(200).json({
         executed: true,
         result: "VALID",
@@ -155,6 +145,159 @@ app.post('/execute', async (req, res) => {
       error: 'Target request failed'
     });
   }
+});
+
+app.post('/proof', async (req, res) => {
+  const body = req.body || {};
+  const { decision_id, surface, proof } = body;
+
+  if (!decision_id) {
+    return res.status(400).json({
+      recorded: false,
+      result: 'NULL',
+      reason: 'missing_decision_id'
+    });
+  }
+
+  if (!surface) {
+    return res.status(400).json({
+      recorded: false,
+      result: 'NULL',
+      reason: 'missing_surface'
+    });
+  }
+
+  if (!proof || typeof proof !== 'object') {
+    return res.status(400).json({
+      recorded: false,
+      result: 'NULL',
+      reason: 'missing_proof'
+    });
+  }
+
+  if (!proof.proof_type) {
+    return res.status(400).json({
+      recorded: false,
+      result: 'NULL',
+      reason: 'missing_proof_type'
+    });
+  }
+
+  if (!proof.proof_reference) {
+    return res.status(400).json({
+      recorded: false,
+      result: 'NULL',
+      reason: 'missing_proof_reference'
+    });
+  }
+
+  if (!proof.observed_at) {
+    return res.status(400).json({
+      recorded: false,
+      result: 'NULL',
+      reason: 'missing_observed_at'
+    });
+  }
+
+  // Requires registry helper
+  registry.getLatestExecutionByDecision(decision_id, (err, execution) => {
+    if (err) {
+      console.error(JSON.stringify({
+        event: 'proof_lookup_error',
+        error: err.message,
+        timestamp: new Date().toISOString()
+      }));
+      return res.status(500).json({
+        recorded: false,
+        result: 'NULL',
+        reason: 'execution_lookup_failed'
+      });
+    }
+
+    if (!execution) {
+      return res.status(404).json({
+        recorded: false,
+        result: 'NULL',
+        reason: 'missing_execution'
+      });
+    }
+
+    if (surface !== execution.surface) {
+      return res.status(409).json({
+        recorded: false,
+        result: 'NULL',
+        reason: 'surface_mismatch'
+      });
+    }
+
+    if (proof.proof_type !== execution.proof_type) {
+      return res.status(409).json({
+        recorded: false,
+        result: 'NULL',
+        reason: 'proof_type_mismatch'
+      });
+    }
+
+    // Requires registry helper
+    registry.getProofByExecutionId(execution.id, (dupErr, existingProof) => {
+      if (dupErr) {
+        console.error(JSON.stringify({
+          event: 'proof_replay_check_error',
+          error: dupErr.message,
+          timestamp: new Date().toISOString()
+        }));
+        return res.status(500).json({
+          recorded: false,
+          result: 'NULL',
+          reason: 'proof_replay_check_failed'
+        });
+      }
+
+      if (existingProof) {
+        return res.status(409).json({
+          recorded: false,
+          result: 'NULL',
+          reason: 'duplicate_proof'
+        });
+      }
+
+      const proofHash = crypto
+        .createHash('sha256')
+        .update(
+          decision_id +
+          execution.aeo_hash +
+          surface +
+          proof.proof_type +
+          proof.proof_reference +
+          proof.observed_at
+        )
+        .digest('hex');
+
+      const timestamp = new Date().toISOString();
+
+      registry.recordProof(
+        decision_id,
+        execution.id,
+        surface,
+        proof.proof_type,
+        proofHash,
+        timestamp
+      );
+
+      return res.status(200).json({
+        recorded: true,
+        result: 'VALID',
+        decision_id,
+        execution_id: execution.id,
+        surface,
+        proof_type: proof.proof_type,
+        proof_hash: proofHash,
+        status: 'CONFIRMED',
+        finality: 'CLOSED',
+        recorded_at: timestamp
+      });
+    });
+  });
 });
 
 app.listen(PORT, () => {
