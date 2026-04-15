@@ -1,13 +1,13 @@
 {
   "decision_id": "decision-001",
-  "intent": "dispatch-test",
+  "intent": "transfer_webhook",
   "scope": {
-    "surface": "github_actions"
+    "surface": "webhook",
+    "repo": "mindshift-demo"
   },
   "target": {
-    "system": "github_actions",
-    "workflow": "governed-dispatch-target.yml",
-    "ref": "main"
+    "system": "webhook",
+    "action": "post"
   },
   "finality": {
     "proof_required": true,
