@@ -187,6 +187,10 @@ jobs:
           cp runtime-output/surface-3-summary.json proof-surface-3.json
           cat proof-surface-3.json
 
+      - name: Execute Surface 4 External Observer
+        run: |
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0?surface=4&observer=external"
+
       - name: Write Proof
         run: |
           mkdir -p proof
@@ -212,6 +216,11 @@ jobs:
                   surface: "repo_write_file",
                   status: "EXECUTED",
                   type: "repository_artifact"
+                },
+                {
+                  surface: "external_observer_webhook",
+                  status: "EXECUTED",
+                  type: "external_observer"
                 }
               ]
             }' \
