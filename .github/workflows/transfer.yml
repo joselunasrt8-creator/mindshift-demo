@@ -165,9 +165,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Execute Webhook
+      - name: Execute Webhook Surface 1
         run: |
           curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
+
+      - name: Execute Webhook Surface 2
+        run: |
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0?surface=2"
 
       - name: Write Proof
         run: |
@@ -175,7 +179,21 @@ jobs:
           jq -n \
             --arg run_id "${{ github.run_id }}" \
             --arg commit "${{ github.sha }}" \
-            '{run_id: $run_id, commit: $commit, status: "VALID"}' \
+            '{
+              run_id: $run_id,
+              commit: $commit,
+              status: "VALID",
+              surfaces: [
+                {
+                  surface: "webhook_surface_1",
+                  status: "EXECUTED"
+                },
+                {
+                  surface: "webhook_surface_2",
+                  status: "EXECUTED"
+                }
+              ]
+            }' \
             > proof/proof.json
 
       - name: Upload Proof
