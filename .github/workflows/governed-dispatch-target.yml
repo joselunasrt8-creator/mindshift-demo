@@ -1,0 +1,83 @@
+# STATUS: ACTIVE
+# PURPOSE: Conduit receiver for governed dispatch execution
+# NOTE: This workflow only executes when triggered by a validated external dispatcher
+
+name: governed-dispatch-target
+
+on:
+  workflow_dispatch:
+    inputs:
+      decision_id:
+        description: "Authority Decision ID"
+        required: true
+      signature:
+        description: "Authority Signature"
+        required: true
+      payload:
+        description: "Execution payload (stringified JSON)"
+        required: true
+
+jobs:
+  receive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Inputs Exist
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{ github.event.inputs.decision_id }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.inputs.signature }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.inputs.payload }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+      - name: Parse Payload
+        id: payload
+        run: |
+          set -euo pipefail
+          echo '${{ github.event.inputs.payload }}' > payload.json
+
+      - name: Surface Execution (Example)
+        run: |
+          set -euo pipefail
+
+          echo "Executing governed action"
+          cat payload.json
+
+          # Example action — replace with real surface
+          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
+
+      - name: Write Proof-of-Transfer
+        run: |
+          set -euo pipefail
+
+          mkdir -p proof
+
+          jq -n \
+            --arg decision_id "${{ github.event.inputs.decision_id }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg repo "${{ github.repository }}" \
+            --arg commit "${{ github.sha }}" \
+            '{
+              decision_id: $decision_id,
+              run_id: $run_id,
+              repo: $repo,
+              commit: $commit,
+              status: "VALID"
+            }' > proof/proof.json
+
+      - name: Upload Proof Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-of-transfer
+          path: proof/proof.json
