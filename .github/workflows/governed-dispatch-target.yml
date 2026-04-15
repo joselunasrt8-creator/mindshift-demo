@@ -1,42 +1,43 @@
 # STATUS: ACTIVE
 # PURPOSE: Conduit receiver for governed dispatch execution
-# NOTE: This workflow only executes when triggered by a validated external dispatcher
+# NOTE: Executes only when triggered by validated repository_dispatch from MindShift boundary
 
 name: governed-dispatch-target
 
 on:
-  workflow_dispatch:
-    inputs:
-      decision_id:
-        description: "Authority Decision ID"
-        required: true
-      signature:
-        description: "Authority Signature"
-        required: true
-      payload:
-        description: "Execution payload (stringified JSON)"
-        required: true
+  repository_dispatch:
+    types: [mindshift_execute]
 
 jobs:
   receive:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Validate Inputs Exist
+      - name: Enforce MindShift dispatch
         run: |
           set -euo pipefail
 
-          if [ -z "${{ github.event.inputs.decision_id }}" ]; then
+          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
             echo "NULL"
             exit 1
           fi
 
-          if [ -z "${{ github.event.inputs.signature }}" ]; then
+          if [ "${{ github.event.action }}" != "mindshift_execute" ]; then
             echo "NULL"
             exit 1
           fi
 
-          if [ -z "${{ github.event.inputs.payload }}" ]; then
+          if [ -z "${{ github.event.client_payload.decision_id }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.client_payload.signature }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.client_payload.payload }}" ]; then
             echo "NULL"
             exit 1
           fi
@@ -45,7 +46,7 @@ jobs:
         id: payload
         run: |
           set -euo pipefail
-          echo '${{ github.event.inputs.payload }}' > payload.json
+          echo '${{ toJson(github.event.client_payload.payload) }}' > payload.json
 
       - name: Surface Execution (Example)
         run: |
@@ -64,7 +65,7 @@ jobs:
           mkdir -p proof
 
           jq -n \
-            --arg decision_id "${{ github.event.inputs.decision_id }}" \
+            --arg decision_id "${{ github.event.client_payload.decision_id }}" \
             --arg run_id "${{ github.run_id }}" \
             --arg repo "${{ github.repository }}" \
             --arg commit "${{ github.sha }}" \
