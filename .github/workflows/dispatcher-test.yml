@@ -16,6 +16,10 @@ on:
         required: true
         type: string
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   dispatch:
     runs-on: ubuntu-latest
