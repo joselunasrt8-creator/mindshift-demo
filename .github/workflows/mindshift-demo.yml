@@ -1,11 +1,8 @@
 name: Mindshift Demo
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-  workflow_dispatch:
+  repository_dispatch:
+    types: [mindshift_execute]
 
 jobs:
   validate:
@@ -14,6 +11,26 @@ jobs:
       verdict: ${{ steps.validate.outputs.verdict }}
       decision_id: ${{ steps.validate.outputs.decision_id }}
     steps:
+      - name: Enforce MindShift dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
+            echo "Invalid trigger"
+            exit 1
+          fi
+
+          if [ "${{ github.event.action }}" != "mindshift_execute" ]; then
+            echo "Invalid action"
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.client_payload.decision_id }}" ]; then
+            echo "Missing decision_id"
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -21,12 +38,12 @@ jobs:
         id: validate
         shell: bash
         env:
-          ACTUAL_BRANCH: ${{ github.base_ref || github.ref_name }}
+          ACTUAL_BRANCH: ${{ github.event.client_payload.branch || github.ref_name }}
         run: |
           set -euo pipefail
 
-          DECISION_ID="${{ secrets.DECISION_ID }}"
-          SIGNATURE="${{ secrets.SIGNATURE }}"
+          DECISION_ID="${{ github.event.client_payload.decision_id }}"
+          SIGNATURE="${{ github.event.client_payload.signature }}"
           EXPECTED_DECISION_ID="MS-DEMO-DEPLOY-001"
           EXPECTED_SIGNATURE="demo-signature-v1"
           EXPECTED_BRANCH="main"
