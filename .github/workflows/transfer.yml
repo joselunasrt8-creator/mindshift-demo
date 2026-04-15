@@ -22,7 +22,6 @@ jobs:
       - name: Create AEO
         env:
           DECISION_ID: ${{ secrets.DECISION_ID }}
-          SIGNATURE: ${{ secrets.SIGNATURE }}
         run: |
           set -euo pipefail
 
@@ -43,7 +42,6 @@ jobs:
             --arg intent "transfer_webhook" \
             --argjson scope '{"surface":"webhook","repo":"mindshift-demo"}' \
             --arg decision_id "$DECISION_ID" \
-            --arg signature "${SIGNATURE:-}" \
             --arg environment_hash "$LOCK_HASH" \
             --arg expires_at "$EXPIRES_AT" \
             --argjson target '{"system":"webhook","action":"post"}' \
@@ -53,7 +51,7 @@ jobs:
               scope: $scope,
               validation: {
                 decision_id: $decision_id,
-                signature: $signature,
+                signature: "",
                 environment_hash: $environment_hash
               },
               target: $target,
@@ -148,20 +146,38 @@ jobs:
             exit 1
           fi
 
-          AEO="$(cat aeo.json)"
-
           SIGNATURE="$(node -e "
             const crypto = require('crypto');
             const fs = require('fs');
             const aeo = JSON.parse(fs.readFileSync('./aeo.json', 'utf8'));
+
             function canonicalJson(v) {
-              if (v === null || typeof v !== 'object' || Array.isArray(v)) return JSON.stringify(v);
-              return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
+              if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+                return JSON.stringify(v);
+              }
+              return '{' + Object.keys(v).sort().map(k =>
+                JSON.stringify(k) + ':' + canonicalJson(v[k])
+              ).join(',') + '}';
             }
+
+            if (!aeo.validation) {
+              aeo.validation = {};
+            }
+
+            aeo.validation.signature = '';
+
             process.stdout.write(
-              crypto.createHash('sha256').update(process.env.DECISION_ID + canonicalJson(aeo)).digest('hex')
+              crypto
+                .createHash('sha256')
+                .update(process.env.DECISION_ID + canonicalJson(aeo))
+                .digest('hex')
             );
           ")"
+
+          jq --arg sig "$SIGNATURE" '.validation.signature = $sig' aeo.json > aeo.tmp.json
+          mv aeo.tmp.json aeo.json
+
+          AEO="$(cat aeo.json)"
 
           CLEAN_URL="${VALIDATOR_URL%/}"
           RESPONSE="$(curl -s -w "\nHTTP_STATUS_CODE:%{http_code}" -X POST "$CLEAN_URL/validate" \
