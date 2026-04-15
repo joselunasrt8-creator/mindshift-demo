@@ -1,0 +1,42 @@
+name: compile-decision
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compile decision into AEO
+        run: node compile-decision.js
+
+      - name: Show compiled files
+        run: |
+          echo "decision.json"
+          cat decision.json
+          echo ""
+          echo "aeo.json"
+          cat aeo.json
+          echo ""
+          echo "signature.txt"
+          cat signature.txt
+
+      - name: Upload compiled artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-decision
+          path: |
+            decision.json
+            aeo.json
+            signature.txt
