@@ -1,10 +1,8 @@
 name: transfer
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  repository_dispatch:
+    types: [mindshift_execute]
 
 env:
   VALIDATOR_URL: http://localhost:3000
@@ -16,6 +14,26 @@ jobs:
       contents: read
 
     steps:
+      - name: Enforce MindShift dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
+            echo "Invalid trigger"
+            exit 1
+          fi
+
+          if [ "${{ github.event.action }}" != "mindshift_execute" ]; then
+            echo "Invalid action"
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.client_payload.decision_id }}" ]; then
+            echo "Missing decision_id"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -105,15 +123,20 @@ jobs:
             exit 1
           fi
 
-          DECISION_ID="$(jq -r '.validation.decision_id' aeo.json)"
+          DECISION_ID="${{ github.event.client_payload.decision_id }}"
+          SIGNATURE="${{ github.event.client_payload.signature }}"
 
-          if [ -z "$DECISION_ID" ] || [ "$DECISION_ID" = "null" ]; then
+          if [ -z "$DECISION_ID" ]; then
             echo "Compiled decision_id missing — failing."
             exit 1
           fi
 
+          if [ -z "$SIGNATURE" ]; then
+            echo "Signature missing — failing."
+            exit 1
+          fi
+
           AEO="$(cat aeo.json)"
-          SIGNATURE="$(cat signature.txt | tr -d '\n')"
 
           CLEAN_URL="${VALIDATOR_URL%/}"
           RESPONSE="$(curl -s -w "\nHTTP_STATUS_CODE:%{http_code}" -X POST "$CLEAN_URL/validate" \
@@ -123,7 +146,7 @@ jobs:
                   --arg decision_id "$DECISION_ID" \
                   --arg signature "$SIGNATURE" \
                   --arg repo "${{ github.event.repository.name }}" \
-                  --arg branch "${{ github.ref_name }}" \
+                  --arg branch "${{ github.event.client_payload.branch || github.ref_name }}" \
                   --argjson aeo "$AEO" \
                   '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')" )"
 
