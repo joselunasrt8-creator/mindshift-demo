@@ -44,11 +44,65 @@ jobs:
             exit 1
           fi
 
+      - name: Build AEO
+        run: |
+          set -euo pipefail
+
+          mkdir -p runtime
+
+          cat > runtime/aeo.json <<EOF
+          {
+            "intent": "dispatch-test",
+            "scope": {
+              "surface": "github_actions"
+            },
+            "validation": {
+              "decision_id": "${{ inputs.decision_id }}",
+              "signature": "${{ inputs.signature }}"
+            },
+            "target": {
+              "system": "github_actions",
+              "workflow": "governed-dispatch-target.yml",
+              "ref": "main"
+            },
+            "finality": {
+              "proof_required": true,
+              "proof_type": "proof-of-transfer"
+            }
+          }
+          EOF
+
+          cat runtime/aeo.json
+
+      - name: Omega validation
+        run: |
+          set -euo pipefail
+
+          if ! jq -e '.intent and .scope and .validation and .target and .finality' runtime/aeo.json > /dev/null; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ "$(jq -r '.validation.decision_id' runtime/aeo.json)" != "${{ inputs.decision_id }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          if [ "$(jq -r '.validation.signature' runtime/aeo.json)" != "${{ inputs.signature }}" ]; then
+            echo "NULL"
+            exit 1
+          fi
+
+          echo "VALID"
+
       - name: Trigger governed target workflow
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const aeo = JSON.parse(fs.readFileSync('runtime/aeo.json', 'utf8'));
+
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -57,7 +111,7 @@ jobs:
               inputs: {
                 decision_id: "${{ inputs.decision_id }}",
                 signature: "${{ inputs.signature }}",
-                payload: `${{ inputs.payload }}`
+                payload: JSON.stringify(aeo)
               }
             });
 
