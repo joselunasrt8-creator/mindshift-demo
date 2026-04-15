@@ -172,7 +172,18 @@ jobs:
       - name: Execute Webhook Surface 2
         run: |
           curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0?surface=2"
-
+      - name: Execute Surface 3 Summary Artifact
+        run: |
+          mkdir -p runtime-output
+          cat > runtime-output/surface-3-summary.json <<EOF
+          {
+            "surface": "runtime_output_file",
+            "status": "EXECUTED",
+            "run_id": "${{ github.run_id }}",
+            "commit": "${{ github.sha }}"
+          }
+          EOF
+          cat runtime-output/surface-3-summary.json
       - name: Write Proof
         run: |
           mkdir -p proof
@@ -191,6 +202,10 @@ jobs:
                 {
                   surface: "webhook_surface_2",
                   status: "EXECUTED"
+                },
+                {
+                  surface: "runtime_output_file",
+                  status: "EXECUTED"
                 }
               ]
             }' \
@@ -200,7 +215,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: proof-of-transfer
-          path: proof/proof.json
+          path: |
+            proof/proof.json
+            runtime-output/surface-3-summary.json
 
       - name: Verify System Lock
         run: |
