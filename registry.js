@@ -12,14 +12,12 @@ function getDb() {
     db = new sqlite3.Database(DB_PATH);
     db.serialize(() => {
 
-      // Decisions (authority → object binding)
       db.run(`CREATE TABLE IF NOT EXISTS decisions (
         decision_id TEXT PRIMARY KEY,
         aeo_hash    TEXT NOT NULL,
         created_at  TEXT NOT NULL
       )`);
 
-      // Validation events (VALID / NULL)
       db.run(`CREATE TABLE IF NOT EXISTS validation_events (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         decision_id TEXT NOT NULL,
@@ -28,7 +26,6 @@ function getDb() {
         timestamp   TEXT NOT NULL
       )`);
 
-      // Execution events (NOW includes aeo_hash + proof_type)
       db.run(`CREATE TABLE IF NOT EXISTS execution_events (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         decision_id TEXT NOT NULL,
@@ -41,7 +38,6 @@ function getDb() {
         timestamp   TEXT NOT NULL
       )`);
 
-      // Proof records (NOW bound to execution + surface + type)
       db.run(`CREATE TABLE IF NOT EXISTS proof_records (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         decision_id  TEXT NOT NULL,
@@ -57,9 +53,6 @@ function getDb() {
   return db;
 }
 
-/**
- * Record decision (authority → object binding)
- */
 function recordDecision(decision_id, aeo_hash, timestamp) {
   getDb().run(
     'INSERT OR IGNORE INTO decisions (decision_id, aeo_hash, created_at) VALUES (?, ?, ?)',
@@ -67,9 +60,6 @@ function recordDecision(decision_id, aeo_hash, timestamp) {
   );
 }
 
-/**
- * Record validation result
- */
 function recordValidation(decision_id, result, reason, timestamp) {
   getDb().run(
     'INSERT INTO validation_events (decision_id, result, reason, timestamp) VALUES (?, ?, ?, ?)',
@@ -77,9 +67,6 @@ function recordValidation(decision_id, result, reason, timestamp) {
   );
 }
 
-/**
- * Record execution (now binds exact object hash)
- */
 function recordExecution(decision_id, surface, run_id, commit_sha, aeo_hash, proof_type, timestamp) {
   getDb().run(
     `INSERT INTO execution_events 
@@ -89,9 +76,6 @@ function recordExecution(decision_id, surface, run_id, commit_sha, aeo_hash, pro
   );
 }
 
-/**
- * Record proof (finality layer)
- */
 function recordProof(decision_id, execution_id, surface, proof_type, proof_hash, timestamp) {
   getDb().run(
     `INSERT INTO proof_records 
@@ -101,9 +85,38 @@ function recordProof(decision_id, execution_id, surface, proof_type, proof_hash,
   );
 }
 
+// NEW: get latest execution for a decision
+function getLatestExecutionByDecision(decision_id, callback) {
+  getDb().get(
+    `SELECT id, decision_id, surface, run_id, commit_sha, aeo_hash, proof_type, status, timestamp
+     FROM execution_events
+     WHERE decision_id = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [decision_id],
+    callback
+  );
+}
+
+// NEW: check if proof already exists (replay protection)
+function getProofByExecutionId(execution_id, callback) {
+  getDb().get(
+    `SELECT id, decision_id, execution_id, surface, proof_type, proof_hash, status, timestamp
+     FROM proof_records
+     WHERE execution_id = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [execution_id],
+    callback
+  );
+}
+
 module.exports = {
+  getDb,
   recordDecision,
   recordValidation,
   recordExecution,
-  recordProof
+  recordProof,
+  getLatestExecutionByDecision,
+  getProofByExecutionId
 };
