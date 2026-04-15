@@ -34,6 +34,15 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
+function canonicalJson(v) {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+    return JSON.stringify(v);
+  }
+  return '{' + Object.keys(v).sort().map(k =>
+    JSON.stringify(k) + ':' + canonicalJson(v[k])
+  ).join(',') + '}';
+}
+
 const REQUIRED_TOP_FIELDS = ['decision_id', 'signature', 'target_key', 'aeo', 'run_id', 'commit_sha'];
 const REQUIRED_AEO_FIELDS = ['intent', 'scope', 'validation', 'target', 'finality'];
 
@@ -52,6 +61,7 @@ app.post('/execute', async (req, res) => {
   if (typeof aeo !== 'object' || Array.isArray(aeo)) {
     return res.status(400).json({ error: 'Invalid aeo: must be an object' });
   }
+
   for (const field of REQUIRED_AEO_FIELDS) {
     if (aeo[field] == null) {
       return res.status(400).json({ error: `Missing required aeo field: ${field}` });
@@ -76,45 +86,74 @@ app.post('/execute', async (req, res) => {
     });
     validatorStatus = validatorResponse.data && validatorResponse.data.status;
   } catch (err) {
-    console.error(JSON.stringify({ event: 'validator_error', error: err.message, timestamp: new Date().toISOString() }));
+    console.error(JSON.stringify({
+      event: 'validator_error',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    }));
     return res.status(502).json({ error: 'Validator request failed' });
   }
 
-  // Log the execution record
-  const record = {
-    event: 'execution_attempt',
-    run_id: body.run_id,
-    commit_sha: body.commit_sha,
-    decision_id: body.decision_id,
-    repo: REPO_NAME,
-    branch: BRANCH_NAME,
-    target_key: body.target_key,
-    validator_status: validatorStatus,
-    timestamp: new Date().toISOString(),
-  };
-  console.log(JSON.stringify(record));
-  registry.recordExecution(body.decision_id, body.target_key, body.run_id, body.commit_sha, record.timestamp);
-
-  // Fail closed on non-VALID response
+  // Fail closed if not VALID
   if (validatorStatus !== 'VALID') {
-    return res.status(403).json({ error: 'Request not authorized by validator', validator_status: validatorStatus });
+    return res.status(403).json({
+      error: 'Request not authorized by validator',
+      validator_status: validatorStatus
+    });
   }
 
-  // Forward to the allowlisted target
+  // Compute exact object hash (bind execution to validated object)
+  const aeoHash = crypto
+    .createHash('sha256')
+    .update(body.decision_id + canonicalJson(body.aeo))
+    .digest('hex');
+
+  const timestamp = new Date().toISOString();
+
+  // Record execution with exact object binding
+  registry.recordExecution(
+    body.decision_id,
+    body.target_key,
+    body.run_id,
+    body.commit_sha,
+    aeoHash,
+    body.aeo.finality && body.aeo.finality.proof_type
+      ? body.aeo.finality.proof_type
+      : null,
+    timestamp
+  );
+
+  // Forward to allowlisted target (actual execution)
   try {
     const targetResponse = await axios.post(targetUrl, body);
+
     if (targetResponse.status >= 200 && targetResponse.status < 300) {
-      const proofHash = crypto
-        .createHash('sha256')
-        .update(body.decision_id + record.timestamp)
-        .digest('hex');
-      registry.recordProof(body.decision_id, proofHash, record.timestamp);
-      return res.status(targetResponse.status).json(targetResponse.data);
+      // IMPORTANT: NO proof here anymore
+      return res.status(200).json({
+        executed: true,
+        result: "VALID",
+        decision_id: body.decision_id,
+        surface: body.target_key,
+        run_id: body.run_id,
+        commit_sha: body.commit_sha,
+        aeo_hash: aeoHash,
+        status: "EXECUTED",
+        timestamp
+      });
     }
-    return res.status(502).json({ error: 'Target returned an unexpected response' });
+
+    return res.status(502).json({
+      error: 'Target returned an unexpected response'
+    });
   } catch (err) {
-    console.error(JSON.stringify({ event: 'target_error', error: err.message, timestamp: new Date().toISOString() }));
-    return res.status(502).json({ error: 'Target request failed' });
+    console.error(JSON.stringify({
+      event: 'target_error',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    }));
+    return res.status(502).json({
+      error: 'Target request failed'
+    });
   }
 });
 
