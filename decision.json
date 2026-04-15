@@ -1,0 +1,19 @@
+{
+  "decision_id": "decision-001",
+  "intent": "dispatch-test",
+  "scope": {
+    "surface": "github_actions"
+  },
+  "target": {
+    "system": "github_actions",
+    "workflow": "governed-dispatch-target.yml",
+    "ref": "main"
+  },
+  "finality": {
+    "proof_required": true,
+    "proof_type": "proof-of-transfer"
+  },
+  "approved_by": "human",
+  "timestamp": "2026-04-15T00:00:00Z",
+  "expires_at": "2026-12-31T00:00:00Z"
+}
