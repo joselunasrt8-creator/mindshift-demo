@@ -1,3 +1,4 @@
-name = "mindshift-demo"
+# wrangler.toml
+name = '1mindshift-demo'
 main = "worker.js"
 compatibility_date = "2026-04-16"
