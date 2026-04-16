@@ -1,4 +1,5 @@
-name = "twilight-dew-00d0"
+# wrangler.toml
+name = 'mindshift-demo1'
 main = "worker.js"
 compatibility_date = "2026-04-16"
 workers_dev = true
