@@ -1,6 +1,19 @@
 name: transfer
 
 on:
+  workflow_dispatch:
+    inputs:
+      decision_id:
+        description: "Decision ID"
+        required: true
+      signature:
+        description: "Signature"
+        required: true
+      branch:
+        description: "Branch"
+        required: false
+        default: "main"
+
   repository_dispatch:
     types: [mindshift_execute]
 
@@ -14,24 +27,26 @@ jobs:
       contents: read
 
     steps:
-      - name: Enforce MindShift dispatch
+      - name: Enforce MindShift trigger
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
-            echo "Invalid trigger"
-            exit 1
-          fi
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            if [ "${{ github.event.action }}" != "mindshift_execute" ]; then
+              echo "Invalid action"
+              exit 1
+            fi
 
-          if [ "${{ github.event.action }}" != "mindshift_execute" ]; then
-            echo "Invalid action"
-            exit 1
-          fi
+            if [ -z "${{ github.event.client_payload.decision_id }}" ]; then
+              echo "Missing decision_id"
+              exit 1
+            fi
 
-          if [ -z "${{ github.event.client_payload.decision_id }}" ]; then
-            echo "Missing decision_id"
-            exit 1
+            if [ -z "${{ github.event.client_payload.signature }}" ]; then
+              echo "Missing signature"
+              exit 1
+            fi
           fi
 
       - name: Checkout
@@ -47,6 +62,21 @@ jobs:
 
       - name: Compile decision into AEO
         run: node compile-decision.js
+
+      - name: Resolve runtime inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "RUNTIME_DECISION_ID=${{ github.event.client_payload.decision_id }}" >> "$GITHUB_ENV"
+            echo "RUNTIME_SIGNATURE=${{ github.event.client_payload.signature }}" >> "$GITHUB_ENV"
+            echo "RUNTIME_BRANCH=${{ github.event.client_payload.branch }}" >> "$GITHUB_ENV"
+          else
+            echo "RUNTIME_DECISION_ID=${{ inputs.decision_id }}" >> "$GITHUB_ENV"
+            echo "RUNTIME_SIGNATURE=${{ inputs.signature }}" >> "$GITHUB_ENV"
+            echo "RUNTIME_BRANCH=${{ inputs.branch }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Resolve VALIDATOR_URL
         env:
@@ -118,21 +148,17 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "signature.txt" ]; then
-            echo "signature.txt not found — failing."
-            exit 1
-          fi
-
-          DECISION_ID="${{ github.event.client_payload.decision_id }}"
-          SIGNATURE="${{ github.event.client_payload.signature }}"
+          DECISION_ID="${RUNTIME_DECISION_ID:-}"
+          SIGNATURE="${RUNTIME_SIGNATURE:-}"
+          BRANCH="${RUNTIME_BRANCH:-main}"
 
           if [ -z "$DECISION_ID" ]; then
-            echo "Compiled decision_id missing — failing."
+            echo "decision_id missing — failing."
             exit 1
           fi
 
           if [ -z "$SIGNATURE" ]; then
-            echo "Signature missing — failing."
+            echo "signature missing — failing."
             exit 1
           fi
 
@@ -146,7 +172,7 @@ jobs:
                   --arg decision_id "$DECISION_ID" \
                   --arg signature "$SIGNATURE" \
                   --arg repo "${{ github.event.repository.name }}" \
-                  --arg branch "${{ github.event.client_payload.branch || github.ref_name }}" \
+                  --arg branch "$BRANCH" \
                   --argjson aeo "$AEO" \
                   '{decision_id: $decision_id, signature: $signature, repo: $repo, branch: $branch, aeo: $aeo}')" )"
 
