@@ -3,3 +3,9 @@ name = 'mindshift-demo1'
 main = "worker.js"
 compatibility_date = "2026-04-16"
 workers_dev = true
+name = "your-worker-name"
+main = "src/index.js"
+compatibility_date = "2026-04-16"
+
+[vars]
+VALIDATOR_URL = "https://your-validator-domain.com"
