@@ -1,3 +1,8 @@
 name = "mindshift-worker"
 main = "index.ts"
 compatibility_date = "2026-04-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mindshift-demo"
+database_id = "replace-with-your-d1-database-id"
