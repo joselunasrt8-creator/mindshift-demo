@@ -1,3 +1,102 @@
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  })
+}
+
+async function readJson(request: Request): Promise<any | null> {
+  try {
+    return await request.json()
+  } catch {
+    return null
+  }
+}
+
+function buildAuthority(body: any) {
+  return {
+    authority_id: crypto.randomUUID(),
+    decision_id: body.decision_id || crypto.randomUUID(),
+    owner: body.owner || "unknown",
+    intent: body.intent || "unspecified",
+    scope: body.scope || {},
+    constraints: body.constraints || {},
+    status: "AUTHORIZED"
+  }
+}
+
+function buildAeo(authority: any) {
+  return {
+    aeo_id: crypto.randomUUID(),
+    decision_id: authority.decision_id,
+    intent: authority.intent,
+    scope: authority.scope,
+    validation: {
+      authority_id: authority.authority_id
+    },
+    target: {
+      system: "webhook",
+      action: "send"
+    },
+    finality: {
+      proof_required: true
+    },
+    status: "COMPILED"
+  }
+}
+
+function buildValidation(aeo: any) {
+  return {
+    validation_id: crypto.randomUUID(),
+    aeo_id: aeo.aeo_id,
+    decision_id: aeo.decision_id,
+    intent: aeo.intent,
+    result: "VALID",
+    status: "VALIDATED"
+  }
+}
+
+async function executeWebhook(webhookUrl: string, decisionId: string, intent: string) {
+  const executionId = crypto.randomUUID()
+  const timestamp = new Date().toISOString()
+
+  try {
+    const upstream = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision_id: decisionId,
+        intent,
+        timestamp,
+        source: "mindshift-demo"
+      })
+    })
+
+    return {
+      execution_id: executionId,
+      status: upstream.ok ? "EXECUTED" : "FAILED",
+      webhook_url: webhookUrl,
+      upstream_status: upstream.status
+    }
+  } catch (error: any) {
+    return {
+      execution_id: executionId,
+      status: "FAILED",
+      webhook_url: webhookUrl,
+      upstream_status: null,
+      error: error?.message || "Webhook request failed"
+    }
+  }
+}
+
+function buildProof(execution: any) {
+  return {
+    proof_id: crypto.randomUUID(),
+    execution_id: execution.execution_id,
+    status: execution.status === "EXECUTED" ? "RECORDED" : "SKIPPED"
+  }
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
@@ -7,127 +106,117 @@ export default {
       return new Response("MindShift Runtime Live")
     }
 
-    // 🔥 FULL FLOW TEST (NO TOOLS NEEDED)
-    if (url.pathname === "/test-flow") {
-      const authority = {
-        decision_id: crypto.randomUUID(),
-        owner: "browser_test",
-        intent: "test_run",
-        scope: {},
-        constraints: {},
-        status: "ACTIVE"
+    // Simple local webhook sink used by /browser-test
+    if (url.pathname === "/webhook-test" && request.method === "POST") {
+      const payload = await readJson(request)
+      if (!payload) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON payload" }, 400)
       }
 
-      const aeo = {
-        intent: authority.intent,
-        scope: authority.scope,
-        validation: {
-          decision_id: authority.decision_id
-        },
-        target: {
-          system: "test",
-          action: "simulate"
-        },
-        finality: {
-          proof_required: true
-        }
-      }
-
-      const validation = {
-        validation_id: crypto.randomUUID(),
-        result: "VALID"
-      }
-
-      const execution = {
-        execution_id: crypto.randomUUID(),
-        status: "EXECUTED"
-      }
-
-      const proof = {
-        proof_id: crypto.randomUUID(),
-        status: "RECORDED"
-      }
-
-      return new Response(JSON.stringify({
-        step_1_authority: authority,
-        step_2_aeo: aeo,
-        step_3_validation: validation,
-        step_4_execution: execution,
-        step_5_proof: proof
-      }, null, 2), {
-        headers: { "Content-Type": "application/json" }
+      return jsonResponse({
+        status: "OK",
+        received: payload
       })
     }
 
     // AUTHORITY
     if (url.pathname === "/authority" && request.method === "POST") {
-      const body = await request.json()
-
-      const authority = {
-        decision_id: crypto.randomUUID(),
-        owner: body.owner || "unknown",
-        intent: body.intent || "unspecified",
-        scope: body.scope || {},
-        constraints: body.constraints || {},
-        status: "ACTIVE"
+      const body = await readJson(request)
+      if (!body) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      return new Response(JSON.stringify(authority), {
-        headers: { "Content-Type": "application/json" }
-      })
+      const authority = buildAuthority(body)
+      return jsonResponse(authority)
     }
 
     // COMPILE
     if (url.pathname === "/compile" && request.method === "POST") {
-      const body = await request.json()
-
-      const aeo = {
-        intent: body.intent || "unknown",
-        scope: body.scope || {},
-        validation: {
-          decision_id: body.decision_id || "none"
-        },
-        target: {
-          system: "webhook",
-          action: "send"
-        },
-        finality: {
-          proof_required: true
-        }
+      const body = await readJson(request)
+      if (!body) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      return new Response(JSON.stringify(aeo), {
-        headers: { "Content-Type": "application/json" }
-      })
+      const authority = buildAuthority(body)
+      const aeo = buildAeo(authority)
+      return jsonResponse(aeo)
     }
 
     // VALIDATE
     if (url.pathname === "/validate" && request.method === "POST") {
-      return new Response(JSON.stringify({
-        validation_id: crypto.randomUUID(),
-        result: "VALID"
-      }), {
-        headers: { "Content-Type": "application/json" }
-      })
+      const body = await readJson(request)
+      if (!body) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      }
+
+      const authority = buildAuthority(body)
+      const aeo = buildAeo(authority)
+      const validation = buildValidation(aeo)
+      return jsonResponse(validation)
     }
 
-    // EXECUTE
+    // EXECUTE (real webhook execution)
     if (url.pathname === "/execute" && request.method === "POST") {
-      return new Response(JSON.stringify({
-        execution_id: crypto.randomUUID(),
-        status: "EXECUTED"
-      }), {
-        headers: { "Content-Type": "application/json" }
-      })
+      const body = await readJson(request)
+      if (!body) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      }
+
+      if (!body.webhook_url) {
+        return jsonResponse({ status: "FAILED", error: "Missing webhook_url" }, 400)
+      }
+
+      if (!body.decision_id) {
+        return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
+      }
+
+      if (!body.intent) {
+        return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
+      }
+
+      const execution = await executeWebhook(body.webhook_url, body.decision_id, body.intent)
+      const statusCode = execution.status === "FAILED" ? 502 : 200
+      return jsonResponse(execution, statusCode)
     }
 
     // PROOF
     if (url.pathname === "/proof" && request.method === "POST") {
-      return new Response(JSON.stringify({
-        proof_id: crypto.randomUUID(),
-        status: "RECORDED"
-      }), {
-        headers: { "Content-Type": "application/json" }
+      const body = await readJson(request)
+      if (!body) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      }
+
+      const execution = {
+        execution_id: body.execution_id || crypto.randomUUID(),
+        status: body.status || "EXECUTED"
+      }
+
+      const proof = buildProof(execution)
+      return jsonResponse(proof)
+    }
+
+    // Browser end-to-end demo route
+    if (url.pathname === "/browser-test" && request.method === "GET") {
+      const authority = buildAuthority({
+        owner: "browser_test",
+        intent: "demo_run",
+        scope: { mode: "demo" },
+        constraints: { safe: true }
+      })
+
+      const aeo = buildAeo(authority)
+      const validation = buildValidation(aeo)
+
+      const webhookUrl = `${url.origin}/webhook-test`
+      const execution = await executeWebhook(webhookUrl, authority.decision_id, authority.intent)
+      const proof = buildProof(execution)
+
+      return jsonResponse({
+        authority,
+        aeo,
+        validation,
+        execution,
+        proof
       })
     }
 
