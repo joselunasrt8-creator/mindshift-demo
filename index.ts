@@ -5,6 +5,8 @@ function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
+const EXECUTION_WEBHOOK_URL = "https://webhook.site/7957d61a-a8bf-4738-a5e6-e8c25a881642"
+
 async function readJson(request: Request): Promise<any | null> {
   try {
     return await request.json()
@@ -56,12 +58,12 @@ function buildValidation(aeo: any) {
   }
 }
 
-async function executeWebhook(webhookUrl: string, decisionId: string, intent: string) {
+async function executeWebhook(decisionId: string, intent: string) {
   const executionId = crypto.randomUUID()
   const timestamp = new Date().toISOString()
 
   try {
-    const upstream = await fetch(webhookUrl, {
+    const upstream = await fetch(EXECUTION_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -75,14 +77,14 @@ async function executeWebhook(webhookUrl: string, decisionId: string, intent: st
     return {
       execution_id: executionId,
       status: upstream.ok ? "EXECUTED" : "FAILED",
-      webhook_url: webhookUrl,
+      webhook_url: EXECUTION_WEBHOOK_URL,
       upstream_status: upstream.status
     }
   } catch (error: any) {
     return {
       execution_id: executionId,
       status: "FAILED",
-      webhook_url: webhookUrl,
+      webhook_url: EXECUTION_WEBHOOK_URL,
       upstream_status: null,
       error: error?.message || "Webhook request failed"
     }
@@ -104,19 +106,6 @@ export default {
     // Root
     if (url.pathname === "/") {
       return new Response("MindShift Runtime Live")
-    }
-
-    // Simple local webhook sink used by /browser-test
-    if (url.pathname === "/webhook-test" && request.method === "POST") {
-      const payload = await readJson(request)
-      if (!payload) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON payload" }, 400)
-      }
-
-      return jsonResponse({
-        status: "OK",
-        received: payload
-      })
     }
 
     // AUTHORITY
@@ -162,10 +151,6 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      if (!body.webhook_url) {
-        return jsonResponse({ status: "FAILED", error: "Missing webhook_url" }, 400)
-      }
-
       if (!body.decision_id) {
         return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
       }
@@ -174,7 +159,7 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      const execution = await executeWebhook(body.webhook_url, body.decision_id, body.intent)
+      const execution = await executeWebhook(body.decision_id, body.intent)
       const statusCode = execution.status === "FAILED" ? 502 : 200
       return jsonResponse(execution, statusCode)
     }
@@ -207,8 +192,7 @@ export default {
       const aeo = buildAeo(authority)
       const validation = buildValidation(aeo)
 
-      const webhookUrl = `${url.origin}/webhook-test`
-      const execution = await executeWebhook(webhookUrl, authority.decision_id, authority.intent)
+      const execution = await executeWebhook(authority.decision_id, authority.intent)
       const proof = buildProof(execution)
 
       return jsonResponse({
