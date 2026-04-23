@@ -6,10 +6,16 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 const EXECUTION_WEBHOOK_URL = "https://webhook.site/7957d61a-a8bf-4738-a5e6-e8c25a881642"
+const SIMULATED_SURFACE = "simulated_surface"
 
 // Cloudflare Worker environment bindings.
 type Env = {
   DB: D1Database
+}
+
+type TargetInput = {
+  system: string
+  action: string
 }
 
 async function readJson(request: Request): Promise<any | null> {
@@ -69,6 +75,24 @@ function buildValidation(aeo: any) {
   }
 }
 
+function isExactObject(value: unknown) {
+  // Guardrail: runtime only accepts plain objects to preserve exact-object discipline.
+  return Boolean(value && typeof value === "object" && !Array.isArray(value))
+}
+
+function hasOnlyKeys(body: Record<string, unknown>, allowedKeys: string[]) {
+  // Fail closed when unknown top-level keys are supplied.
+  return Object.keys(body).every((key) => allowedKeys.includes(key))
+}
+
+function normalizeTarget(body: Record<string, any>): TargetInput {
+  // Default target keeps older clients working while allowing new simulated surface.
+  return {
+    system: body.target?.system || "webhook",
+    action: body.target?.action || "send"
+  }
+}
+
 async function findAuthorityByDecisionId(env: Env, decisionId: string) {
   // Look up the latest authority row for a decision so /validate can trust stored data.
   return env.DB.prepare("SELECT * FROM authorities WHERE decision_id = ?1 ORDER BY rowid DESC LIMIT 1")
@@ -114,42 +138,7 @@ async function saveAuthority(env: Env, authority: any) {
     .run()
 }
 
-async function executeWebhook(env: Env, decisionId: string, intent: string) {
-  // Execute the webhook and always write an execution record to D1.
-  const executionId = crypto.randomUUID()
-  const timestamp = new Date().toISOString()
-  let status = "FAILED"
-  let upstreamStatus: number | null = null
-
-  try {
-    const upstream = await fetch(EXECUTION_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        execution_id: executionId,
-        decision_id: decisionId,
-        intent,
-        timestamp,
-        source: "mindshift-demo"
-      })
-    })
-
-    status = upstream.ok ? "EXECUTED" : "FAILED"
-    upstreamStatus = upstream.status
-  } catch {
-    status = "FAILED"
-  }
-
-  const execution = {
-    execution_id: executionId,
-    decision_id: decisionId,
-    intent,
-    webhook_url: EXECUTION_WEBHOOK_URL,
-    upstream_status: upstreamStatus,
-    status,
-    timestamp
-  }
-
+async function saveExecution(env: Env, execution: any) {
   await env.DB.prepare(
     `INSERT INTO executions (
       execution_id,
@@ -171,8 +160,83 @@ async function executeWebhook(env: Env, decisionId: string, intent: string) {
       execution.timestamp
     )
     .run()
+}
 
+async function executeWebhook(env: Env, decisionId: string, intent: string, target: TargetInput) {
+  // Execute the webhook and always write an execution record to D1.
+  const executionId = crypto.randomUUID()
+  const timestamp = new Date().toISOString()
+  let status = "FAILED"
+  let upstreamStatus: number | null = null
+
+  try {
+    const upstream = await fetch(EXECUTION_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        execution_id: executionId,
+        decision_id: decisionId,
+        intent,
+        target,
+        timestamp,
+        source: "mindshift-demo"
+      })
+    })
+
+    status = upstream.ok ? "EXECUTED" : "FAILED"
+    upstreamStatus = upstream.status
+  } catch {
+    status = "FAILED"
+  }
+
+  const execution = {
+    execution_id: executionId,
+    decision_id: decisionId,
+    intent,
+    webhook_url: EXECUTION_WEBHOOK_URL,
+    upstream_status: upstreamStatus,
+    status,
+    timestamp,
+    surface: "webhook",
+    result: {
+      message: status === "EXECUTED" ? "Webhook execution completed" : "Webhook execution failed",
+      target_system: target.system,
+      target_action: target.action
+    }
+  }
+
+  await saveExecution(env, execution)
   return execution
+}
+
+async function executeSimulated(env: Env, decisionId: string, intent: string, target: TargetInput) {
+  // Simulated mode never touches an external system; it writes a structured fake result.
+  const execution = {
+    execution_id: crypto.randomUUID(),
+    decision_id: decisionId,
+    intent,
+    webhook_url: `${SIMULATED_SURFACE}://${target.action}`,
+    upstream_status: null,
+    status: "EXECUTED",
+    timestamp: new Date().toISOString(),
+    surface: SIMULATED_SURFACE,
+    result: {
+      message: "Simulated execution completed",
+      target_system: target.system,
+      target_action: target.action
+    }
+  }
+
+  await saveExecution(env, execution)
+
+  return {
+    execution_id: execution.execution_id,
+    decision_id: execution.decision_id,
+    surface: execution.surface,
+    status: execution.status,
+    result: execution.result,
+    timestamp: execution.timestamp
+  }
 }
 
 function buildProof(body: any, execution: any) {
@@ -365,8 +429,19 @@ export default {
 
     if (url.pathname === "/execute" && request.method === "POST") {
       const body = await readJson(request)
-      if (!body) {
+      if (!isExactObject(body)) {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      }
+
+      const allowedKeys = ["decision_id", "intent", "scope", "target", "finality"]
+      if (!hasOnlyKeys(body, allowedKeys)) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "Unknown fields in /execute body. Allowed fields: decision_id, intent, scope, target, finality"
+          },
+          400
+        )
       }
 
       if (!body.decision_id) {
@@ -377,7 +452,21 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      // Fail closed: if authority is missing or invalid in D1, do not execute webhook.
+      const target = normalizeTarget(body)
+      const allowedSystems = ["webhook", "github_actions", SIMULATED_SURFACE]
+      if (!allowedSystems.includes(target.system)) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            decision_id: body.decision_id,
+            result: "NOT_EXECUTED",
+            message: `Unsupported target.system '${target.system}'.`
+          },
+          400
+        )
+      }
+
+      // Fail closed: if authority is missing or invalid in D1, do not execute any target.
       const authority = await findAuthorityByDecisionId(env, body.decision_id)
       if (!authority) {
         return jsonResponse(
@@ -409,11 +498,31 @@ export default {
       }
 
       try {
-        const execution = await executeWebhook(env, body.decision_id, body.intent)
+        let execution
+
+        // Conduit branch: each target system maps to a distinct execution surface.
+        if (target.system === SIMULATED_SURFACE) {
+          execution = await executeSimulated(env, body.decision_id, body.intent, target)
+        } else if (target.system === "webhook") {
+          execution = await executeWebhook(env, body.decision_id, body.intent, target)
+        } else {
+          // Placeholder for future GitHub Actions adapter.
+          return jsonResponse(
+            {
+              status: "FAILED",
+              decision_id: body.decision_id,
+              result: "NOT_EXECUTED",
+              message: "github_actions adapter is not configured in this demo Worker yet."
+            },
+            501
+          )
+        }
+
         if (execution.status === "EXECUTED") {
           // Consume authority only after successful execution.
           await consumeAuthority(env, body.decision_id)
         }
+
         const statusCode = execution.status === "FAILED" ? 502 : 200
         return jsonResponse(execution, statusCode)
       } catch (error: any) {
@@ -423,7 +532,7 @@ export default {
             status: "FAILED",
             decision_id: body.decision_id,
             result: "NOT_EXECUTED",
-            message: "Execution failed while processing webhook or database write.",
+            message: "Execution failed while processing target adapter or database write.",
             error: error?.message || "Unknown execution error"
           },
           500
@@ -448,7 +557,7 @@ export default {
         return jsonResponse(
           {
             status: "FAILED",
-            error: "Unknown execution_id. Run /execute first so proof is tied to a real webhook execution."
+            error: "Unknown execution_id. Run /execute first so proof is tied to a real execution."
           },
           404
         )
@@ -464,9 +573,73 @@ export default {
         )
       }
 
+      // For simulated executions, enforce the simulated proof reference format.
+      if (body.surface === SIMULATED_SURFACE && body.proof_reference !== `simulated://${body.execution_id}`) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "Simulated proofs must use proof_reference format simulated://<execution_id>"
+          },
+          400
+        )
+      }
+
       const proof = buildProof(body, execution)
       await saveProof(env, proof)
       return jsonResponse(proof)
+    }
+
+    if (url.pathname === "/simulate-test" && request.method === "GET") {
+      // Step 1: Authority (entry point for governed intent).
+      const step1Authority = buildAuthority({
+        owner: "simulate_test",
+        decision_id: `decision-${crypto.randomUUID()}`,
+        intent: "deploy_service",
+        scope: { service: "api", environment: "staging" },
+        constraints: { safe: true }
+      })
+      await saveAuthority(env, step1Authority)
+
+      // Step 2: Compile (authority -> AEO).
+      const step2Aeo = buildAeo(step1Authority)
+
+      // Step 3: Validate (VALID | NULL discipline).
+      const step3Validation = buildValidation(step2Aeo)
+
+      // Step 4: Execute against simulated surface (no external call).
+      const step4Execution = await executeSimulated(env, step2Aeo.decision_id, step2Aeo.intent, {
+        system: SIMULATED_SURFACE,
+        action: "deploy"
+      })
+      await consumeAuthority(env, step2Aeo.decision_id)
+
+      // Step 5: Proof-of-transfer for simulated execution.
+      const step5Proof = buildProof(
+        {
+          execution_id: step4Execution.execution_id,
+          decision_id: step4Execution.decision_id,
+          surface: SIMULATED_SURFACE,
+          proof_reference: `simulated://${step4Execution.execution_id}`
+        },
+        step4Execution
+      )
+      await saveProof(env, step5Proof)
+
+      const persistence = await recordsSavedForRun(
+        env,
+        step1Authority.decision_id,
+        step4Execution.execution_id,
+        step5Proof.proof_id
+      )
+
+      return jsonResponse({
+        step_1_authority: step1Authority,
+        step_2_compile: step2Aeo,
+        step_3_validate: step3Validation,
+        step_4_execute: step4Execution,
+        step_5_proof: step5Proof,
+        persistence
+      })
     }
 
     if (url.pathname === "/browser-test" && request.method === "GET") {
@@ -481,7 +654,10 @@ export default {
 
       const step2Aeo = buildAeo(step1Authority)
       const step3Validation = buildValidation(step2Aeo)
-      const step4Execution = await executeWebhook(env, step3Validation.decision_id, step3Validation.intent)
+      const step4Execution = await executeWebhook(env, step3Validation.decision_id, step3Validation.intent, {
+        system: "webhook",
+        action: "send"
+      })
 
       const step5Proof = buildProof(
         {
