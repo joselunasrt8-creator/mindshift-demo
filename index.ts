@@ -7,20 +7,9 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 const EXECUTION_WEBHOOK_URL = "https://webhook.site/7957d61a-a8bf-4738-a5e6-e8c25a881642"
 
-// Beginner-friendly in-memory execution log.
-// This lets /proof verify that an execution_id came from a real /execute webhook call.
-const executionRecords = new Map<
-  string,
-  {
-    execution_id: string
-    status: string
-    webhook_url: string
-    upstream_status: number | null
-    timestamp: string
-    decision_id: string
-    intent: string
-  }
->()
+type Env = {
+  DB: D1Database
+}
 
 async function readJson(request: Request): Promise<any | null> {
   try {
@@ -38,7 +27,8 @@ function buildAuthority(body: any) {
     intent: body.intent || "unspecified",
     scope: body.scope || {},
     constraints: body.constraints || {},
-    status: "AUTHORIZED"
+    status: "AUTHORIZED",
+    created_at: new Date().toISOString()
   }
 }
 
@@ -75,9 +65,35 @@ function buildValidation(aeo: any) {
   }
 }
 
-async function executeWebhook(decisionId: string, intent: string) {
+async function saveAuthority(env: Env, authority: any) {
+  await env.DB.prepare(
+    `INSERT INTO authorities (
+      decision_id,
+      owner,
+      intent,
+      scope,
+      constraints,
+      status,
+      created_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+  )
+    .bind(
+      authority.decision_id,
+      authority.owner,
+      authority.intent,
+      JSON.stringify(authority.scope),
+      JSON.stringify(authority.constraints),
+      authority.status,
+      authority.created_at
+    )
+    .run()
+}
+
+async function executeWebhook(env: Env, decisionId: string, intent: string) {
   const executionId = crypto.randomUUID()
   const timestamp = new Date().toISOString()
+  let status = "FAILED"
+  let upstreamStatus: number | null = null
 
   try {
     const upstream = await fetch(EXECUTION_WEBHOOK_URL, {
@@ -92,35 +108,45 @@ async function executeWebhook(decisionId: string, intent: string) {
       })
     })
 
-    const execution = {
-      execution_id: executionId,
-      status: upstream.ok ? "EXECUTED" : "FAILED",
-      webhook_url: EXECUTION_WEBHOOK_URL,
-      upstream_status: upstream.status,
-      timestamp,
-      decision_id: decisionId,
-      intent
-    }
-
-    executionRecords.set(executionId, execution)
-    return execution
-  } catch (error: any) {
-    const execution = {
-      execution_id: executionId,
-      status: "FAILED",
-      webhook_url: EXECUTION_WEBHOOK_URL,
-      upstream_status: null,
-      timestamp,
-      decision_id: decisionId,
-      intent
-    }
-
-    executionRecords.set(executionId, execution)
-    return {
-      ...execution,
-      error: error?.message || "Webhook request failed"
-    }
+    status = upstream.ok ? "EXECUTED" : "FAILED"
+    upstreamStatus = upstream.status
+  } catch {
+    status = "FAILED"
   }
+
+  const execution = {
+    execution_id: executionId,
+    decision_id: decisionId,
+    intent,
+    webhook_url: EXECUTION_WEBHOOK_URL,
+    upstream_status: upstreamStatus,
+    status,
+    timestamp
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO executions (
+      execution_id,
+      decision_id,
+      intent,
+      webhook_url,
+      upstream_status,
+      status,
+      timestamp
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+  )
+    .bind(
+      execution.execution_id,
+      execution.decision_id,
+      execution.intent,
+      execution.webhook_url,
+      execution.upstream_status,
+      execution.status,
+      execution.timestamp
+    )
+    .run()
+
+  return execution
 }
 
 function buildProof(body: any, execution: any) {
@@ -136,8 +162,56 @@ function buildProof(body: any, execution: any) {
   }
 }
 
+async function saveProof(env: Env, proof: any) {
+  await env.DB.prepare(
+    `INSERT INTO proofs (
+      proof_id,
+      execution_id,
+      decision_id,
+      surface,
+      proof_reference,
+      status,
+      timestamp
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+  )
+    .bind(
+      proof.proof_id,
+      proof.execution_id,
+      proof.decision_id,
+      proof.surface,
+      proof.proof_reference,
+      proof.status,
+      proof.timestamp
+    )
+    .run()
+}
+
+async function findExecution(env: Env, executionId: string) {
+  return env.DB.prepare("SELECT * FROM executions WHERE execution_id = ?1").bind(executionId).first<any>()
+}
+
+async function recordsSavedForRun(env: Env, decisionId: string, executionId: string, proofId: string) {
+  const [authority, execution, proof] = await Promise.all([
+    env.DB.prepare("SELECT decision_id FROM authorities WHERE decision_id = ?1 ORDER BY rowid DESC LIMIT 1")
+      .bind(decisionId)
+      .first(),
+    env.DB.prepare("SELECT execution_id FROM executions WHERE execution_id = ?1")
+      .bind(executionId)
+      .first(),
+    env.DB.prepare("SELECT proof_id FROM proofs WHERE proof_id = ?1")
+      .bind(proofId)
+      .first()
+  ])
+
+  return {
+    authority_saved: Boolean(authority),
+    execution_saved: Boolean(execution),
+    proof_saved: Boolean(proof)
+  }
+}
+
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
 
     if (url.pathname === "/") {
@@ -151,6 +225,7 @@ export default {
       }
 
       const authority = buildAuthority(body)
+      await saveAuthority(env, authority)
       return jsonResponse(authority)
     }
 
@@ -191,7 +266,7 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      const execution = await executeWebhook(body.decision_id, body.intent)
+      const execution = await executeWebhook(env, body.decision_id, body.intent)
       const statusCode = execution.status === "FAILED" ? 502 : 200
       return jsonResponse(execution, statusCode)
     }
@@ -208,7 +283,7 @@ export default {
         return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
       }
 
-      const execution = executionRecords.get(body.execution_id)
+      const execution = await findExecution(env, body.execution_id)
       if (!execution) {
         return jsonResponse(
           {
@@ -230,6 +305,7 @@ export default {
       }
 
       const proof = buildProof(body, execution)
+      await saveProof(env, proof)
       return jsonResponse(proof)
     }
 
@@ -241,10 +317,11 @@ export default {
         scope: { mode: "demo" },
         constraints: { safe: true }
       })
+      await saveAuthority(env, step1Authority)
 
       const step2Aeo = buildAeo(step1Authority)
       const step3Validation = buildValidation(step2Aeo)
-      const step4Execution = await executeWebhook(step3Validation.decision_id, step3Validation.intent)
+      const step4Execution = await executeWebhook(env, step3Validation.decision_id, step3Validation.intent)
 
       const step5Proof = buildProof(
         {
@@ -255,13 +332,22 @@ export default {
         },
         step4Execution
       )
+      await saveProof(env, step5Proof)
+
+      const persistence = await recordsSavedForRun(
+        env,
+        step1Authority.decision_id,
+        step4Execution.execution_id,
+        step5Proof.proof_id
+      )
 
       return jsonResponse({
         step_1_authority: step1Authority,
         step_2_aeo: step2Aeo,
         step_3_validation: step3Validation,
         step_4_execution: step4Execution,
-        step_5_proof: step5Proof
+        step_5_proof: step5Proof,
+        persistence
       })
     }
 
