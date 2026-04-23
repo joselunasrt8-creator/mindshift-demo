@@ -297,13 +297,17 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
+      const validationId = crypto.randomUUID()
+
       // Require decision_id so validation is tied to an existing authority record.
       if (!body.decision_id) {
         return jsonResponse(
           {
+            validation_id: validationId,
+            decision_id: null,
             status: "FAILED",
             result: "INVALID",
-            error: "Missing decision_id. Provide the decision_id from /authority."
+            message: "Missing decision_id. Provide the decision_id from POST /authority."
           },
           400
         )
@@ -313,10 +317,11 @@ export default {
       if (!authority) {
         return jsonResponse(
           {
+            validation_id: validationId,
+            decision_id: body.decision_id,
             status: "FAILED",
             result: "INVALID",
-            decision_id: body.decision_id,
-            error: "No authority record found for this decision_id. Create authority first via POST /authority."
+            message: "No authority record found in D1 for this decision_id. Create authority first via POST /authority."
           },
           404
         )
@@ -325,11 +330,11 @@ export default {
       if (!isAuthorityUsableForExecution(authority.status)) {
         return jsonResponse(
           {
+            validation_id: validationId,
+            decision_id: body.decision_id,
             status: "FAILED",
             result: "INVALID",
-            decision_id: body.decision_id,
-            authority_status: authority.status,
-            error: `Authority status '${authority.status}' is not valid for execution.`
+            message: `Authority exists, but status '${authority.status}' is not valid for execution.`
           },
           409
         )
@@ -337,9 +342,8 @@ export default {
 
       // If we reach this point, the stored authority exists and is usable.
       const validation = {
-        validation_id: crypto.randomUUID(),
+        validation_id: validationId,
         decision_id: body.decision_id,
-        authority_status: authority.status,
         result: "VALID",
         status: "VALIDATED",
         message: "Authority record exists in D1 and is usable for execution."
@@ -361,9 +365,49 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      const execution = await executeWebhook(env, body.decision_id, body.intent)
-      const statusCode = execution.status === "FAILED" ? 502 : 200
-      return jsonResponse(execution, statusCode)
+      // Fail closed: if authority is missing or invalid in D1, do not execute webhook.
+      const authority = await findAuthorityByDecisionId(env, body.decision_id)
+      if (!authority) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            decision_id: body.decision_id,
+            result: "NOT_EXECUTED",
+            message: "Execution blocked: no authority record found in D1 for this decision_id."
+          },
+          404
+        )
+      }
+
+      if (!isAuthorityUsableForExecution(authority.status)) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            decision_id: body.decision_id,
+            result: "NOT_EXECUTED",
+            message: `Execution blocked: authority status '${authority.status}' is not valid for execution.`
+          },
+          409
+        )
+      }
+
+      try {
+        const execution = await executeWebhook(env, body.decision_id, body.intent)
+        const statusCode = execution.status === "FAILED" ? 502 : 200
+        return jsonResponse(execution, statusCode)
+      } catch (error: any) {
+        // Return a readable error for beginners instead of an uncaught Worker exception.
+        return jsonResponse(
+          {
+            status: "FAILED",
+            decision_id: body.decision_id,
+            result: "NOT_EXECUTED",
+            message: "Execution failed while processing webhook or database write.",
+            error: error?.message || "Unknown execution error"
+          },
+          500
+        )
+      }
     }
 
     if (url.pathname === "/proof" && request.method === "POST") {
