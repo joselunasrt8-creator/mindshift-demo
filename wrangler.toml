@@ -1,4 +1,9 @@
-# wrangler.toml
 name = "mindshift-demo"
 main = "worker.js"
-compatibility_date = "2026-04-16"
+compatibility_date = "2026-04-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mindshift-demo-local"
+database_id = "local-mindshift-demo-db"
+migrations_dir = "migrations"
