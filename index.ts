@@ -5,11 +5,19 @@ function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
-const EXECUTION_WEBHOOK_URL = "https://webhook.site/7957d61a-a8bf-4738-a5e6-e8c25a881642"
-
 // Cloudflare Worker environment bindings.
 type Env = {
   DB: D1Database
+  GITHUB_TOKEN: string
+}
+
+type GithubDeployTarget = {
+  system: "github_actions"
+  action: "deploy"
+  repo: string
+  branch: string
+  workflow: string
+  inputs?: Record<string, string>
 }
 
 async function readJson(request: Request): Promise<any | null> {
@@ -20,35 +28,67 @@ async function readJson(request: Request): Promise<any | null> {
   }
 }
 
+function parseJsonObject(value: unknown) {
+  if (value && typeof value === "object") {
+    return value as Record<string, unknown>
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value)
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      return {}
+    }
+  }
+
+  return {}
+}
+
+function ensureDeployConstraints(constraints: Record<string, unknown>) {
+  // Beginner-friendly guardrails: make production deploy requirements explicit.
+  return {
+    ...constraints,
+    repo: String(constraints.repo || ""),
+    branch: String(constraints.branch || ""),
+    workflow: String(constraints.workflow || ""),
+    max_executions: Number(constraints.max_executions ?? 1)
+  }
+}
+
 function buildAuthority(body: any) {
+  const constraints = ensureDeployConstraints(body.constraints || {})
+
   // Keep authority objects small and explicit so the flow is easy to follow.
   return {
     authority_id: crypto.randomUUID(),
     decision_id: body.decision_id || crypto.randomUUID(),
     owner: body.owner || "unknown",
-    intent: body.intent || "unspecified",
+    intent: body.intent || "deploy_production",
     scope: body.scope || {},
-    constraints: body.constraints || {},
+    constraints,
     status: "ACTIVE",
     created_at: new Date().toISOString()
   }
 }
 
-function buildAeo(authority: any) {
-  // AEO represents a compiled execution object derived from authority input.
+function buildAeo(authority: any, target: GithubDeployTarget) {
+  // AEO contains the exact target details needed for execution on GitHub Actions.
   return {
     aeo_id: crypto.randomUUID(),
     authority_id: authority.authority_id,
     decision_id: authority.decision_id,
     intent: authority.intent,
     scope: authority.scope,
+    constraints: authority.constraints,
     validation: {
-      authority_id: authority.authority_id
+      authority_id: authority.authority_id,
+      decision_id: authority.decision_id,
+      max_executions: authority.constraints.max_executions
     },
-    target: {
-      system: "webhook",
-      action: "send"
-    },
+    target,
     finality: {
       proof_required: true
     },
@@ -56,8 +96,47 @@ function buildAeo(authority: any) {
   }
 }
 
+function parseGithubTarget(input: any): GithubDeployTarget | null {
+  if (!input || typeof input !== "object") {
+    return null
+  }
+
+  if (input.system !== "github_actions" || input.action !== "deploy") {
+    return null
+  }
+
+  if (!input.repo || !input.branch || !input.workflow) {
+    return null
+  }
+
+  return {
+    system: "github_actions",
+    action: "deploy",
+    repo: String(input.repo),
+    branch: String(input.branch),
+    workflow: String(input.workflow),
+    inputs: input.inputs && typeof input.inputs === "object" ? input.inputs : undefined
+  }
+}
+
+function targetFromAuthority(authority: any): GithubDeployTarget | null {
+  const constraints = ensureDeployConstraints(parseJsonObject(authority.constraints))
+
+  if (!constraints.repo || !constraints.branch || !constraints.workflow) {
+    return null
+  }
+
+  return {
+    system: "github_actions",
+    action: "deploy",
+    repo: constraints.repo,
+    branch: constraints.branch,
+    workflow: constraints.workflow
+  }
+}
+
 function buildValidation(aeo: any) {
-  // Validation is simple in this demo: it marks the compiled object as valid.
+  // Validation marks the compiled object as valid for this controlled deploy flow.
   return {
     validation_id: crypto.randomUUID(),
     authority_id: aeo.authority_id,
@@ -114,42 +193,7 @@ async function saveAuthority(env: Env, authority: any) {
     .run()
 }
 
-async function executeWebhook(env: Env, decisionId: string, intent: string) {
-  // Execute the webhook and always write an execution record to D1.
-  const executionId = crypto.randomUUID()
-  const timestamp = new Date().toISOString()
-  let status = "FAILED"
-  let upstreamStatus: number | null = null
-
-  try {
-    const upstream = await fetch(EXECUTION_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        execution_id: executionId,
-        decision_id: decisionId,
-        intent,
-        timestamp,
-        source: "mindshift-demo"
-      })
-    })
-
-    status = upstream.ok ? "EXECUTED" : "FAILED"
-    upstreamStatus = upstream.status
-  } catch {
-    status = "FAILED"
-  }
-
-  const execution = {
-    execution_id: executionId,
-    decision_id: decisionId,
-    intent,
-    webhook_url: EXECUTION_WEBHOOK_URL,
-    upstream_status: upstreamStatus,
-    status,
-    timestamp
-  }
-
+async function saveExecution(env: Env, execution: any) {
   await env.DB.prepare(
     `INSERT INTO executions (
       execution_id,
@@ -171,18 +215,75 @@ async function executeWebhook(env: Env, decisionId: string, intent: string) {
       execution.timestamp
     )
     .run()
+}
 
+async function executeGithubDeploy(env: Env, authority: any, target: GithubDeployTarget) {
+  // This adapter is the governed execution boundary for production deploys.
+  const executionId = crypto.randomUUID()
+  const timestamp = new Date().toISOString()
+  let status = "FAILED"
+  let upstreamStatus: number | null = null
+
+  const dispatchUrl = `https://api.github.com/repos/${target.repo}/actions/workflows/${target.workflow}/dispatches`
+
+  try {
+    const upstream = await fetch(dispatchUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      body: JSON.stringify({
+        ref: target.branch,
+        inputs: {
+          ...target.inputs,
+          decision_id: authority.decision_id,
+          authority_id: authority.authority_id
+        }
+      })
+    })
+
+    upstreamStatus = upstream.status
+    status = upstream.ok ? "EXECUTED" : "FAILED"
+  } catch {
+    status = "FAILED"
+  }
+
+  const execution = {
+    execution_id: executionId,
+    decision_id: authority.decision_id,
+    intent: authority.intent,
+    webhook_url: dispatchUrl,
+    upstream_status: upstreamStatus,
+    status,
+    timestamp,
+    target,
+    execution_event: {
+      system: target.system,
+      action: target.action,
+      repo: target.repo,
+      branch: target.branch,
+      workflow: target.workflow
+    }
+  }
+
+  await saveExecution(env, execution)
   return execution
 }
 
 function buildProof(body: any, execution: any) {
-  // Proof records reference the execution and decision they belong to.
+  // Proof records reference execution + GitHub run evidence.
   return {
     proof_id: crypto.randomUUID(),
     execution_id: body.execution_id,
     decision_id: body.decision_id,
-    surface: body.surface,
-    proof_reference: body.proof_reference,
+    surface: body.surface || "github_actions",
+    proof_reference: body.proof_reference || `github_run:${body.run_id || "unknown"}`,
+    run_id: body.run_id,
+    commit_sha: body.commit_sha,
+    environment_url: body.environment_url || null,
     timestamp: new Date().toISOString(),
     status: "RECORDED",
     execution_status: execution.status
@@ -207,7 +308,12 @@ async function saveProof(env: Env, proof: any) {
       proof.execution_id,
       proof.decision_id,
       proof.surface,
-      proof.proof_reference,
+      JSON.stringify({
+        proof_reference: proof.proof_reference,
+        run_id: proof.run_id,
+        commit_sha: proof.commit_sha,
+        environment_url: proof.environment_url
+      }),
       proof.status,
       proof.timestamp
     )
@@ -253,6 +359,124 @@ async function recordsSavedForRun(env: Env, decisionId: string, executionId: str
   }
 }
 
+async function validateDeployAeo(env: Env, body: any) {
+  const validationId = crypto.randomUUID()
+
+  if (!body.decision_id) {
+    return {
+      ok: false,
+      code: 400,
+      payload: {
+        validation_id: validationId,
+        decision_id: null,
+        status: "FAILED",
+        result: "INVALID",
+        message: "Missing decision_id. Provide the decision_id from POST /authority."
+      }
+    }
+  }
+
+  const authority = await findAuthorityByDecisionId(env, body.decision_id)
+  if (!authority) {
+    return {
+      ok: false,
+      code: 404,
+      payload: {
+        validation_id: validationId,
+        decision_id: body.decision_id,
+        status: "FAILED",
+        result: "INVALID",
+        message: "No authority record found in D1 for this decision_id. Create authority first via POST /authority."
+      }
+    }
+  }
+
+  if (!isAuthorityUsableForExecution(authority.status)) {
+    const message =
+      String(authority.status).toUpperCase() === "CONSUMED"
+        ? "authority already consumed"
+        : `Authority exists, but status '${authority.status}' is not valid for execution.`
+
+    return {
+      ok: false,
+      code: 409,
+      payload: {
+        validation_id: validationId,
+        decision_id: body.decision_id,
+        status: "FAILED",
+        result: "INVALID",
+        message
+      }
+    }
+  }
+
+  const target = parseGithubTarget(body.target)
+  if (!target) {
+    return {
+      ok: false,
+      code: 400,
+      payload: {
+        validation_id: validationId,
+        decision_id: body.decision_id,
+        status: "FAILED",
+        result: "INVALID",
+        message:
+          "AEO target must be { system: 'github_actions', action: 'deploy', repo, branch, workflow }."
+      }
+    }
+  }
+
+  const authorityTarget = targetFromAuthority(authority)
+  if (!authorityTarget) {
+    return {
+      ok: false,
+      code: 409,
+      payload: {
+        validation_id: validationId,
+        decision_id: body.decision_id,
+        status: "FAILED",
+        result: "INVALID",
+        message: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
+      }
+    }
+  }
+
+  if (
+    target.repo !== authorityTarget.repo ||
+    target.branch !== authorityTarget.branch ||
+    target.workflow !== authorityTarget.workflow
+  ) {
+    return {
+      ok: false,
+      code: 409,
+      payload: {
+        validation_id: validationId,
+        decision_id: body.decision_id,
+        status: "FAILED",
+        result: "INVALID",
+        message: "AEO target does not match authority constraints."
+      }
+    }
+  }
+
+  const validation = {
+    validation_id: validationId,
+    decision_id: body.decision_id,
+    result: "VALID",
+    status: "VALIDATED",
+    message: "Authority + AEO target are valid for governed GitHub deploy execution.",
+    target
+  }
+
+  return {
+    ok: true,
+    code: 200,
+    payload: validation,
+    authority,
+    target
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -283,6 +507,27 @@ export default {
       }
 
       const authority = buildAuthority(body)
+
+      if (!authority.constraints.repo || !authority.constraints.branch || !authority.constraints.workflow) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "constraints.repo, constraints.branch, and constraints.workflow are required"
+          },
+          400
+        )
+      }
+
+      if (authority.constraints.max_executions !== 1) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "constraints.max_executions must be 1 for non-bypassable production deploy flow"
+          },
+          400
+        )
+      }
+
       await saveAuthority(env, authority)
       return jsonResponse(authority)
     }
@@ -293,8 +538,33 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const authority = buildAuthority(body)
-      const aeo = buildAeo(authority)
+      if (!body.decision_id) {
+        return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
+      }
+
+      const authority = await findAuthorityByDecisionId(env, body.decision_id)
+      if (!authority) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "No authority found for decision_id. Create authority first."
+          },
+          404
+        )
+      }
+
+      const target = targetFromAuthority(authority)
+      if (!target) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "Authority constraints must define repo, branch, workflow for GitHub deploy target."
+          },
+          409
+        )
+      }
+
+      const aeo = buildAeo(authority, target)
       return jsonResponse(aeo)
     }
 
@@ -304,63 +574,8 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const validationId = crypto.randomUUID()
-
-      // Require decision_id so validation is tied to an existing authority record.
-      if (!body.decision_id) {
-        return jsonResponse(
-          {
-            validation_id: validationId,
-            decision_id: null,
-            status: "FAILED",
-            result: "INVALID",
-            message: "Missing decision_id. Provide the decision_id from POST /authority."
-          },
-          400
-        )
-      }
-
-      const authority = await findAuthorityByDecisionId(env, body.decision_id)
-      if (!authority) {
-        return jsonResponse(
-          {
-            validation_id: validationId,
-            decision_id: body.decision_id,
-            status: "FAILED",
-            result: "INVALID",
-            message: "No authority record found in D1 for this decision_id. Create authority first via POST /authority."
-          },
-          404
-        )
-      }
-
-      if (!isAuthorityUsableForExecution(authority.status)) {
-        const message =
-          String(authority.status).toUpperCase() === "CONSUMED"
-            ? "authority already consumed"
-            : `Authority exists, but status '${authority.status}' is not valid for execution.`
-
-        return jsonResponse(
-          {
-            validation_id: validationId,
-            decision_id: body.decision_id,
-            status: "FAILED",
-            result: "INVALID",
-            message
-          },
-          409
-        )
-      }
-
-      // If we reach this point, the stored authority exists and is usable.
-      const validation = {
-        validation_id: validationId,
-        decision_id: body.decision_id,
-        result: "VALID",
-        status: "VALIDATED",
-        message: "Authority record exists in D1 and is usable for execution."
-      }
-      return jsonResponse(validation)
+      const result = await validateDeployAeo(env, body)
+      return jsonResponse(result.payload, result.code)
     }
 
     if (url.pathname === "/execute" && request.method === "POST") {
@@ -369,61 +584,41 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      if (!body.decision_id) {
-        return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
-      }
-
       if (!body.intent) {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      // Fail closed: if authority is missing or invalid in D1, do not execute webhook.
-      const authority = await findAuthorityByDecisionId(env, body.decision_id)
-      if (!authority) {
+      // Critical rule: do not dispatch a production deploy unless validation passes.
+      const validation = await validateDeployAeo(env, body)
+      if (!validation.ok || !validation.authority || !validation.target) {
         return jsonResponse(
           {
             status: "FAILED",
-            decision_id: body.decision_id,
+            decision_id: body.decision_id || null,
             result: "NOT_EXECUTED",
-            message: "Execution blocked: no authority record found in D1 for this decision_id."
+            message: "Execution blocked: VALID AEO required before GitHub workflow dispatch.",
+            validation: validation.payload
           },
-          404
-        )
-      }
-
-      if (!isAuthorityUsableForExecution(authority.status)) {
-        const message =
-          String(authority.status).toUpperCase() === "CONSUMED"
-            ? "Execution blocked: authority already consumed."
-            : `Execution blocked: authority status '${authority.status}' is not ACTIVE.`
-
-        return jsonResponse(
-          {
-            status: "FAILED",
-            decision_id: body.decision_id,
-            result: "NOT_EXECUTED",
-            message
-          },
-          409
+          validation.code
         )
       }
 
       try {
-        const execution = await executeWebhook(env, body.decision_id, body.intent)
+        const execution = await executeGithubDeploy(env, validation.authority, validation.target)
         if (execution.status === "EXECUTED") {
-          // Consume authority only after successful execution.
+          // Replay prevention: consume authority immediately after successful dispatch.
           await consumeAuthority(env, body.decision_id)
         }
+
         const statusCode = execution.status === "FAILED" ? 502 : 200
         return jsonResponse(execution, statusCode)
       } catch (error: any) {
-        // Return a readable error for beginners instead of an uncaught Worker exception.
         return jsonResponse(
           {
             status: "FAILED",
             decision_id: body.decision_id,
             result: "NOT_EXECUTED",
-            message: "Execution failed while processing webhook or database write.",
+            message: "Execution failed while dispatching GitHub workflow or writing execution record.",
             error: error?.message || "Unknown execution error"
           },
           500
@@ -437,7 +632,7 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const required = ["execution_id", "decision_id", "surface", "proof_reference"]
+      const required = ["execution_id", "decision_id", "surface", "run_id", "commit_sha"]
       const missing = required.filter((key) => !body[key])
       if (missing.length > 0) {
         return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
@@ -448,7 +643,7 @@ export default {
         return jsonResponse(
           {
             status: "FAILED",
-            error: "Unknown execution_id. Run /execute first so proof is tied to a real webhook execution."
+            error: "Unknown execution_id. Run /execute first so proof is tied to a real GitHub dispatch execution."
           },
           404
         )
@@ -466,6 +661,10 @@ export default {
 
       const proof = buildProof(body, execution)
       await saveProof(env, proof)
+
+      // Keep this idempotent and explicit: consuming again is harmless and clarifies lifecycle.
+      await consumeAuthority(env, body.decision_id)
+
       return jsonResponse(proof)
     }
 
@@ -473,26 +672,47 @@ export default {
       const step1Authority = buildAuthority({
         owner: "browser_test",
         decision_id: `decision-${crypto.randomUUID()}`,
-        intent: "demo_run",
+        intent: "deploy_production",
         scope: { mode: "demo" },
-        constraints: { safe: true }
+        constraints: {
+          repo: "octo-org/octo-repo",
+          branch: "main",
+          workflow: "deploy.yml",
+          max_executions: 1
+        }
       })
       await saveAuthority(env, step1Authority)
 
-      const step2Aeo = buildAeo(step1Authority)
+      const step2Target = targetFromAuthority(step1Authority)
+      const step2Aeo = buildAeo(step1Authority, step2Target as GithubDeployTarget)
       const step3Validation = buildValidation(step2Aeo)
-      const step4Execution = await executeWebhook(env, step3Validation.decision_id, step3Validation.intent)
+
+      const step4Execution = {
+        execution_id: crypto.randomUUID(),
+        decision_id: step3Validation.decision_id,
+        intent: step3Validation.intent,
+        webhook_url: `https://api.github.com/repos/${(step2Target as GithubDeployTarget).repo}/actions/workflows/${
+          (step2Target as GithubDeployTarget).workflow
+        }/dispatches`,
+        upstream_status: 204,
+        status: "EXECUTED",
+        timestamp: new Date().toISOString()
+      }
+      await saveExecution(env, step4Execution)
 
       const step5Proof = buildProof(
         {
           execution_id: step4Execution.execution_id,
           decision_id: step4Execution.decision_id,
-          surface: "webhook",
-          proof_reference: `${step4Execution.webhook_url}#${step4Execution.execution_id}`
+          surface: "github_actions",
+          run_id: "123456789",
+          commit_sha: "abc123def456",
+          environment_url: "https://prod.example.com"
         },
         step4Execution
       )
       await saveProof(env, step5Proof)
+      await consumeAuthority(env, step1Authority.decision_id)
 
       const persistence = await recordsSavedForRun(
         env,
