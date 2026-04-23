@@ -69,6 +69,19 @@ function buildValidation(aeo: any) {
   }
 }
 
+async function findAuthorityByDecisionId(env: Env, decisionId: string) {
+  // Look up the latest authority row for a decision so /validate can trust stored data.
+  return env.DB.prepare("SELECT * FROM authorities WHERE decision_id = ?1 ORDER BY rowid DESC LIMIT 1")
+    .bind(decisionId)
+    .first<any>()
+}
+
+function isAuthorityUsableForExecution(authorityStatus: string | null | undefined) {
+  // Keep this list explicit so beginners can easily update allowed statuses later.
+  const allowedStatuses = ["AUTHORIZED"]
+  return allowedStatuses.includes((authorityStatus || "").toUpperCase())
+}
+
 async function saveAuthority(env: Env, authority: any) {
   // Save authority data to D1 (scope/constraints serialized as JSON strings).
   await env.DB.prepare(
@@ -284,9 +297,53 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const authority = buildAuthority(body)
-      const aeo = buildAeo(authority)
-      const validation = buildValidation(aeo)
+      // Require decision_id so validation is tied to an existing authority record.
+      if (!body.decision_id) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            result: "INVALID",
+            error: "Missing decision_id. Provide the decision_id from /authority."
+          },
+          400
+        )
+      }
+
+      const authority = await findAuthorityByDecisionId(env, body.decision_id)
+      if (!authority) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            result: "INVALID",
+            decision_id: body.decision_id,
+            error: "No authority record found for this decision_id. Create authority first via POST /authority."
+          },
+          404
+        )
+      }
+
+      if (!isAuthorityUsableForExecution(authority.status)) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            result: "INVALID",
+            decision_id: body.decision_id,
+            authority_status: authority.status,
+            error: `Authority status '${authority.status}' is not valid for execution.`
+          },
+          409
+        )
+      }
+
+      // If we reach this point, the stored authority exists and is usable.
+      const validation = {
+        validation_id: crypto.randomUUID(),
+        decision_id: body.decision_id,
+        authority_status: authority.status,
+        result: "VALID",
+        status: "VALIDATED",
+        message: "Authority record exists in D1 and is usable for execution."
+      }
       return jsonResponse(validation)
     }
 
