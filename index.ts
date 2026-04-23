@@ -7,6 +7,21 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 const EXECUTION_WEBHOOK_URL = "https://webhook.site/7957d61a-a8bf-4738-a5e6-e8c25a881642"
 
+// Beginner-friendly in-memory execution log.
+// This lets /proof verify that an execution_id came from a real /execute webhook call.
+const executionRecords = new Map<
+  string,
+  {
+    execution_id: string
+    status: string
+    webhook_url: string
+    upstream_status: number | null
+    timestamp: string
+    decision_id: string
+    intent: string
+  }
+>()
+
 async function readJson(request: Request): Promise<any | null> {
   try {
     return await request.json()
@@ -30,6 +45,7 @@ function buildAuthority(body: any) {
 function buildAeo(authority: any) {
   return {
     aeo_id: crypto.randomUUID(),
+    authority_id: authority.authority_id,
     decision_id: authority.decision_id,
     intent: authority.intent,
     scope: authority.scope,
@@ -50,6 +66,7 @@ function buildAeo(authority: any) {
 function buildValidation(aeo: any) {
   return {
     validation_id: crypto.randomUUID(),
+    authority_id: aeo.authority_id,
     aeo_id: aeo.aeo_id,
     decision_id: aeo.decision_id,
     intent: aeo.intent,
@@ -67,6 +84,7 @@ async function executeWebhook(decisionId: string, intent: string) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        execution_id: executionId,
         decision_id: decisionId,
         intent,
         timestamp,
@@ -74,28 +92,47 @@ async function executeWebhook(decisionId: string, intent: string) {
       })
     })
 
-    return {
+    const execution = {
       execution_id: executionId,
       status: upstream.ok ? "EXECUTED" : "FAILED",
       webhook_url: EXECUTION_WEBHOOK_URL,
-      upstream_status: upstream.status
+      upstream_status: upstream.status,
+      timestamp,
+      decision_id: decisionId,
+      intent
     }
+
+    executionRecords.set(executionId, execution)
+    return execution
   } catch (error: any) {
-    return {
+    const execution = {
       execution_id: executionId,
       status: "FAILED",
       webhook_url: EXECUTION_WEBHOOK_URL,
       upstream_status: null,
+      timestamp,
+      decision_id: decisionId,
+      intent
+    }
+
+    executionRecords.set(executionId, execution)
+    return {
+      ...execution,
       error: error?.message || "Webhook request failed"
     }
   }
 }
 
-function buildProof(execution: any) {
+function buildProof(body: any, execution: any) {
   return {
     proof_id: crypto.randomUUID(),
-    execution_id: execution.execution_id,
-    status: execution.status === "EXECUTED" ? "RECORDED" : "SKIPPED"
+    execution_id: body.execution_id,
+    decision_id: body.decision_id,
+    surface: body.surface,
+    proof_reference: body.proof_reference,
+    timestamp: new Date().toISOString(),
+    status: "RECORDED",
+    execution_status: execution.status
   }
 }
 
@@ -103,12 +140,10 @@ export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
 
-    // Root
     if (url.pathname === "/") {
       return new Response("MindShift Runtime Live")
     }
 
-    // AUTHORITY
     if (url.pathname === "/authority" && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
@@ -119,7 +154,6 @@ export default {
       return jsonResponse(authority)
     }
 
-    // COMPILE
     if (url.pathname === "/compile" && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
@@ -131,7 +165,6 @@ export default {
       return jsonResponse(aeo)
     }
 
-    // VALIDATE
     if (url.pathname === "/validate" && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
@@ -144,7 +177,6 @@ export default {
       return jsonResponse(validation)
     }
 
-    // EXECUTE (real webhook execution)
     if (url.pathname === "/execute" && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
@@ -164,43 +196,72 @@ export default {
       return jsonResponse(execution, statusCode)
     }
 
-    // PROOF
     if (url.pathname === "/proof" && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const execution = {
-        execution_id: body.execution_id || crypto.randomUUID(),
-        status: body.status || "EXECUTED"
+      const required = ["execution_id", "decision_id", "surface", "proof_reference"]
+      const missing = required.filter((key) => !body[key])
+      if (missing.length > 0) {
+        return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
       }
 
-      const proof = buildProof(execution)
+      const execution = executionRecords.get(body.execution_id)
+      if (!execution) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "Unknown execution_id. Run /execute first so proof is tied to a real webhook execution."
+          },
+          404
+        )
+      }
+
+      if (execution.decision_id !== body.decision_id) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "decision_id does not match the stored execution record"
+          },
+          409
+        )
+      }
+
+      const proof = buildProof(body, execution)
       return jsonResponse(proof)
     }
 
-    // Browser end-to-end demo route
     if (url.pathname === "/browser-test" && request.method === "GET") {
-      const authority = buildAuthority({
+      const step1Authority = buildAuthority({
         owner: "browser_test",
+        decision_id: `decision-${crypto.randomUUID()}`,
         intent: "demo_run",
         scope: { mode: "demo" },
         constraints: { safe: true }
       })
 
-      const aeo = buildAeo(authority)
-      const validation = buildValidation(aeo)
+      const step2Aeo = buildAeo(step1Authority)
+      const step3Validation = buildValidation(step2Aeo)
+      const step4Execution = await executeWebhook(step3Validation.decision_id, step3Validation.intent)
 
-      const execution = await executeWebhook(authority.decision_id, authority.intent)
-      const proof = buildProof(execution)
+      const step5Proof = buildProof(
+        {
+          execution_id: step4Execution.execution_id,
+          decision_id: step4Execution.decision_id,
+          surface: "webhook",
+          proof_reference: `${step4Execution.webhook_url}#${step4Execution.execution_id}`
+        },
+        step4Execution
+      )
 
       return jsonResponse({
-        authority,
-        aeo,
-        validation,
-        execution,
-        proof
+        step_1_authority: step1Authority,
+        step_2_aeo: step2Aeo,
+        step_3_validation: step3Validation,
+        step_4_execution: step4Execution,
+        step_5_proof: step5Proof
       })
     }
 
