@@ -29,7 +29,7 @@ function buildAuthority(body: any) {
     intent: body.intent || "unspecified",
     scope: body.scope || {},
     constraints: body.constraints || {},
-    status: "AUTHORIZED",
+    status: "ACTIVE",
     created_at: new Date().toISOString()
   }
 }
@@ -78,8 +78,15 @@ async function findAuthorityByDecisionId(env: Env, decisionId: string) {
 
 function isAuthorityUsableForExecution(authorityStatus: string | null | undefined) {
   // Keep this list explicit so beginners can easily update allowed statuses later.
-  const allowedStatuses = ["AUTHORIZED"]
+  const allowedStatuses = ["ACTIVE"]
   return allowedStatuses.includes((authorityStatus || "").toUpperCase())
+}
+
+async function consumeAuthority(env: Env, decisionId: string) {
+  // Mark authority as consumed so the same decision_id cannot execute twice.
+  await env.DB.prepare("UPDATE authorities SET status = ?1 WHERE decision_id = ?2")
+    .bind("CONSUMED", decisionId)
+    .run()
 }
 
 async function saveAuthority(env: Env, authority: any) {
@@ -328,13 +335,18 @@ export default {
       }
 
       if (!isAuthorityUsableForExecution(authority.status)) {
+        const message =
+          String(authority.status).toUpperCase() === "CONSUMED"
+            ? "authority already consumed"
+            : `Authority exists, but status '${authority.status}' is not valid for execution.`
+
         return jsonResponse(
           {
             validation_id: validationId,
             decision_id: body.decision_id,
             status: "FAILED",
             result: "INVALID",
-            message: `Authority exists, but status '${authority.status}' is not valid for execution.`
+            message
           },
           409
         )
@@ -375,24 +387,33 @@ export default {
             result: "NOT_EXECUTED",
             message: "Execution blocked: no authority record found in D1 for this decision_id."
           },
-          404
+          403
         )
       }
 
       if (!isAuthorityUsableForExecution(authority.status)) {
+        const message =
+          String(authority.status).toUpperCase() === "CONSUMED"
+            ? "Execution blocked: authority already consumed."
+            : `Execution blocked: authority status '${authority.status}' is not ACTIVE.`
+
         return jsonResponse(
           {
             status: "FAILED",
             decision_id: body.decision_id,
             result: "NOT_EXECUTED",
-            message: `Execution blocked: authority status '${authority.status}' is not valid for execution.`
+            message
           },
-          409
+          403
         )
       }
 
       try {
         const execution = await executeWebhook(env, body.decision_id, body.intent)
+        if (execution.status === "EXECUTED") {
+          // Consume authority only after successful execution.
+          await consumeAuthority(env, body.decision_id)
+        }
         const statusCode = execution.status === "FAILED" ? 502 : 200
         return jsonResponse(execution, statusCode)
       } catch (error: any) {
