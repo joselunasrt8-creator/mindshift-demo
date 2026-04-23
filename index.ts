@@ -235,162 +235,178 @@ async function recordsSavedForRun(env: Env, decisionId: string, executionId: str
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url)
-    // Normalize trailing slashes so both `/browser-test` and `/browser-test/` work.
-    const pathname = url.pathname.replace(/\/+$/, "") || "/"
+    try {
+      const url = new URL(request.url)
+      // Normalize trailing slashes so both `/browser-test` and `/browser-test/` work.
+      const pathname = url.pathname.replace(/\/+$/, "") || "/"
 
-    if (pathname === "/") {
-      return new Response("MindShift Runtime Live")
-    }
-
-    if (pathname === "/records/authorities" && request.method === "GET") {
-      const results = await listAuthorities(env)
-      return jsonResponse(results.results ?? [])
-    }
-
-    if (pathname === "/records/executions" && request.method === "GET") {
-      const results = await listExecutions(env)
-      return jsonResponse(results.results ?? [])
-    }
-
-    if (pathname === "/records/proofs" && request.method === "GET") {
-      const results = await listProofs(env)
-      return jsonResponse(results.results ?? [])
-    }
-
-    if (pathname === "/authority" && request.method === "POST") {
-      const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (pathname === "/") {
+        return new Response("MindShift Runtime Live")
       }
 
-      const authority = buildAuthority(body)
-      await saveAuthority(env, authority)
-      return jsonResponse(authority)
-    }
-
-    if (pathname === "/compile" && request.method === "POST") {
-      const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (pathname === "/records/authorities" && request.method === "GET") {
+        const results = await listAuthorities(env)
+        return jsonResponse(results.results ?? [])
       }
 
-      const authority = buildAuthority(body)
-      const aeo = buildAeo(authority)
-      return jsonResponse(aeo)
-    }
-
-    if (pathname === "/validate" && request.method === "POST") {
-      const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (pathname === "/records/executions" && request.method === "GET") {
+        const results = await listExecutions(env)
+        return jsonResponse(results.results ?? [])
       }
 
-      const authority = buildAuthority(body)
-      const aeo = buildAeo(authority)
-      const validation = buildValidation(aeo)
-      return jsonResponse(validation)
-    }
-
-    if (pathname === "/execute" && request.method === "POST") {
-      const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (pathname === "/records/proofs" && request.method === "GET") {
+        const results = await listProofs(env)
+        return jsonResponse(results.results ?? [])
       }
 
-      if (!body.decision_id) {
-        return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
+      if (pathname === "/authority" && request.method === "POST") {
+        const body = await readJson(request)
+        if (!body) {
+          return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+        }
+
+        const authority = buildAuthority(body)
+        await saveAuthority(env, authority)
+        return jsonResponse(authority)
       }
 
-      if (!body.intent) {
-        return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
+      if (pathname === "/compile" && request.method === "POST") {
+        const body = await readJson(request)
+        if (!body) {
+          return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+        }
+
+        const authority = buildAuthority(body)
+        const aeo = buildAeo(authority)
+        return jsonResponse(aeo)
       }
 
-      const execution = await executeWebhook(env, body.decision_id, body.intent)
-      const statusCode = execution.status === "FAILED" ? 502 : 200
-      return jsonResponse(execution, statusCode)
-    }
+      if (pathname === "/validate" && request.method === "POST") {
+        const body = await readJson(request)
+        if (!body) {
+          return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+        }
 
-    if (pathname === "/proof" && request.method === "POST") {
-      const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+        const authority = buildAuthority(body)
+        const aeo = buildAeo(authority)
+        const validation = buildValidation(aeo)
+        return jsonResponse(validation)
       }
 
-      const required = ["execution_id", "decision_id", "surface", "proof_reference"]
-      const missing = required.filter((key) => !body[key])
-      if (missing.length > 0) {
-        return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
+      if (pathname === "/execute" && request.method === "POST") {
+        const body = await readJson(request)
+        if (!body) {
+          return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+        }
+
+        if (!body.decision_id) {
+          return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
+        }
+
+        if (!body.intent) {
+          return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
+        }
+
+        const execution = await executeWebhook(env, body.decision_id, body.intent)
+        const statusCode = execution.status === "FAILED" ? 502 : 200
+        return jsonResponse(execution, statusCode)
       }
 
-      const execution = await findExecution(env, body.execution_id)
-      if (!execution) {
-        return jsonResponse(
+      if (pathname === "/proof" && request.method === "POST") {
+        const body = await readJson(request)
+        if (!body) {
+          return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+        }
+
+        const required = ["execution_id", "decision_id", "surface", "proof_reference"]
+        const missing = required.filter((key) => !body[key])
+        if (missing.length > 0) {
+          return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
+        }
+
+        const execution = await findExecution(env, body.execution_id)
+        if (!execution) {
+          return jsonResponse(
+            {
+              status: "FAILED",
+              error: "Unknown execution_id. Run /execute first so proof is tied to a real webhook execution."
+            },
+            404
+          )
+        }
+
+        if (execution.decision_id !== body.decision_id) {
+          return jsonResponse(
+            {
+              status: "FAILED",
+              error: "decision_id does not match the stored execution record"
+            },
+            409
+          )
+        }
+
+        const proof = buildProof(body, execution)
+        await saveProof(env, proof)
+        return jsonResponse(proof)
+      }
+
+      if (pathname === "/browser-test" && request.method === "GET") {
+        const step1Authority = buildAuthority({
+          owner: "browser_test",
+          decision_id: `decision-${crypto.randomUUID()}`,
+          intent: "demo_run",
+          scope: { mode: "demo" },
+          constraints: { safe: true }
+        })
+        await saveAuthority(env, step1Authority)
+
+        const step2Aeo = buildAeo(step1Authority)
+        const step3Validation = buildValidation(step2Aeo)
+        const step4Execution = await executeWebhook(env, step3Validation.decision_id, step3Validation.intent)
+
+        const step5Proof = buildProof(
           {
-            status: "FAILED",
-            error: "Unknown execution_id. Run /execute first so proof is tied to a real webhook execution."
+            execution_id: step4Execution.execution_id,
+            decision_id: step4Execution.decision_id,
+            surface: "webhook",
+            proof_reference: `${step4Execution.webhook_url}#${step4Execution.execution_id}`
           },
-          404
+          step4Execution
         )
+        await saveProof(env, step5Proof)
+
+        const persistence = await recordsSavedForRun(
+          env,
+          step1Authority.decision_id,
+          step4Execution.execution_id,
+          step5Proof.proof_id
+        )
+
+        return jsonResponse({
+          step_1_authority: step1Authority,
+          step_2_aeo: step2Aeo,
+          step_3_validation: step3Validation,
+          step_4_execution: step4Execution,
+          step_5_proof: step5Proof,
+          persistence
+        })
       }
 
-      if (execution.decision_id !== body.decision_id) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "decision_id does not match the stored execution record"
-          },
-          409
-        )
-      }
-
-      const proof = buildProof(body, execution)
-      await saveProof(env, proof)
-      return jsonResponse(proof)
-    }
-
-    if (pathname === "/browser-test" && request.method === "GET") {
-      const step1Authority = buildAuthority({
-        owner: "browser_test",
-        decision_id: `decision-${crypto.randomUUID()}`,
-        intent: "demo_run",
-        scope: { mode: "demo" },
-        constraints: { safe: true }
-      })
-      await saveAuthority(env, step1Authority)
-
-      const step2Aeo = buildAeo(step1Authority)
-      const step3Validation = buildValidation(step2Aeo)
-      const step4Execution = await executeWebhook(env, step3Validation.decision_id, step3Validation.intent)
-
-      const step5Proof = buildProof(
+      return new Response("Not Found", { status: 404 })
+    } catch (error) {
+      // Fail safely with JSON instead of a Worker crash when D1/schema is missing.
+      const message = error instanceof Error ? error.message : "Unknown error"
+      const missingTable = message.includes("no such table")
+      return jsonResponse(
         {
-          execution_id: step4Execution.execution_id,
-          decision_id: step4Execution.decision_id,
-          surface: "webhook",
-          proof_reference: `${step4Execution.webhook_url}#${step4Execution.execution_id}`
+          status: "FAILED",
+          error: message,
+          hint: missingTable
+            ? "D1 tables appear missing. Apply schema.sql to your D1 database, then retry."
+            : "Unexpected runtime error in Worker."
         },
-        step4Execution
+        500
       )
-      await saveProof(env, step5Proof)
-
-      const persistence = await recordsSavedForRun(
-        env,
-        step1Authority.decision_id,
-        step4Execution.execution_id,
-        step5Proof.proof_id
-      )
-
-      return jsonResponse({
-        step_1_authority: step1Authority,
-        step_2_aeo: step2Aeo,
-        step_3_validation: step3Validation,
-        step_4_execution: step4Execution,
-        step_5_proof: step5Proof,
-        persistence
-      })
     }
-
-    return new Response("Not Found", { status: 404 })
   }
 }
