@@ -7,6 +7,7 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 const EXECUTION_WEBHOOK_URL = "https://webhook.site/7957d61a-a8bf-4738-a5e6-e8c25a881642"
 
+// Cloudflare Worker environment bindings.
 type Env = {
   DB: D1Database
 }
@@ -20,6 +21,7 @@ async function readJson(request: Request): Promise<any | null> {
 }
 
 function buildAuthority(body: any) {
+  // Keep authority objects small and explicit so the flow is easy to follow.
   return {
     authority_id: crypto.randomUUID(),
     decision_id: body.decision_id || crypto.randomUUID(),
@@ -33,6 +35,7 @@ function buildAuthority(body: any) {
 }
 
 function buildAeo(authority: any) {
+  // AEO represents a compiled execution object derived from authority input.
   return {
     aeo_id: crypto.randomUUID(),
     authority_id: authority.authority_id,
@@ -54,6 +57,7 @@ function buildAeo(authority: any) {
 }
 
 function buildValidation(aeo: any) {
+  // Validation is simple in this demo: it marks the compiled object as valid.
   return {
     validation_id: crypto.randomUUID(),
     authority_id: aeo.authority_id,
@@ -66,6 +70,7 @@ function buildValidation(aeo: any) {
 }
 
 async function saveAuthority(env: Env, authority: any) {
+  // Save authority data to D1 (scope/constraints serialized as JSON strings).
   await env.DB.prepare(
     `INSERT INTO authorities (
       decision_id,
@@ -90,6 +95,7 @@ async function saveAuthority(env: Env, authority: any) {
 }
 
 async function executeWebhook(env: Env, decisionId: string, intent: string) {
+  // Execute the webhook and always write an execution record to D1.
   const executionId = crypto.randomUUID()
   const timestamp = new Date().toISOString()
   let status = "FAILED"
@@ -150,6 +156,7 @@ async function executeWebhook(env: Env, decisionId: string, intent: string) {
 }
 
 function buildProof(body: any, execution: any) {
+  // Proof records reference the execution and decision they belong to.
   return {
     proof_id: crypto.randomUUID(),
     execution_id: body.execution_id,
@@ -163,6 +170,7 @@ function buildProof(body: any, execution: any) {
 }
 
 async function saveProof(env: Env, proof: any) {
+  // Persist proof records in D1.
   await env.DB.prepare(
     `INSERT INTO proofs (
       proof_id,
@@ -188,6 +196,21 @@ async function saveProof(env: Env, proof: any) {
 
 async function findExecution(env: Env, executionId: string) {
   return env.DB.prepare("SELECT * FROM executions WHERE execution_id = ?1").bind(executionId).first<any>()
+}
+
+async function listAuthorities(env: Env) {
+  // Simple debug route helper: return newest authorities first.
+  return env.DB.prepare("SELECT * FROM authorities ORDER BY created_at DESC").all()
+}
+
+async function listExecutions(env: Env) {
+  // Simple debug route helper: return newest executions first.
+  return env.DB.prepare("SELECT * FROM executions ORDER BY timestamp DESC").all()
+}
+
+async function listProofs(env: Env) {
+  // Simple debug route helper: return newest proofs first.
+  return env.DB.prepare("SELECT * FROM proofs ORDER BY timestamp DESC").all()
 }
 
 async function recordsSavedForRun(env: Env, decisionId: string, executionId: string, proofId: string) {
@@ -216,6 +239,21 @@ export default {
 
     if (url.pathname === "/") {
       return new Response("MindShift Runtime Live")
+    }
+
+    if (url.pathname === "/records/authorities" && request.method === "GET") {
+      const results = await listAuthorities(env)
+      return jsonResponse(results.results ?? [])
+    }
+
+    if (url.pathname === "/records/executions" && request.method === "GET") {
+      const results = await listExecutions(env)
+      return jsonResponse(results.results ?? [])
+    }
+
+    if (url.pathname === "/records/proofs" && request.method === "GET") {
+      const results = await listProofs(env)
+      return jsonResponse(results.results ?? [])
     }
 
     if (url.pathname === "/authority" && request.method === "POST") {
