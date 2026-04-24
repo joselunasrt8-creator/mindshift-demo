@@ -1,6 +1,32 @@
 # mindshift-demo
 MindShift execution boundary demo
 
+## Beginner quickstart (GitHub main is source of truth)
+
+Use GitHub `main` as the source of truth, then use your terminal only for install/deploy/test steps.
+
+```bash
+# 1) install
+npm install
+
+# 2) apply schema
+npx wrangler d1 execute mindshift-demo-prod --remote --file schema.sql
+
+# 3) dry-run deploy
+npx wrangler deploy --dry-run
+
+# 4) deploy
+npx wrangler deploy
+
+# 5) test /
+curl -s https://mindshift-demo.joselunasrt8.workers.dev/
+
+# 6) test /replay-test
+curl -s https://mindshift-demo.joselunasrt8.workers.dev/replay-test
+```
+
+Expected replay test behavior is deterministic in one request: first execution is `EXECUTED`, immediate replay is `BLOCKED`.
+
 ## Architecture
 
 ```
@@ -353,4 +379,3 @@ Every successful workflow run produces a `proof-of-transfer.json` artifact conta
 | `aeo_hash`           | SHA-256 of the canonical aeo.json content     |
 | `execution_surfaces` | List of surfaces that were executed           |
 | `validation_status`  | `valid` when all checks pass                  |
-
