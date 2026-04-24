@@ -5,6 +5,14 @@ function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input)
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return Array.from(new Uint8Array(digest))
+    .map((part) => part.toString(16).padStart(2, "0"))
+    .join("")
+}
+
 type Env = {
   DB: D1Database
   GITHUB_TOKEN: string
@@ -134,13 +142,15 @@ function targetFromAuthority(authority: any): GithubDeployTarget | null {
   }
 }
 
-function buildValidation(aeo: any) {
+async function buildValidation(aeo: any) {
+  const validated_object_hash = await sha256Hex(JSON.stringify(aeo))
   return {
     validation_id: crypto.randomUUID(),
     authority_id: aeo.authority_id,
     aeo_id: aeo.aeo_id,
     decision_id: aeo.decision_id,
     intent: aeo.intent,
+    validated_object_hash,
     result: "VALID",
     status: "VALIDATED",
     created_at: new Date().toISOString()
@@ -213,10 +223,11 @@ async function saveValidation(env: Env, validation: any) {
       aeo_id,
       decision_id,
       intent,
+      validated_object_hash,
       result,
       status,
       created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
   )
     .bind(
       validation.validation_id,
@@ -224,6 +235,7 @@ async function saveValidation(env: Env, validation: any) {
       validation.aeo_id,
       validation.decision_id,
       validation.intent,
+      validation.validated_object_hash,
       validation.result,
       validation.status,
       validation.created_at || new Date().toISOString()
@@ -331,7 +343,7 @@ async function executeGithubDeploy(
 
 async function runExecuteFlow(
   env: Env,
-  body: { decision_id?: string; intent?: string; target?: any },
+  body: { decision_id?: string; intent?: string; target?: any; validated_object_hash?: string },
   options?: { simulateSuccess?: boolean }
 ) {
   const validation = await validateAuthority(env, body)
@@ -344,6 +356,32 @@ async function runExecuteFlow(
         result: "NOT_EXECUTED",
         message: "execution blocked",
         validation: validation.payload
+      }
+    }
+  }
+
+  if (!body.validated_object_hash) {
+    return {
+      code: 400,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        error: "Missing validated_object_hash from /validate. Replay protection requires an exact validated hash."
+      }
+    }
+  }
+
+  if (body.validated_object_hash !== validation.payload.validated_object_hash) {
+    return {
+      code: 409,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        error: "validated_object_hash mismatch. Execute only the exact object returned by /validate."
       }
     }
   }
@@ -575,7 +613,7 @@ async function validateAuthority(env: Env, body: any) {
   const aeo = buildAeo(authority, targetFromAuthority(authority) as GithubDeployTarget)
   await saveAeo(env, aeo)
 
-  const validation = buildValidation(aeo)
+  const validation = await buildValidation(aeo)
   await saveValidation(env, validation)
 
   return {
@@ -604,10 +642,18 @@ async function runGithubProofTest(env: Env) {
   })
 
   await saveAuthority(env, authority)
+  const validation = await validateAuthority(env, { decision_id: authority.decision_id })
+  if (!validation.ok) {
+    return jsonResponse({ status: "FAILED", stage: "validate", details: validation.payload }, validation.code)
+  }
 
   const executeResult = await runExecuteFlow(
     env,
-    { decision_id: authority.decision_id, intent: authority.intent },
+    {
+      decision_id: authority.decision_id,
+      intent: authority.intent,
+      validated_object_hash: validation.payload.validated_object_hash
+    },
     { simulateSuccess: true }
   )
 
@@ -688,7 +734,11 @@ async function runReplayTest(env: Env) {
   // Step 4: execute it once (same logic used by POST /execute).
   const firstExecution = await runExecuteFlow(
     env,
-    { decision_id: authority.decision_id, intent: authority.intent },
+    {
+      decision_id: authority.decision_id,
+      intent: authority.intent,
+      validated_object_hash: validation.payload.validated_object_hash
+    },
     { simulateSuccess: true }
   )
   if (firstExecution.code !== 200 || !firstExecution.payload.execution_id) {
@@ -735,7 +785,11 @@ async function runReplayTest(env: Env) {
   // Step 7: attempt the same execution again.
   const replayAttempt = await runExecuteFlow(
     env,
-    { decision_id: authority.decision_id, intent: authority.intent },
+    {
+      decision_id: authority.decision_id,
+      intent: authority.intent,
+      validated_object_hash: validation.payload.validated_object_hash
+    },
     { simulateSuccess: true }
   )
 
