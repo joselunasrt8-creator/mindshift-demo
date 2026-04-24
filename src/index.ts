@@ -21,8 +21,6 @@ type GithubDeployTarget = {
   inputs?: Record<string, string>
 }
 
-let replayTestDecisionId: string | null = null
-
 async function readJson(request: Request): Promise<any | null> {
   try {
     return await request.json()
@@ -401,7 +399,7 @@ async function runExecuteFlow(
     target = requestedTarget
   }
 
-  if (!env.GITHUB_TOKEN || !env.GITHUB_OWNER || !env.GITHUB_REPO) {
+  if (!options?.simulateSuccess && (!env.GITHUB_TOKEN || !env.GITHUB_OWNER || !env.GITHUB_REPO)) {
     return {
       code: 500,
       payload: {
@@ -787,50 +785,52 @@ export default {
     }
 
     if (url.pathname === "/replay-test" && request.method === "GET") {
-      if (!replayTestDecisionId) {
-        const authority = buildAuthority({
-          owner: "browser_replay_test",
-          decision_id: `replay-${crypto.randomUUID()}`,
-          intent: "deploy_production",
-          scope: { mode: "replay_test" },
-          constraints: {
-            repo: `${env.GITHUB_OWNER}/${env.GITHUB_REPO}`,
-            branch: "main",
-            workflow: "deploy.yml",
-            max_executions: 1
-          }
-        })
+      const testRepo = env.GITHUB_OWNER && env.GITHUB_REPO ? `${env.GITHUB_OWNER}/${env.GITHUB_REPO}` : "local/replay-test"
 
-        replayTestDecisionId = authority.decision_id
-        await saveAuthority(env, authority)
+      const authority = buildAuthority({
+        owner: "browser_replay_test",
+        decision_id: `replay-${crypto.randomUUID()}`,
+        intent: "deploy_production",
+        scope: { mode: "replay_test" },
+        constraints: {
+          repo: testRepo,
+          branch: "main",
+          workflow: "deploy.yml",
+          max_executions: 1
+        }
+      })
 
-        const executeResult = await runExecuteFlow(
-          env,
-          { decision_id: replayTestDecisionId, intent: authority.intent },
-          { simulateSuccess: true }
-        )
-        const latestAuthority = await findAuthorityByDecisionId(env, replayTestDecisionId)
+      await saveAuthority(env, authority)
 
-        return jsonResponse({
-          decision_id: replayTestDecisionId,
-          status: executeResult.code === 200 ? "EXECUTED" : "FAILED",
-          authority_status_after_execution: latestAuthority?.status || null
-        })
-      }
+      const firstAttempt = await runExecuteFlow(
+        env,
+        { decision_id: authority.decision_id, intent: authority.intent },
+        { simulateSuccess: true }
+      )
+
+      const authorityAfterFirst = await findAuthorityByDecisionId(env, authority.decision_id)
 
       const replayAttempt = await runExecuteFlow(
         env,
-        { decision_id: replayTestDecisionId, intent: "deploy_production" },
+        { decision_id: authority.decision_id, intent: authority.intent },
         { simulateSuccess: true }
       )
 
       return jsonResponse({
-        decision_id: replayTestDecisionId,
-        status: replayAttempt.code === 200 ? "EXECUTED" : "BLOCKED",
-        message:
-          replayAttempt.code === 200
-            ? "unexpected replay execution"
-            : replayAttempt.payload?.validation?.message || "authority already consumed"
+        decision_id: authority.decision_id,
+        first_attempt: {
+          status: firstAttempt.code === 200 ? "EXECUTED" : "FAILED",
+          details: firstAttempt.payload
+        },
+        authority_status_after_first: authorityAfterFirst?.status || null,
+        replay_attempt: {
+          status: replayAttempt.code === 200 ? "EXECUTED" : "BLOCKED",
+          message:
+            replayAttempt.code === 200
+              ? "unexpected replay execution"
+              : replayAttempt.payload?.validation?.message || replayAttempt.payload?.message || "authority already consumed",
+          details: replayAttempt.payload
+        }
       })
     }
 
