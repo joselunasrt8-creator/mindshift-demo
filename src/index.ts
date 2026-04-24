@@ -490,6 +490,8 @@ function buildProof(body: any, execution: any) {
     run_id: body.run_id,
     commit_sha: body.commit_sha,
     environment_url: body.environment_url || null,
+    workflow: body.workflow || null,
+    environment: body.environment || null,
     timestamp: new Date().toISOString(),
     status: "RECORDED",
     execution_status: execution.status
@@ -519,7 +521,9 @@ async function saveProof(env: Env, proof: any) {
         proof_reference: proof.proof_reference,
         run_id: proof.run_id,
         commit_sha: proof.commit_sha,
-        environment_url: proof.environment_url
+        environment_url: proof.environment_url,
+        workflow: proof.workflow,
+        environment: proof.environment
       }),
       proof.status,
       proof.timestamp
@@ -961,7 +965,7 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const required = ["execution_id", "decision_id", "surface", "run_id", "commit_sha"]
+      const required = ["execution_id", "decision_id", "surface", "run_id", "commit_sha", "workflow", "environment"]
       const missing = required.filter((key) => !body[key])
       if (missing.length > 0) {
         return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
