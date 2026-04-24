@@ -59,14 +59,17 @@ function ensureDeployConstraints(constraints: Record<string, unknown>) {
 }
 
 function buildAuthority(body: any) {
+  const constraints = ensureDeployConstraints(parseJsonObject(body.constraints))
+  const scope = parseJsonObject(body.scope)
+
   // Keep authority objects small and explicit so the flow is easy to follow.
   return {
     authority_id: crypto.randomUUID(),
     decision_id: body.decision_id || crypto.randomUUID(),
     owner: body.owner || "unknown",
     intent: body.intent || "deploy_production",
-    scope: body.scope || {},
-    constraints: body.constraints || {},
+    scope,
+    constraints,
     status: "ACTIVE",
     created_at: new Date().toISOString()
   }
@@ -357,7 +360,7 @@ async function recordsSavedForRun(env: Env, decisionId: string, executionId: str
   }
 }
 
-async function validateDeployAeo(env: Env, body: any) {
+async function validateAuthority(env: Env, body: any) {
   const validationId = crypto.randomUUID()
 
   if (!body.decision_id) {
@@ -384,7 +387,7 @@ async function validateDeployAeo(env: Env, body: any) {
         decision_id: body.decision_id,
         status: "FAILED",
         result: "INVALID",
-        message: "No authority record found in D1 for this decision_id. Create authority first via POST /authority."
+        message: "authority not found"
       }
     }
   }
@@ -408,70 +411,19 @@ async function validateDeployAeo(env: Env, body: any) {
     }
   }
 
-  const target = parseGithubTarget(body.target)
-  if (!target) {
-    return {
-      ok: false,
-      code: 400,
-      payload: {
-        validation_id: validationId,
-        decision_id: body.decision_id,
-        status: "FAILED",
-        result: "INVALID",
-        message:
-          "AEO target must be { system: 'github_actions', action: 'deploy', repo, branch, workflow }."
-      }
-    }
-  }
-
-  const authorityTarget = targetFromAuthority(authority)
-  if (!authorityTarget) {
-    return {
-      ok: false,
-      code: 409,
-      payload: {
-        validation_id: validationId,
-        decision_id: body.decision_id,
-        status: "FAILED",
-        result: "INVALID",
-        message: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
-      }
-    }
-  }
-
-  if (
-    target.repo !== authorityTarget.repo ||
-    target.branch !== authorityTarget.branch ||
-    target.workflow !== authorityTarget.workflow
-  ) {
-    return {
-      ok: false,
-      code: 409,
-      payload: {
-        validation_id: validationId,
-        decision_id: body.decision_id,
-        status: "FAILED",
-        result: "INVALID",
-        message: "AEO target does not match authority constraints."
-      }
-    }
-  }
-
   const validation = {
     validation_id: validationId,
     decision_id: body.decision_id,
     result: "VALID",
     status: "VALIDATED",
-    message: "Authority + AEO target are valid for governed GitHub deploy execution.",
-    target
+    message: "Authority is ACTIVE and valid for execution."
   }
 
   return {
     ok: true,
     code: 200,
     payload: validation,
-    authority,
-    target
+    authority
   }
 }
 
@@ -572,7 +524,7 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      const result = await validateDeployAeo(env, body)
+      const result = await validateAuthority(env, body)
       return jsonResponse(result.payload, result.code)
     }
 
@@ -587,22 +539,36 @@ export default {
       }
 
       // Critical rule: do not dispatch a production deploy unless validation passes.
-      const validation = await validateDeployAeo(env, body)
-      if (!validation.ok || !validation.authority || !validation.target) {
+      const validation = await validateAuthority(env, body)
+      if (!validation.ok || !validation.authority) {
         return jsonResponse(
           {
             status: "FAILED",
             decision_id: body.decision_id || null,
             result: "NOT_EXECUTED",
-            message: "Execution blocked: VALID AEO required before GitHub workflow dispatch.",
+            message: "execution blocked",
             validation: validation.payload
           },
           validation.code
         )
       }
 
+      const target = targetFromAuthority(validation.authority)
+      if (!target) {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            decision_id: body.decision_id,
+            result: "NOT_EXECUTED",
+            message: "execution blocked",
+            error: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
+          },
+          409
+        )
+      }
+
       try {
-        const execution = await executeGithubDeploy(env, validation.authority, validation.target)
+        const execution = await executeGithubDeploy(env, validation.authority, target)
         if (execution.status === "EXECUTED") {
           // Replay prevention: consume authority immediately after successful dispatch.
           await consumeAuthority(env, body.decision_id)
@@ -644,6 +610,16 @@ export default {
             error: "Unknown execution_id. Run /execute first so proof is tied to a real GitHub dispatch execution."
           },
           404
+        )
+      }
+
+      if (execution.status !== "EXECUTED") {
+        return jsonResponse(
+          {
+            status: "FAILED",
+            error: "Proof can only be recorded after a successful execution."
+          },
+          409
         )
       }
 
