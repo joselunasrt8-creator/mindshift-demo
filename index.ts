@@ -68,6 +68,7 @@ function buildAuthority(body: any) {
     owner: body.owner || "unknown",
     intent: body.intent || "deploy_production",
     scope: body.scope || {},
+    constraints: body.constraints || {},
     constraints,
     status: "ACTIVE",
     created_at: new Date().toISOString()
@@ -553,11 +554,19 @@ export default {
         )
       }
 
+      if (!isAuthorityUsableForExecution(authority.status)) {
+        const message =
+          String(authority.status).toUpperCase() === "CONSUMED"
+            ? "authority already consumed"
+            : `Authority exists, but status '${authority.status}' is not valid for execution.`
+
       const target = targetFromAuthority(authority)
       if (!target) {
         return jsonResponse(
           {
             status: "FAILED",
+            result: "INVALID",
+            message
             error: "Authority constraints must define repo, branch, workflow for GitHub deploy target."
           },
           409
@@ -588,6 +597,11 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
+      // Critical fail-closed gate:
+      // Re-check authority in D1 right before webhook execution.
+      // If this decision_id is missing or no longer ACTIVE, we block execution.
+      const authority = await findAuthorityByDecisionId(env, body.decision_id)
+      if (!authority) {
       // Critical rule: do not dispatch a production deploy unless validation passes.
       const validation = await validateDeployAeo(env, body)
       if (!validation.ok || !validation.authority || !validation.target) {
@@ -599,11 +613,34 @@ export default {
             message: "Execution blocked: VALID AEO required before GitHub workflow dispatch.",
             validation: validation.payload
           },
+          403
+        )
+      }
+
+      if (!isAuthorityUsableForExecution(authority.status)) {
+        const message =
+          String(authority.status).toUpperCase() === "CONSUMED"
+            ? "Execution blocked: authority already consumed."
+            : `Execution blocked: authority status '${authority.status}' is not ACTIVE.`
+
+        return jsonResponse(
+          {
+            status: "FAILED",
+            decision_id: body.decision_id,
+            result: "NOT_EXECUTED",
+            message
+          },
+          403
           validation.code
         )
       }
 
       try {
+        const execution = await executeWebhook(env, body.decision_id, body.intent)
+        if (execution.status === "EXECUTED") {
+          // Consume authority only after successful execution.
+          await consumeAuthority(env, body.decision_id)
+        }
         const execution = await executeGithubDeploy(env, validation.authority, validation.target)
         if (execution.status === "EXECUTED") {
           // Replay prevention: consume authority immediately after successful dispatch.
