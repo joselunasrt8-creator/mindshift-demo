@@ -262,8 +262,8 @@ export default {
       const body = await readJson(request);
       if (!body) return json({ status: "NULL", reason: "Invalid JSON" }, 400);
 
-      const missing = requireKeys(body, ["execution_id"]);
-      if (missing.length) return json({ status: "NULL", reason: "Missing execution_id" }, 400);
+      const missing = requireKeys(body, ["execution_id", "run_id", "commit_sha", "workflow", "environment"]);
+      if (missing.length) return json({ status: "NULL", reason: `Missing fields: ${missing.join(", ")}` }, 400);
 
       const execution = await env.DB
         .prepare("SELECT * FROM executions WHERE id = ?1")
@@ -282,6 +282,12 @@ export default {
         execution_id: execution.id,
         authority_id: execution.authority_id,
         execution_surface: "webhook",
+        github: {
+          run_id: body.run_id,
+          commit_sha: body.commit_sha,
+          workflow: body.workflow,
+          environment: body.environment
+        },
         transfer_hash: executedHash,
         generated_at: now,
         authority_lifecycle: {

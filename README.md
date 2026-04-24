@@ -32,13 +32,13 @@ Expected replay safety fields in the JSON response:
 
 ## Production deploys are governed by MindShift
 
-Production deployment is locked behind `.github/workflows/governed-deploy.yml` and can only be started with `workflow_dispatch` when `environment=production`.
+Production deployment is locked behind `.github/workflows/governed-deploy.yml` and can only be started with `workflow_dispatch` when `environment=production` (the first non-bypassable production path in this repo).
 
 Governed sequence (fail-closed):
 1. `POST /authority`
 2. `POST /compile`
 3. `POST /validate`
-4. If validation is not `VALID`, deployment stops.
+4. If validation is not `VALID`, deployment stops (fail closed).
 5. `POST /execute`
 6. `POST /proof`
 
