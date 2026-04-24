@@ -13,6 +13,10 @@ on:
         description: "Branch"
         required: false
         default: "main"
+      environment:
+        description: "Environment (legacy workflow forbids production)"
+        required: false
+        default: "staging"
 
   repository_dispatch:
     types: [mindshift_execute]
@@ -27,6 +31,23 @@ jobs:
       contents: read
 
     steps:
+      - name: Block production path in legacy transfer workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TARGET_ENV="staging"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET_ENV="${{ inputs.environment }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ] && [ -n "${{ github.event.client_payload.environment }}" ]; then
+            TARGET_ENV="${{ github.event.client_payload.environment }}"
+          fi
+
+          if [ "$TARGET_ENV" = "production" ]; then
+            echo "Direct production deploys are disabled in transfer.yml. Use governed-deploy.yml instead."
+            exit 1
+          fi
+
       - name: Enforce MindShift trigger
         shell: bash
         run: |

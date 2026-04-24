@@ -1,0 +1,205 @@
+name: governed-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (must be production)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to deploy"
+        required: false
+        default: "main"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  governed-production-deploy:
+    runs-on: ubuntu-latest
+    env:
+      WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
+      API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      DEPLOY_REF: ${{ inputs.ref }}
+      WORKFLOW_NAME: ${{ github.workflow }}
+      COMMIT_SHA: ${{ github.sha }}
+      RUN_ID: ${{ github.run_id }}
+      REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - name: Ensure production is explicitly selected
+        run: |
+          set -euo pipefail
+
+          if [ "$DEPLOY_ENVIRONMENT" != "production" ]; then
+            echo "Environment must be exactly 'production'."
+            exit 1
+          fi
+
+      - name: Ensure MindShift worker URL is configured
+        run: |
+          set -euo pipefail
+
+          if [ -z "${WORKER_URL:-}" ]; then
+            echo "Missing MINDSHIFT_WORKER_URL secret"
+            exit 1
+          fi
+
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
+
+      - name: Request authority from MindShift
+        run: |
+          set -euo pipefail
+
+          AUTHORITY_RESPONSE=$(curl -sS -X POST "$WORKER_URL/authority" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
+            -d "$(jq -n \
+              --arg owner "$GITHUB_ACTOR" \
+              --arg intent "deploy_production" \
+              --arg environment "$DEPLOY_ENVIRONMENT" \
+              --arg repo "$REPOSITORY" \
+              '{
+                owner: $owner,
+                intent: $intent,
+                scope: {environment: $environment},
+                constraints: {
+                  repo: $repo,
+                  branch: "main",
+                  workflow: "governed-deploy.yml",
+                  max_executions: 1
+                }
+              }')")
+
+          echo "$AUTHORITY_RESPONSE" > authority.json
+          DECISION_ID=$(jq -r '.decision_id // empty' authority.json)
+
+          if [ -z "$DECISION_ID" ]; then
+            echo "Failed to acquire authority"
+            cat authority.json
+            exit 1
+          fi
+
+          echo "DECISION_ID=$DECISION_ID" >> "$GITHUB_ENV"
+
+      - name: Compile deployment intent
+        run: |
+          set -euo pipefail
+
+          COMPILE_RESPONSE=$(curl -sS -X POST "$WORKER_URL/compile" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
+            -d "$(jq -n --arg decision_id "$DECISION_ID" '{decision_id: $decision_id}')")
+
+          echo "$COMPILE_RESPONSE" > compile.json
+
+          AEO_ID=$(jq -r '.aeo_id // empty' compile.json)
+          if [ -z "$AEO_ID" ]; then
+            echo "Compile failed"
+            cat compile.json
+            exit 1
+          fi
+
+      - name: Validate deployment intent (fail closed)
+        run: |
+          set -euo pipefail
+
+          VALIDATE_RESPONSE=$(curl -sS -X POST "$WORKER_URL/validate" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
+            -d "$(jq -n --arg decision_id "$DECISION_ID" '{decision_id: $decision_id}')")
+
+          echo "$VALIDATE_RESPONSE" > validate.json
+
+          VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
+          VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
+          VALIDATED_HASH=$(jq -r '.validated_object_hash // empty' validate.json)
+
+          if [ "$VALIDATION_RESULT" != "VALID" ] || [ "$VALIDATION_STATUS" != "VALIDATED" ] || [ -z "$VALIDATED_HASH" ]; then
+            echo "MindShift validation was not VALID. Failing closed."
+            cat validate.json
+            exit 1
+          fi
+
+          echo "VALIDATED_HASH=$VALIDATED_HASH" >> "$GITHUB_ENV"
+
+      - name: Execute deployment through MindShift boundary
+        run: |
+          set -euo pipefail
+
+          EXECUTE_RESPONSE=$(curl -sS -X POST "$WORKER_URL/execute" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
+            -d "$(jq -n \
+              --arg decision_id "$DECISION_ID" \
+              --arg intent "deploy_production" \
+              --arg validated_object_hash "$VALIDATED_HASH" \
+              '{
+                decision_id: $decision_id,
+                intent: $intent,
+                validated_object_hash: $validated_object_hash
+              }')")
+
+          echo "$EXECUTE_RESPONSE" > execute.json
+
+          EXECUTION_ID=$(jq -r '.execution_id // empty' execute.json)
+          EXECUTION_STATUS=$(jq -r '.status // empty' execute.json)
+
+          if [ "$EXECUTION_STATUS" != "EXECUTED" ] || [ -z "$EXECUTION_ID" ]; then
+            echo "MindShift execute did not complete"
+            cat execute.json
+            exit 1
+          fi
+
+          echo "EXECUTION_ID=$EXECUTION_ID" >> "$GITHUB_ENV"
+
+      - name: Record proof in MindShift
+        run: |
+          set -euo pipefail
+
+          PROOF_RESPONSE=$(curl -sS -X POST "$WORKER_URL/proof" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
+            -d "$(jq -n \
+              --arg execution_id "$EXECUTION_ID" \
+              --arg decision_id "$DECISION_ID" \
+              --arg run_id "$RUN_ID" \
+              --arg commit_sha "$COMMIT_SHA" \
+              --arg workflow "$WORKFLOW_NAME" \
+              --arg environment "$DEPLOY_ENVIRONMENT" \
+              '{
+                execution_id: $execution_id,
+                decision_id: $decision_id,
+                surface: "github_actions",
+                run_id: $run_id,
+                commit_sha: $commit_sha,
+                workflow: $workflow,
+                environment: $environment,
+                proof_reference: ("github_run:" + $run_id)
+              }')")
+
+          echo "$PROOF_RESPONSE" > proof.json
+
+          PROOF_ID=$(jq -r '.proof_id // empty' proof.json)
+          if [ -z "$PROOF_ID" ]; then
+            echo "Failed to record proof"
+            cat proof.json
+            exit 1
+          fi
+
+      - name: Upload governance records
+        uses: actions/upload-artifact@v4
+        with:
+          name: governed-deploy-records
+          path: |
+            authority.json
+            compile.json
+            validate.json
+            execute.json
+            proof.json
