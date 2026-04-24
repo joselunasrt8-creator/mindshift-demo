@@ -59,8 +59,6 @@ function ensureDeployConstraints(constraints: Record<string, unknown>) {
 }
 
 function buildAuthority(body: any) {
-  const constraints = ensureDeployConstraints(body.constraints || {})
-
   // Keep authority objects small and explicit so the flow is easy to follow.
   return {
     authority_id: crypto.randomUUID(),
@@ -68,7 +66,7 @@ function buildAuthority(body: any) {
     owner: body.owner || "unknown",
     intent: body.intent || "deploy_production",
     scope: body.scope || {},
-    constraints,
+    constraints: body.constraints || {},
     status: "ACTIVE",
     created_at: new Date().toISOString()
   }
