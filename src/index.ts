@@ -805,6 +805,7 @@ export default {
         { decision_id: authority.decision_id, intent: authority.intent },
         { simulateSuccess: true }
       )
+
       const authorityAfterFirst = await findAuthorityByDecisionId(env, authority.decision_id)
 
       const replayAttempt = await runExecuteFlow(
@@ -813,15 +814,16 @@ export default {
         { simulateSuccess: true }
       )
 
-      const firstStatus = firstAttempt.code === 200 ? "EXECUTED" : "FAILED"
-      const replayStatus = replayAttempt.code === 409 ? "BLOCKED" : replayAttempt.code === 200 ? "EXECUTED" : "FAILED"
-
       return jsonResponse({
         decision_id: authority.decision_id,
-        sequence: [firstStatus, replayStatus],
-        first_attempt: firstAttempt.payload,
+        first_attempt: {
+          status: firstAttempt.code === 200 ? "EXECUTED" : "FAILED"
+        },
         authority_status_after_first: authorityAfterFirst?.status || null,
-        replay_attempt: replayAttempt.payload
+        replay_attempt: {
+          status: replayAttempt.code === 409 ? "BLOCKED" : replayAttempt.code === 200 ? "EXECUTED" : "FAILED",
+          message: replayAttempt.payload?.validation?.message || replayAttempt.payload?.message || null
+        }
       })
     }
 
