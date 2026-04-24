@@ -642,6 +642,115 @@ async function runGithubProofTest(env: Env) {
   })
 }
 
+async function runReplayTest(env: Env) {
+  // Step 1: create one ACTIVE authority (same logic used by POST /authority).
+  const authority = buildAuthority({
+    owner: "replay_test",
+    decision_id: `replay-${crypto.randomUUID()}`,
+    intent: "deploy_production",
+    scope: { mode: "replay_test" },
+    constraints: {
+      repo: "local/replay-test",
+      branch: "main",
+      workflow: "deploy.yml",
+      max_executions: 1
+    }
+  })
+  await saveAuthority(env, authority)
+
+  // Step 2: compile one exact AEO (same logic used by POST /compile).
+  const target = targetFromAuthority(authority)
+  if (!target) {
+    return jsonResponse(
+      {
+        status: "FAILED",
+        error: "Unable to compile replay test AEO because authority constraints are incomplete."
+      },
+      409
+    )
+  }
+  const aeo = buildAeo(authority, target)
+  await saveAeo(env, aeo)
+
+  // Step 3: validate it (same logic used by POST /validate).
+  const validation = await validateAuthority(env, { decision_id: authority.decision_id })
+  if (!validation.ok) {
+    return jsonResponse(
+      {
+        status: "FAILED",
+        stage: "validate",
+        details: validation.payload
+      },
+      validation.code
+    )
+  }
+
+  // Step 4: execute it once (same logic used by POST /execute).
+  const firstExecution = await runExecuteFlow(
+    env,
+    { decision_id: authority.decision_id, intent: authority.intent },
+    { simulateSuccess: true }
+  )
+  if (firstExecution.code !== 200 || !firstExecution.payload.execution_id) {
+    return jsonResponse(
+      {
+        status: "FAILED",
+        stage: "execute",
+        details: firstExecution.payload
+      },
+      firstExecution.code
+    )
+  }
+
+  // Step 5: record proof (same logic used by POST /proof).
+  const storedExecution = await findExecution(env, firstExecution.payload.execution_id)
+  if (!storedExecution) {
+    return jsonResponse(
+      {
+        status: "FAILED",
+        stage: "proof",
+        error: "execution record not found after first execution"
+      },
+      500
+    )
+  }
+
+  const proof = buildProof(
+    {
+      execution_id: firstExecution.payload.execution_id,
+      decision_id: authority.decision_id,
+      surface: "github_actions",
+      run_id: String(Date.now()),
+      commit_sha: crypto.randomUUID().replace(/-/g, ""),
+      environment_url: "https://example.com/replay-test"
+    },
+    storedExecution
+  )
+  await saveProof(env, proof)
+
+  // Step 6: make sure authority is CONSUMED after first execution/proof flow.
+  await consumeAuthority(env, authority.decision_id)
+  const authorityAfterFirst = await findAuthorityByDecisionId(env, authority.decision_id)
+
+  // Step 7: attempt the same execution again.
+  const replayAttempt = await runExecuteFlow(
+    env,
+    { decision_id: authority.decision_id, intent: authority.intent },
+    { simulateSuccess: true }
+  )
+
+  // Step 8: replay is blocked because authority is no longer ACTIVE.
+  const replayBlocked = replayAttempt.code === 409
+  const authorityConsumed = authorityAfterFirst?.status === "CONSUMED"
+
+  return jsonResponse({
+    first_attempt: firstExecution.code === 200 ? "EXECUTED" : "FAILED",
+    authority_status_after_first: authorityAfterFirst?.status || "UNKNOWN",
+    replay_attempt: replayBlocked ? "BLOCKED" : "FAILED",
+    system_result: replayBlocked && authorityConsumed ? "NON_REPLAYABLE_EXECUTION_CONFIRMED" : "CHECK_FAILED"
+  })
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -785,49 +894,7 @@ export default {
     }
 
     if (url.pathname === "/replay-test" && request.method === "GET") {
-      // Keep replay simulation self-contained in a single request:
-      // 1) create authority, 2) execute once, 3) immediately replay with same decision_id.
-      // No cross-request/global state is used here.
-      const authority = buildAuthority({
-        owner: "replay_test",
-        decision_id: `replay-${crypto.randomUUID()}`,
-        intent: "deploy_production",
-        scope: { mode: "replay_test" },
-        constraints: {
-          repo: "local/replay-test",
-          branch: "main",
-          workflow: "deploy.yml",
-          max_executions: 1
-        }
-      })
-
-      await saveAuthority(env, authority)
-
-      const firstAttempt = await runExecuteFlow(
-        env,
-        { decision_id: authority.decision_id, intent: authority.intent },
-        { simulateSuccess: true }
-      )
-
-      const authorityAfterFirst = await findAuthorityByDecisionId(env, authority.decision_id)
-
-      const replayAttempt = await runExecuteFlow(
-        env,
-        { decision_id: authority.decision_id, intent: authority.intent },
-        { simulateSuccess: true }
-      )
-
-      return jsonResponse({
-        decision_id: authority.decision_id,
-        first_attempt: {
-          status: firstAttempt.code === 200 ? "EXECUTED" : "FAILED"
-        },
-        authority_status_after_first: authorityAfterFirst?.status || null,
-        replay_attempt: {
-          status: replayAttempt.code === 409 ? "BLOCKED" : replayAttempt.code === 200 ? "EXECUTED" : "FAILED",
-          message: replayAttempt.payload?.validation?.message || replayAttempt.payload?.message || null
-        }
-      })
+      return runReplayTest(env)
     }
 
     if (url.pathname === "/github-proof-test" && request.method === "GET") {

@@ -19,8 +19,13 @@ npx wrangler deploy
 curl -s https://mindshift-demo.joselunasrt8.workers.dev/replay-test
 ```
 
-Expected `sequence` in the JSON response:
+Expected replay safety fields in the JSON response:
 
 ```json
-["EXECUTED", "BLOCKED"]
+{
+  "first_attempt": "EXECUTED",
+  "authority_status_after_first": "CONSUMED",
+  "replay_attempt": "BLOCKED",
+  "system_result": "NON_REPLAYABLE_EXECUTION_CONFIRMED"
+}
 ```
