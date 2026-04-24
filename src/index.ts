@@ -785,6 +785,9 @@ export default {
     }
 
     if (url.pathname === "/replay-test" && request.method === "GET") {
+      // Keep replay simulation self-contained in a single request:
+      // 1) create authority, 2) execute once, 3) immediately replay with same decision_id.
+      // No cross-request/global state is used here.
       const authority = buildAuthority({
         owner: "replay_test",
         decision_id: `replay-${crypto.randomUUID()}`,
