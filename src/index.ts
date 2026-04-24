@@ -7,18 +7,31 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 type Env = {
   DB: D1Database
-  GITHUB_TOKEN: string
-  GITHUB_OWNER: string
-  GITHUB_REPO: string
 }
 
-type GithubDeployTarget = {
-  system: "github_actions"
-  action: "deploy"
-  repo: string
-  branch: string
-  workflow: string
-  inputs?: Record<string, string>
+type AuthorityRecord = {
+  decision_id: string
+  owner: string
+  intent: string
+  scope: string
+  constraints: string
+  expiry: string | null
+  status: string
+}
+
+type CompileRecord = {
+  decision_id: string
+  aeo_hash: string
+  compiled_object_json: string
+}
+
+type ValidationRecord = {
+  validation_id: string
+  decision_id: string
+  aeo_hash: string
+  result: string
+  timestamp: string
+  validated_object_hash: string | null
 }
 
 async function readJson(request: Request): Promise<any | null> {
@@ -29,617 +42,74 @@ async function readJson(request: Request): Promise<any | null> {
   }
 }
 
-function parseJsonObject(value: unknown) {
-  if (value && typeof value === "object") {
-    return value as Record<string, unknown>
-  }
-
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value)
-      if (parsed && typeof parsed === "object") {
-        return parsed as Record<string, unknown>
-      }
-    } catch {
-      return {}
-    }
-  }
-
-  return {}
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
 }
 
-function ensureDeployConstraints(constraints: Record<string, unknown>) {
-  return {
-    ...constraints,
-    repo: String(constraints.repo || ""),
-    branch: String(constraints.branch || ""),
-    workflow: String(constraints.workflow || ""),
-    max_executions: Number(constraints.max_executions ?? 1)
-  }
+function nowIso() {
+  return new Date().toISOString()
 }
 
-function buildAuthority(body: any) {
-  const constraints = ensureDeployConstraints(parseJsonObject(body.constraints))
-  const scope = parseJsonObject(body.scope)
-
-  return {
-    authority_id: crypto.randomUUID(),
-    decision_id: body.decision_id || crypto.randomUUID(),
-    owner: body.owner || "unknown",
-    intent: body.intent || "deploy_production",
-    scope,
-    constraints,
-    status: "ACTIVE",
-    created_at: new Date().toISOString()
-  }
-}
-
-function buildAeo(authority: any, target: GithubDeployTarget) {
-  return {
-    aeo_id: crypto.randomUUID(),
-    authority_id: authority.authority_id,
-    decision_id: authority.decision_id,
-    intent: authority.intent,
-    scope: parseJsonObject(authority.scope),
-    constraints: ensureDeployConstraints(parseJsonObject(authority.constraints)),
-    validation: {
-      authority_id: authority.authority_id,
-      decision_id: authority.decision_id,
-      max_executions: ensureDeployConstraints(parseJsonObject(authority.constraints)).max_executions
-    },
-    target,
-    finality: {
-      proof_required: true
-    },
-    status: "COMPILED"
-  }
-}
-
-function parseGithubTarget(input: any): GithubDeployTarget | null {
-  if (!input || typeof input !== "object") {
-    return null
-  }
-
-  if (input.system !== "github_actions" || input.action !== "deploy") {
-    return null
-  }
-
-  if (!input.repo || !input.branch || !input.workflow) {
-    return null
-  }
-
-  return {
-    system: "github_actions",
-    action: "deploy",
-    repo: String(input.repo),
-    branch: String(input.branch),
-    workflow: String(input.workflow),
-    inputs: input.inputs && typeof input.inputs === "object" ? input.inputs : undefined
-  }
-}
-
-function targetFromAuthority(authority: any): GithubDeployTarget | null {
-  const constraints = ensureDeployConstraints(parseJsonObject(authority.constraints))
-
-  if (!constraints.repo || !constraints.branch || !constraints.workflow) {
-    return null
-  }
-
-  return {
-    system: "github_actions",
-    action: "deploy",
-    repo: constraints.repo,
-    branch: constraints.branch,
-    workflow: constraints.workflow
-  }
-}
-
-function buildValidation(aeo: any) {
-  return {
-    validation_id: crypto.randomUUID(),
-    authority_id: aeo.authority_id,
-    aeo_id: aeo.aeo_id,
-    decision_id: aeo.decision_id,
-    intent: aeo.intent,
-    result: "VALID",
-    status: "VALIDATED",
-    created_at: new Date().toISOString()
-  }
-}
-
-async function findAuthorityByDecisionId(env: Env, decisionId: string) {
-  return env.DB.prepare("SELECT * FROM authority_registry WHERE decision_id = ?1 ORDER BY created_at DESC LIMIT 1")
+async function getAuthority(env: Env, decisionId: string) {
+  return env.DB.prepare("SELECT * FROM authorities WHERE decision_id = ?1")
     .bind(decisionId)
-    .first<any>()
+    .first<AuthorityRecord>()
 }
 
-function isAuthorityUsableForExecution(authorityStatus: string | null | undefined) {
-  return ["ACTIVE"].includes((authorityStatus || "").toUpperCase())
+async function setAuthorityStatus(env: Env, decisionId: string, status: string) {
+  await env.DB.prepare("UPDATE authorities SET status = ?1 WHERE decision_id = ?2").bind(status, decisionId).run()
 }
 
-async function consumeAuthority(env: Env, decisionId: string) {
-  await env.DB.prepare("UPDATE authority_registry SET status = ?1 WHERE decision_id = ?2")
-    .bind("CONSUMED", decisionId)
-    .run()
+async function latestCompile(env: Env, decisionId: string) {
+  return env.DB.prepare("SELECT * FROM compile_registry WHERE decision_id = ?1 ORDER BY rowid DESC LIMIT 1")
+    .bind(decisionId)
+    .first<CompileRecord>()
 }
 
-async function saveAuthority(env: Env, authority: any) {
-  await env.DB.prepare(
-    `INSERT INTO authority_registry (
-      authority_id,
-      decision_id,
-      owner,
-      intent,
-      scope,
-      constraints,
-      status,
-      created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-  )
-    .bind(
-      authority.authority_id,
-      authority.decision_id,
-      authority.owner,
-      authority.intent,
-      JSON.stringify(authority.scope),
-      JSON.stringify(authority.constraints),
-      authority.status,
-      authority.created_at
-    )
-    .run()
+async function latestValidation(env: Env, decisionId: string) {
+  return env.DB.prepare("SELECT * FROM validation_registry WHERE decision_id = ?1 ORDER BY timestamp DESC LIMIT 1")
+    .bind(decisionId)
+    .first<ValidationRecord>()
 }
 
-async function saveAeo(env: Env, aeo: any) {
-  await env.DB.prepare(
-    `INSERT INTO aeo_registry (
-      aeo_id,
-      authority_id,
-      decision_id,
-      intent,
-      aeo,
-      status,
-      created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
-  )
-    .bind(aeo.aeo_id, aeo.authority_id, aeo.decision_id, aeo.intent, JSON.stringify(aeo), aeo.status, new Date().toISOString())
-    .run()
-}
+async function insertValidation(
+  env: Env,
+  payload: { decisionId: string; aeoHash: string; result: string; validatedObjectHash: string | null }
+) {
+  const validation = {
+    validation_id: crypto.randomUUID(),
+    decision_id: payload.decisionId,
+    aeo_hash: payload.aeoHash,
+    result: payload.result,
+    timestamp: nowIso(),
+    validated_object_hash: payload.validatedObjectHash
+  }
 
-async function saveValidation(env: Env, validation: any) {
   await env.DB.prepare(
     `INSERT INTO validation_registry (
       validation_id,
-      authority_id,
-      aeo_id,
       decision_id,
-      intent,
+      aeo_hash,
       result,
-      status,
-      created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+      timestamp,
+      validated_object_hash
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
   )
     .bind(
       validation.validation_id,
-      validation.authority_id,
-      validation.aeo_id,
       validation.decision_id,
-      validation.intent,
+      validation.aeo_hash,
       validation.result,
-      validation.status,
-      validation.created_at || new Date().toISOString()
+      validation.timestamp,
+      validation.validated_object_hash
     )
     .run()
-}
 
-async function saveExecution(env: Env, execution: any) {
-  await env.DB.prepare(
-    `INSERT INTO execution_registry (
-      execution_id,
-      authority_id,
-      decision_id,
-      intent,
-      webhook_url,
-      upstream_status,
-      status,
-      execution_event,
-      created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
-  )
-    .bind(
-      execution.execution_id,
-      execution.authority_id,
-      execution.decision_id,
-      execution.intent,
-      execution.webhook_url,
-      execution.upstream_status,
-      execution.status,
-      JSON.stringify(execution.execution_event),
-      execution.timestamp
-    )
-    .run()
-}
-
-async function executeGithubDeploy(
-  env: Env,
-  authority: any,
-  target: GithubDeployTarget,
-  options?: { simulateSuccess?: boolean }
-) {
-  const executionId = crypto.randomUUID()
-  const timestamp = new Date().toISOString()
-  let status = "FAILED"
-  let upstreamStatus: number | null = null
-
-  const [targetOwner, targetRepo] = target.repo.split("/")
-  const owner = targetOwner || env.GITHUB_OWNER
-  const repo = targetRepo || env.GITHUB_REPO
-  const dispatchRepo = `${owner}/${repo}`
-  const dispatchUrl = `https://api.github.com/repos/${dispatchRepo}/actions/workflows/${target.workflow}/dispatches`
-
-  if (options?.simulateSuccess) {
-    upstreamStatus = 204
-    status = "EXECUTED"
-  } else {
-    try {
-      const upstream = await fetch(dispatchUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-          "X-GitHub-Api-Version": "2022-11-28"
-        },
-        body: JSON.stringify({
-          ref: target.branch,
-          inputs: {
-            ...target.inputs,
-            decision_id: authority.decision_id,
-            authority_id: authority.authority_id
-          }
-        })
-      })
-
-      upstreamStatus = upstream.status
-      status = upstream.ok ? "EXECUTED" : "FAILED"
-    } catch {
-      status = "FAILED"
-    }
-  }
-
-  const execution = {
-    execution_id: executionId,
-    authority_id: authority.authority_id,
-    decision_id: authority.decision_id,
-    intent: authority.intent,
-    webhook_url: dispatchUrl,
-    upstream_status: upstreamStatus,
-    status,
-    timestamp,
-    target,
-    execution_event: {
-      system: target.system,
-      action: target.action,
-      repo: dispatchRepo,
-      branch: target.branch,
-      workflow: target.workflow
-    }
-  }
-
-  await saveExecution(env, execution)
-  return execution
-}
-
-async function runExecuteFlow(
-  env: Env,
-  body: { decision_id?: string; intent?: string; target?: any },
-  options?: { simulateSuccess?: boolean }
-) {
-  const validation = await validateAuthority(env, body)
-  if (!validation.ok || !validation.authority) {
-    return {
-      code: validation.code,
-      payload: {
-        status: "FAILED",
-        decision_id: body.decision_id || null,
-        result: "NOT_EXECUTED",
-        message: "execution blocked",
-        validation: validation.payload
-      }
-    }
-  }
-
-  const authorityTarget = targetFromAuthority(validation.authority)
-  if (!authorityTarget) {
-    return {
-      code: 409,
-      payload: {
-        status: "FAILED",
-        decision_id: body.decision_id || null,
-        result: "NOT_EXECUTED",
-        message: "execution blocked",
-        error: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
-      }
-    }
-  }
-
-  let target = authorityTarget
-  if (body.target) {
-    const requestedTarget = parseGithubTarget(body.target)
-    if (!requestedTarget) {
-      return {
-        code: 400,
-        payload: {
-          status: "FAILED",
-          decision_id: body.decision_id || null,
-          result: "NOT_EXECUTED",
-          message: "execution blocked",
-          error:
-            "Unsupported target. Only target.system='github_actions' with action='deploy' and fields repo, branch, workflow is allowed."
-        }
-      }
-    }
-
-    if (
-      requestedTarget.repo !== authorityTarget.repo ||
-      requestedTarget.branch !== authorityTarget.branch ||
-      requestedTarget.workflow !== authorityTarget.workflow
-    ) {
-      return {
-        code: 409,
-        payload: {
-          status: "FAILED",
-          decision_id: body.decision_id || null,
-          result: "NOT_EXECUTED",
-          message: "execution blocked",
-          error: "Requested target does not match ACTIVE authority constraints."
-        }
-      }
-    }
-
-    target = requestedTarget
-  }
-
-  if (!options?.simulateSuccess && (!env.GITHUB_TOKEN || !env.GITHUB_OWNER || !env.GITHUB_REPO)) {
-    return {
-      code: 500,
-      payload: {
-        status: "FAILED",
-        decision_id: body.decision_id || null,
-        result: "NOT_EXECUTED",
-        message: "execution blocked",
-        error: "Missing required GitHub secrets: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO."
-      }
-    }
-  }
-
-  const execution = await executeGithubDeploy(env, validation.authority, target, options)
-  if (execution.status === "EXECUTED") {
-    await consumeAuthority(env, String(body.decision_id || ""))
-    return {
-      code: 200,
-      payload: {
-        execution_id: execution.execution_id,
-        decision_id: execution.decision_id,
-        status: "EXECUTED",
-        surface: "github_actions",
-        workflow: target.workflow,
-        branch: target.branch
-      }
-    }
-  }
-
-  return {
-    code: 502,
-    payload: {
-      status: "FAILED",
-      decision_id: body.decision_id || null,
-      result: "NOT_EXECUTED",
-      message: "GitHub workflow dispatch failed.",
-      execution_id: execution.execution_id,
-      upstream_status: execution.upstream_status
-    }
-  }
-}
-
-function buildProof(body: any, execution: any) {
-  return {
-    proof_id: crypto.randomUUID(),
-    execution_id: body.execution_id,
-    decision_id: body.decision_id,
-    authority_id: execution.authority_id,
-    surface: body.surface || "github_actions",
-    proof_reference: body.proof_reference || `github_run:${body.run_id || "unknown"}`,
-    run_id: body.run_id,
-    commit_sha: body.commit_sha,
-    environment_url: body.environment_url || null,
-    timestamp: new Date().toISOString(),
-    status: "RECORDED",
-    execution_status: execution.status
-  }
-}
-
-async function saveProof(env: Env, proof: any) {
-  await env.DB.prepare(
-    `INSERT INTO proof_registry (
-      proof_id,
-      execution_id,
-      authority_id,
-      decision_id,
-      surface,
-      proof_reference,
-      status,
-      created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
-  )
-    .bind(
-      proof.proof_id,
-      proof.execution_id,
-      proof.authority_id,
-      proof.decision_id,
-      proof.surface,
-      JSON.stringify({
-        proof_reference: proof.proof_reference,
-        run_id: proof.run_id,
-        commit_sha: proof.commit_sha,
-        environment_url: proof.environment_url
-      }),
-      proof.status,
-      proof.timestamp
-    )
-    .run()
-}
-
-async function findExecution(env: Env, executionId: string) {
-  return env.DB.prepare("SELECT * FROM execution_registry WHERE execution_id = ?1").bind(executionId).first<any>()
-}
-
-async function listAuthorities(env: Env) {
-  return env.DB.prepare("SELECT * FROM authority_registry ORDER BY created_at DESC").all()
-}
-
-async function listExecutions(env: Env) {
-  return env.DB.prepare("SELECT * FROM execution_registry ORDER BY created_at DESC").all()
-}
-
-async function listProofs(env: Env) {
-  return env.DB.prepare("SELECT * FROM proof_registry ORDER BY created_at DESC").all()
-}
-
-async function recordsSavedForRun(env: Env, decisionId: string, executionId: string, proofId: string) {
-  const [authority, execution, proof] = await Promise.all([
-    env.DB.prepare("SELECT decision_id FROM authority_registry WHERE decision_id = ?1 ORDER BY created_at DESC LIMIT 1")
-      .bind(decisionId)
-      .first(),
-    env.DB.prepare("SELECT execution_id FROM execution_registry WHERE execution_id = ?1").bind(executionId).first(),
-    env.DB.prepare("SELECT proof_id FROM proof_registry WHERE proof_id = ?1").bind(proofId).first()
-  ])
-
-  return {
-    authority_saved: Boolean(authority),
-    execution_saved: Boolean(execution),
-    proof_saved: Boolean(proof)
-  }
-}
-
-async function validateAuthority(env: Env, body: any) {
-  const validationId = crypto.randomUUID()
-
-  if (!body.decision_id) {
-    return {
-      ok: false,
-      code: 400,
-      payload: {
-        validation_id: validationId,
-        decision_id: null,
-        status: "FAILED",
-        result: "INVALID",
-        message: "Missing decision_id. Provide the decision_id from POST /authority."
-      }
-    }
-  }
-
-  const authority = await findAuthorityByDecisionId(env, body.decision_id)
-  if (!authority) {
-    return {
-      ok: false,
-      code: 404,
-      payload: {
-        validation_id: validationId,
-        decision_id: body.decision_id,
-        status: "FAILED",
-        result: "INVALID",
-        message: "authority not found"
-      }
-    }
-  }
-
-  if (!isAuthorityUsableForExecution(authority.status)) {
-    const message =
-      String(authority.status).toUpperCase() === "CONSUMED"
-        ? "authority already consumed"
-        : `Authority exists, but status '${authority.status}' is not valid for execution.`
-
-    return {
-      ok: false,
-      code: 409,
-      payload: {
-        validation_id: validationId,
-        decision_id: body.decision_id,
-        status: "FAILED",
-        result: "INVALID",
-        message
-      }
-    }
-  }
-
-  const aeo = buildAeo(authority, targetFromAuthority(authority) as GithubDeployTarget)
-  await saveAeo(env, aeo)
-
-  const validation = buildValidation(aeo)
-  await saveValidation(env, validation)
-
-  return {
-    ok: true,
-    code: 200,
-    payload: {
-      ...validation,
-      message: "Authority is ACTIVE and valid for execution."
-    },
-    authority
-  }
-}
-
-async function runGithubProofTest(env: Env) {
-  const authority = buildAuthority({
-    owner: "github_proof_test",
-    decision_id: `proof-${crypto.randomUUID()}`,
-    intent: "deploy_production",
-    scope: { mode: "github-proof-test" },
-    constraints: {
-      repo: `${env.GITHUB_OWNER}/${env.GITHUB_REPO}`,
-      branch: "main",
-      workflow: "deploy.yml",
-      max_executions: 1
-    }
-  })
-
-  await saveAuthority(env, authority)
-
-  const executeResult = await runExecuteFlow(
-    env,
-    { decision_id: authority.decision_id, intent: authority.intent },
-    { simulateSuccess: true }
-  )
-
-  if (executeResult.code !== 200 || !executeResult.payload.execution_id) {
-    return jsonResponse({ status: "FAILED", stage: "execute", details: executeResult.payload }, executeResult.code)
-  }
-
-  const proofBody = {
-    execution_id: executeResult.payload.execution_id,
-    decision_id: authority.decision_id,
-    surface: "github_actions",
-    run_id: String(Date.now()),
-    commit_sha: crypto.randomUUID().replace(/-/g, ""),
-    environment_url: "https://example.com/runtime-proof"
-  }
-
-  const execution = await findExecution(env, proofBody.execution_id)
-  if (!execution) {
-    return jsonResponse({ status: "FAILED", stage: "lookup", error: "execution not found after simulated run" }, 500)
-  }
-
-  const proof = buildProof(proofBody, execution)
-  await saveProof(env, proof)
-
-  const persistence = await recordsSavedForRun(env, authority.decision_id, proof.execution_id, proof.proof_id)
-  return jsonResponse({
-    status: "OK",
-    authority,
-    execution_id: proof.execution_id,
-    proof,
-    persistence
-  })
+  return validation
 }
 
 export default {
@@ -650,240 +120,295 @@ export default {
       return new Response("MindShift Runtime Live")
     }
 
-    if (url.pathname === "/health" && request.method === "GET") {
-      return jsonResponse({ status: "ok", service: "mindshift-worker", timestamp: new Date().toISOString() })
-    }
-
-    if (url.pathname === "/db-check" && request.method === "GET") {
-      try {
-        const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>()
-        return jsonResponse({ status: "ok", db: probe?.ok === 1 ? "connected" : "unknown" })
-      } catch (error: any) {
-        return jsonResponse({ status: "FAILED", error: error?.message || "D1 check failed" }, 500)
-      }
-    }
-
-    if (url.pathname === "/records/authorities" && request.method === "GET") {
-      const results = await listAuthorities(env)
-      return jsonResponse(results.results ?? [])
-    }
-
-    if (url.pathname === "/records/executions" && request.method === "GET") {
-      const results = await listExecutions(env)
-      return jsonResponse(results.results ?? [])
-    }
-
-    if (url.pathname === "/records/proofs" && request.method === "GET") {
-      const results = await listProofs(env)
-      return jsonResponse(results.results ?? [])
-    }
-
     if (url.pathname === "/authority" && request.method === "POST") {
       const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (!body || !body.decision_id) {
+        return jsonResponse({ error: "decision_id is required" }, 400)
       }
 
-      const authority = buildAuthority(body)
+      const authority = {
+        decision_id: String(body.decision_id),
+        owner: String(body.owner || "unknown"),
+        intent: String(body.intent || "execute"),
+        scope: JSON.stringify(body.scope || {}),
+        constraints: JSON.stringify(body.constraints || {}),
+        expiry: body.expiry ? String(body.expiry) : null,
+        status: "ACTIVE"
+      }
 
-      if (!authority.constraints.repo || !authority.constraints.branch || !authority.constraints.workflow) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "constraints.repo, constraints.branch, and constraints.workflow are required"
-          },
-          400
+      await env.DB.prepare(
+        `INSERT OR REPLACE INTO authorities (
+          decision_id,
+          owner,
+          intent,
+          scope,
+          constraints,
+          expiry,
+          status
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+      )
+        .bind(
+          authority.decision_id,
+          authority.owner,
+          authority.intent,
+          authority.scope,
+          authority.constraints,
+          authority.expiry,
+          authority.status
         )
-      }
+        .run()
 
-      if (authority.constraints.max_executions !== 1) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "constraints.max_executions must be 1 for non-bypassable production deploy flow"
-          },
-          400
-        )
-      }
-
-      await saveAuthority(env, authority)
       return jsonResponse(authority)
     }
 
     if (url.pathname === "/compile" && request.method === "POST") {
       const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (!body || !body.decision_id) {
+        return jsonResponse({ error: "decision_id is required" }, 400)
       }
 
-      if (!body.decision_id) {
-        return jsonResponse({ status: "FAILED", error: "Missing decision_id" }, 400)
-      }
-
-      const authority = await findAuthorityByDecisionId(env, body.decision_id)
+      const authority = await getAuthority(env, String(body.decision_id))
       if (!authority) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "No authority found for decision_id. Create authority first."
-          },
-          404
-        )
+        return jsonResponse({ error: "authority not found" }, 404)
       }
 
-      const target = targetFromAuthority(authority)
-      if (!target) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "Authority constraints must define repo, branch, workflow for GitHub deploy target."
-          },
-          409
-        )
+      const compiledObject = {
+        decision_id: authority.decision_id,
+        owner: authority.owner,
+        intent: authority.intent,
+        scope: JSON.parse(authority.scope || "{}"),
+        constraints: JSON.parse(authority.constraints || "{}"),
+        compiled_at: nowIso()
       }
 
-      const aeo = buildAeo(authority, target)
-      await saveAeo(env, aeo)
-      return jsonResponse(aeo)
+      const compiledJson = JSON.stringify(compiledObject)
+      const aeoHash = await sha256Hex(compiledJson)
+
+      await env.DB.prepare(
+        `INSERT INTO compile_registry (
+          decision_id,
+          aeo_hash,
+          compiled_object_json
+        ) VALUES (?1, ?2, ?3)`
+      )
+        .bind(authority.decision_id, aeoHash, compiledJson)
+        .run()
+
+      return jsonResponse({ decision_id: authority.decision_id, aeo_hash: aeoHash, compiled_object: compiledObject })
     }
 
     if (url.pathname === "/validate" && request.method === "POST") {
       const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (!body || !body.decision_id) {
+        return jsonResponse({ error: "decision_id is required" }, 400)
       }
 
-      const result = await validateAuthority(env, body)
-      return jsonResponse(result.payload, result.code)
+      const decisionId = String(body.decision_id)
+      const authority = await getAuthority(env, decisionId)
+      if (!authority) {
+        return jsonResponse({ decision_id: decisionId, result: null, message: "authority not found" }, 404)
+      }
+
+      // Replay protection: only ACTIVE authority can validate.
+      if (authority.status !== "ACTIVE") {
+        return jsonResponse({ decision_id: decisionId, result: null, message: "authority not ACTIVE" })
+      }
+
+      const compile = await latestCompile(env, decisionId)
+      if (!compile) {
+        return jsonResponse({ error: "compile step required before validate" }, 409)
+      }
+
+      const validation = await insertValidation(env, {
+        decisionId,
+        aeoHash: compile.aeo_hash,
+        result: "VALID",
+        validatedObjectHash: compile.aeo_hash
+      })
+
+      return jsonResponse({
+        validation_id: validation.validation_id,
+        decision_id: decisionId,
+        result: validation.result,
+        validated_object_hash: validation.validated_object_hash
+      })
     }
 
     if (url.pathname === "/execute" && request.method === "POST") {
       const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (!body || !body.decision_id) {
+        return jsonResponse({ error: "decision_id is required" }, 400)
       }
 
-      if (!body.intent) {
-        return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
+      const decisionId = String(body.decision_id)
+      const authority = await getAuthority(env, decisionId)
+      if (!authority) {
+        return jsonResponse({ status: "BLOCKED", reason: "authority not found" }, 404)
       }
 
-      try {
-        const result = await runExecuteFlow(env, body)
-        return jsonResponse(result.payload, result.code)
-      } catch (error: any) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            decision_id: body.decision_id,
-            result: "NOT_EXECUTED",
-            message: "Execution failed while dispatching GitHub workflow or writing execution record.",
-            error: error?.message || "Unknown execution error"
-          },
-          500
+      const validation = await latestValidation(env, decisionId)
+      if (!validation || validation.result !== "VALID") {
+        return jsonResponse({ status: "BLOCKED", reason: "validation result is not VALID" }, 409)
+      }
+
+      const compile = await latestCompile(env, decisionId)
+      if (!compile) {
+        return jsonResponse({ status: "BLOCKED", reason: "compiled object missing" }, 409)
+      }
+
+      // Exact-object discipline: hash what execute is trying to run.
+      const executedObjectJson = body.compiled_object
+        ? JSON.stringify(body.compiled_object)
+        : compile.compiled_object_json
+      const executedObjectHash = await sha256Hex(executedObjectJson)
+
+      if (validation.validated_object_hash !== executedObjectHash) {
+        return jsonResponse({
+          status: "BLOCKED",
+          reason: "validated_object_hash does not match executed_object_hash",
+          validated_object_hash: validation.validated_object_hash,
+          executed_object_hash: executedObjectHash
+        })
+      }
+
+      const executionId = crypto.randomUUID()
+      await env.DB.prepare(
+        `INSERT INTO execution_registry (
+          execution_id,
+          decision_id,
+          aeo_hash,
+          status,
+          github_run_id,
+          commit_sha,
+          workflow_name,
+          timestamp
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+      )
+        .bind(
+          executionId,
+          decisionId,
+          executedObjectHash,
+          "EXECUTED",
+          String(body.github_run_id || "local-simulated-run"),
+          String(body.commit_sha || "local-simulated-commit"),
+          String(body.workflow_name || "local-simulated-workflow"),
+          nowIso()
         )
-      }
-    }
+        .run()
 
-    if (url.pathname === "/replay-test" && request.method === "GET") {
-      // Keep replay simulation self-contained in a single request:
-      // 1) create authority, 2) execute once, 3) immediately replay with same decision_id.
-      // No cross-request/global state is used here.
-      const authority = buildAuthority({
-        owner: "replay_test",
-        decision_id: `replay-${crypto.randomUUID()}`,
-        intent: "deploy_production",
-        scope: { mode: "replay_test" },
-        constraints: {
-          repo: "local/replay-test",
-          branch: "main",
-          workflow: "deploy.yml",
-          max_executions: 1
-        }
-      })
+      // Lifecycle: authority becomes pending-proof after first successful execution.
+      await setAuthorityStatus(env, decisionId, "EXECUTED_PENDING_PROOF")
 
-      await saveAuthority(env, authority)
-
-      const firstAttempt = await runExecuteFlow(
-        env,
-        { decision_id: authority.decision_id, intent: authority.intent },
-        { simulateSuccess: true }
-      )
-
-      const authorityAfterFirst = await findAuthorityByDecisionId(env, authority.decision_id)
-
-      const replayAttempt = await runExecuteFlow(
-        env,
-        { decision_id: authority.decision_id, intent: authority.intent },
-        { simulateSuccess: true }
-      )
-
-      return jsonResponse({
-        decision_id: authority.decision_id,
-        first_attempt: {
-          status: firstAttempt.code === 200 ? "EXECUTED" : "FAILED"
-        },
-        authority_status_after_first: authorityAfterFirst?.status || null,
-        replay_attempt: {
-          status: replayAttempt.code === 409 ? "BLOCKED" : replayAttempt.code === 200 ? "EXECUTED" : "FAILED",
-          message: replayAttempt.payload?.validation?.message || replayAttempt.payload?.message || null
-        }
-      })
-    }
-
-    if (url.pathname === "/github-proof-test" && request.method === "GET") {
-      return runGithubProofTest(env)
+      return jsonResponse({ execution_id: executionId, decision_id: decisionId, status: "EXECUTED" })
     }
 
     if (url.pathname === "/proof" && request.method === "POST") {
       const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      if (!body || !body.execution_id || !body.decision_id) {
+        return jsonResponse({ error: "execution_id and decision_id are required" }, 400)
       }
 
-      const required = ["execution_id", "decision_id", "surface", "run_id", "commit_sha"]
-      const missing = required.filter((key) => !body[key])
-      if (missing.length > 0) {
-        return jsonResponse({ status: "FAILED", error: `Missing fields: ${missing.join(", ")}` }, 400)
-      }
+      const execution = await env.DB.prepare("SELECT * FROM execution_registry WHERE execution_id = ?1")
+        .bind(String(body.execution_id))
+        .first<any>()
 
-      const execution = await findExecution(env, body.execution_id)
       if (!execution) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "Unknown execution_id. Run /execute first so proof is tied to a real GitHub dispatch execution."
-          },
-          404
-        )
+        return jsonResponse({ error: "execution not found" }, 404)
       }
 
-      if (execution.status !== "EXECUTED") {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "Proof can only be recorded after a successful execution."
-          },
-          409
+      const proofId = crypto.randomUUID()
+      await env.DB.prepare(
+        `INSERT INTO proof_registry (
+          proof_id,
+          execution_id,
+          decision_id,
+          proof_reference,
+          timestamp
+        ) VALUES (?1, ?2, ?3, ?4, ?5)`
+      )
+        .bind(
+          proofId,
+          String(body.execution_id),
+          String(body.decision_id),
+          String(body.proof_reference || "local-proof"),
+          nowIso()
         )
-      }
+        .run()
 
-      if (execution.decision_id !== body.decision_id) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "decision_id does not match the stored execution record"
-          },
-          409
-        )
-      }
+      // Lifecycle: proof consumption finalizes authority.
+      await setAuthorityStatus(env, String(body.decision_id), "CONSUMED")
 
-      const proof = buildProof(body, execution)
-      await saveProof(env, proof)
-      await consumeAuthority(env, body.decision_id)
-
-      return jsonResponse(proof)
+      return jsonResponse({ proof_id: proofId, status: "RECORDED" })
     }
 
-    return jsonResponse({ status: "FAILED", error: "Not Found" }, 404)
+    if (url.pathname === "/replay-test" && request.method === "GET") {
+      const decisionId = `replay-${crypto.randomUUID()}`
+
+      // 1) create authority (ACTIVE)
+      await env.DB.prepare(
+        `INSERT INTO authorities (decision_id, owner, intent, scope, constraints, expiry, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+      )
+        .bind(decisionId, "replay-test", "execute", "{}", "{}", null, "ACTIVE")
+        .run()
+
+      // 2) compile
+      const firstCompileObj = { decision_id: decisionId, sample: "aeo", nonce: 1 }
+      const firstCompileJson = JSON.stringify(firstCompileObj)
+      const firstHash = await sha256Hex(firstCompileJson)
+      await env.DB.prepare("INSERT INTO compile_registry (decision_id, aeo_hash, compiled_object_json) VALUES (?1, ?2, ?3)")
+        .bind(decisionId, firstHash, firstCompileJson)
+        .run()
+
+      // 3) validate -> VALID
+      await insertValidation(env, {
+        decisionId,
+        aeoHash: firstHash,
+        result: "VALID",
+        validatedObjectHash: firstHash
+      })
+
+      // 4) execute -> EXECUTED and 5) proof -> recorded then authority CONSUMED
+      const executeFirst = await env.DB.prepare(
+        `INSERT INTO execution_registry (execution_id, decision_id, aeo_hash, status, github_run_id, commit_sha, workflow_name, timestamp)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+      )
+        .bind(crypto.randomUUID(), decisionId, firstHash, "EXECUTED", "run-1", "sha-1", "wf-1", nowIso())
+        .run()
+
+      await setAuthorityStatus(env, decisionId, "EXECUTED_PENDING_PROOF")
+
+      const firstExecution = await env.DB.prepare("SELECT execution_id FROM execution_registry WHERE decision_id = ?1 ORDER BY timestamp DESC LIMIT 1")
+        .bind(decisionId)
+        .first<{ execution_id: string }>()
+
+      if (executeFirst.success && firstExecution) {
+        await env.DB.prepare(
+          "INSERT INTO proof_registry (proof_id, execution_id, decision_id, proof_reference, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)"
+        )
+          .bind(crypto.randomUUID(), firstExecution.execution_id, decisionId, "proof-1", nowIso())
+          .run()
+        await setAuthorityStatus(env, decisionId, "CONSUMED")
+      }
+
+      // 6) second attempt: validate must be NULL and execution BLOCKED
+      const secondCompileObj = { decision_id: decisionId, sample: "aeo", nonce: 2 }
+      const secondCompileJson = JSON.stringify(secondCompileObj)
+      const secondHash = await sha256Hex(secondCompileJson)
+      await env.DB.prepare("INSERT INTO compile_registry (decision_id, aeo_hash, compiled_object_json) VALUES (?1, ?2, ?3)")
+        .bind(decisionId, secondHash, secondCompileJson)
+        .run()
+
+      const authorityAfterProof = await getAuthority(env, decisionId)
+      const secondValidationResult = authorityAfterProof?.status === "ACTIVE" ? "VALID" : null
+      const secondExecutionStatus = secondValidationResult === "VALID" ? "EXECUTED" : "BLOCKED"
+
+      return jsonResponse({
+        sequence: ["EXECUTED", secondExecutionStatus],
+        replay_validation_result: secondValidationResult
+      })
+    }
+
+    return jsonResponse({ error: "Not found" }, 404)
   }
 }
