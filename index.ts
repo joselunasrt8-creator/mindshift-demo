@@ -377,7 +377,9 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      // Fail closed: if authority is missing or invalid in D1, do not execute webhook.
+      // Critical fail-closed gate:
+      // Re-check authority in D1 right before webhook execution.
+      // If this decision_id is missing or no longer ACTIVE, we block execution.
       const authority = await findAuthorityByDecisionId(env, body.decision_id)
       if (!authority) {
         return jsonResponse(
