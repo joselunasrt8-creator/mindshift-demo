@@ -785,15 +785,13 @@ export default {
     }
 
     if (url.pathname === "/replay-test" && request.method === "GET") {
-      const testRepo = env.GITHUB_OWNER && env.GITHUB_REPO ? `${env.GITHUB_OWNER}/${env.GITHUB_REPO}` : "local/replay-test"
-
       const authority = buildAuthority({
-        owner: "browser_replay_test",
+        owner: "replay_test",
         decision_id: `replay-${crypto.randomUUID()}`,
         intent: "deploy_production",
         scope: { mode: "replay_test" },
         constraints: {
-          repo: testRepo,
+          repo: "local/replay-test",
           branch: "main",
           workflow: "deploy.yml",
           max_executions: 1
@@ -807,7 +805,6 @@ export default {
         { decision_id: authority.decision_id, intent: authority.intent },
         { simulateSuccess: true }
       )
-
       const authorityAfterFirst = await findAuthorityByDecisionId(env, authority.decision_id)
 
       const replayAttempt = await runExecuteFlow(
@@ -817,24 +814,14 @@ export default {
       )
 
       const firstStatus = firstAttempt.code === 200 ? "EXECUTED" : "FAILED"
-      const replayStatus = replayAttempt.code === 200 ? "EXECUTED" : "BLOCKED"
+      const replayStatus = replayAttempt.code === 409 ? "BLOCKED" : replayAttempt.code === 200 ? "EXECUTED" : "FAILED"
 
       return jsonResponse({
         decision_id: authority.decision_id,
         sequence: [firstStatus, replayStatus],
-        first_attempt: {
-          status: firstStatus,
-          details: firstAttempt.payload
-        },
+        first_attempt: firstAttempt.payload,
         authority_status_after_first: authorityAfterFirst?.status || null,
-        replay_attempt: {
-          status: replayStatus,
-          message:
-            replayAttempt.code === 200
-              ? "unexpected replay execution"
-              : replayAttempt.payload?.validation?.message || replayAttempt.payload?.message || "authority already consumed",
-          details: replayAttempt.payload
-        }
+        replay_attempt: replayAttempt.payload
       })
     }
 
