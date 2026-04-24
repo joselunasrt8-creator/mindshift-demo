@@ -20,6 +20,8 @@ type GithubDeployTarget = {
   inputs?: Record<string, string>
 }
 
+let replayTestDecisionId: string | null = null
+
 async function readJson(request: Request): Promise<any | null> {
   try {
     return await request.json()
@@ -218,7 +220,12 @@ async function saveExecution(env: Env, execution: any) {
     .run()
 }
 
-async function executeGithubDeploy(env: Env, authority: any, target: GithubDeployTarget) {
+async function executeGithubDeploy(
+  env: Env,
+  authority: any,
+  target: GithubDeployTarget,
+  options?: { simulateSuccess?: boolean }
+) {
   // This adapter is the governed execution boundary for production deploys.
   const executionId = crypto.randomUUID()
   const timestamp = new Date().toISOString()
@@ -227,29 +234,35 @@ async function executeGithubDeploy(env: Env, authority: any, target: GithubDeplo
 
   const dispatchUrl = `https://api.github.com/repos/${target.repo}/actions/workflows/${target.workflow}/dispatches`
 
-  try {
-    const upstream = await fetch(dispatchUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-        "X-GitHub-Api-Version": "2022-11-28"
-      },
-      body: JSON.stringify({
-        ref: target.branch,
-        inputs: {
-          ...target.inputs,
-          decision_id: authority.decision_id,
-          authority_id: authority.authority_id
-        }
+  if (options?.simulateSuccess) {
+    // Test-only mode for browser route: keep normal execution recording, skip real GitHub call.
+    upstreamStatus = 204
+    status = "EXECUTED"
+  } else {
+    try {
+      const upstream = await fetch(dispatchUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        body: JSON.stringify({
+          ref: target.branch,
+          inputs: {
+            ...target.inputs,
+            decision_id: authority.decision_id,
+            authority_id: authority.authority_id
+          }
+        })
       })
-    })
 
-    upstreamStatus = upstream.status
-    status = upstream.ok ? "EXECUTED" : "FAILED"
-  } catch {
-    status = "FAILED"
+      upstreamStatus = upstream.status
+      status = upstream.ok ? "EXECUTED" : "FAILED"
+    } catch {
+      status = "FAILED"
+    }
   }
 
   const execution = {
@@ -272,6 +285,50 @@ async function executeGithubDeploy(env: Env, authority: any, target: GithubDeplo
 
   await saveExecution(env, execution)
   return execution
+}
+
+async function runExecuteFlow(
+  env: Env,
+  body: { decision_id?: string; intent?: string },
+  options?: { simulateSuccess?: boolean }
+) {
+  // Critical rule: do not dispatch unless validation passes.
+  const validation = await validateAuthority(env, body)
+  if (!validation.ok || !validation.authority) {
+    return {
+      code: validation.code,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        validation: validation.payload
+      }
+    }
+  }
+
+  const target = targetFromAuthority(validation.authority)
+  if (!target) {
+    return {
+      code: 409,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        error: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
+      }
+    }
+  }
+
+  const execution = await executeGithubDeploy(env, validation.authority, target, options)
+  if (execution.status === "EXECUTED") {
+    // Replay prevention: consume authority immediately after successful dispatch.
+    await consumeAuthority(env, String(body.decision_id || ""))
+  }
+
+  const code = execution.status === "FAILED" ? 502 : 200
+  return { code, payload: execution }
 }
 
 function buildProof(body: any, execution: any) {
@@ -538,44 +595,9 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Missing intent" }, 400)
       }
 
-      // Critical rule: do not dispatch a production deploy unless validation passes.
-      const validation = await validateAuthority(env, body)
-      if (!validation.ok || !validation.authority) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            decision_id: body.decision_id || null,
-            result: "NOT_EXECUTED",
-            message: "execution blocked",
-            validation: validation.payload
-          },
-          validation.code
-        )
-      }
-
-      const target = targetFromAuthority(validation.authority)
-      if (!target) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            decision_id: body.decision_id,
-            result: "NOT_EXECUTED",
-            message: "execution blocked",
-            error: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
-          },
-          409
-        )
-      }
-
       try {
-        const execution = await executeGithubDeploy(env, validation.authority, target)
-        if (execution.status === "EXECUTED") {
-          // Replay prevention: consume authority immediately after successful dispatch.
-          await consumeAuthority(env, body.decision_id)
-        }
-
-        const statusCode = execution.status === "FAILED" ? 502 : 200
-        return jsonResponse(execution, statusCode)
+        const result = await runExecuteFlow(env, body)
+        return jsonResponse(result.payload, result.code)
       } catch (error: any) {
         return jsonResponse(
           {
@@ -588,6 +610,54 @@ export default {
           500
         )
       }
+    }
+
+    if (url.pathname === "/replay-test" && request.method === "GET") {
+      if (!replayTestDecisionId) {
+        const authority = buildAuthority({
+          owner: "browser_replay_test",
+          decision_id: `replay-${crypto.randomUUID()}`,
+          intent: "deploy_production",
+          scope: { mode: "replay_test" },
+          constraints: {
+            repo: "demo/replay-test",
+            branch: "main",
+            workflow: "deploy.yml",
+            max_executions: 1
+          }
+        })
+
+        replayTestDecisionId = authority.decision_id
+        await saveAuthority(env, authority)
+
+        const executeResult = await runExecuteFlow(
+          env,
+          { decision_id: replayTestDecisionId, intent: authority.intent },
+          { simulateSuccess: true }
+        )
+        const latestAuthority = await findAuthorityByDecisionId(env, replayTestDecisionId)
+
+        return jsonResponse({
+          decision_id: replayTestDecisionId,
+          status: executeResult.code === 200 ? "EXECUTED" : "FAILED",
+          authority_status_after_execution: latestAuthority?.status || null
+        })
+      }
+
+      const replayAttempt = await runExecuteFlow(
+        env,
+        { decision_id: replayTestDecisionId, intent: "deploy_production" },
+        { simulateSuccess: true }
+      )
+
+      return jsonResponse({
+        decision_id: replayTestDecisionId,
+        status: replayAttempt.code === 200 ? "EXECUTED" : "BLOCKED",
+        message:
+          replayAttempt.code === 200
+            ? "unexpected replay execution"
+            : replayAttempt.payload?.validation?.message || "authority already consumed"
+      })
     }
 
     if (url.pathname === "/proof" && request.method === "POST") {
