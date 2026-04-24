@@ -9,6 +9,8 @@ function jsonResponse(data: unknown, status = 200): Response {
 type Env = {
   DB: D1Database
   GITHUB_TOKEN: string
+  GITHUB_OWNER: string
+  GITHUB_REPO: string
 }
 
 type GithubDeployTarget = {
@@ -232,7 +234,11 @@ async function executeGithubDeploy(
   let status = "FAILED"
   let upstreamStatus: number | null = null
 
-  const dispatchUrl = `https://api.github.com/repos/${target.repo}/actions/workflows/${target.workflow}/dispatches`
+  const [targetOwner, targetRepo] = target.repo.split("/")
+  const owner = targetOwner || env.GITHUB_OWNER
+  const repo = targetRepo || env.GITHUB_REPO
+  const dispatchRepo = `${owner}/${repo}`
+  const dispatchUrl = `https://api.github.com/repos/${dispatchRepo}/actions/workflows/${target.workflow}/dispatches`
 
   if (options?.simulateSuccess) {
     // Test-only mode for browser route: keep normal execution recording, skip real GitHub call.
@@ -277,7 +283,7 @@ async function executeGithubDeploy(
     execution_event: {
       system: target.system,
       action: target.action,
-      repo: target.repo,
+      repo: dispatchRepo,
       branch: target.branch,
       workflow: target.workflow
     }
@@ -289,7 +295,7 @@ async function executeGithubDeploy(
 
 async function runExecuteFlow(
   env: Env,
-  body: { decision_id?: string; intent?: string },
+  body: { decision_id?: string; intent?: string; target?: any },
   options?: { simulateSuccess?: boolean }
 ) {
   // Critical rule: do not dispatch unless validation passes.
@@ -307,8 +313,8 @@ async function runExecuteFlow(
     }
   }
 
-  const target = targetFromAuthority(validation.authority)
-  if (!target) {
+  const authorityTarget = targetFromAuthority(validation.authority)
+  if (!authorityTarget) {
     return {
       code: 409,
       payload: {
@@ -321,14 +327,110 @@ async function runExecuteFlow(
     }
   }
 
+  let target = authorityTarget
+  if (body.target) {
+    const requestedTarget = parseGithubTarget(body.target)
+    if (!requestedTarget) {
+      return {
+        code: 400,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id || null,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error:
+            "Unsupported target. Only target.system='github_actions' with action='deploy' and fields repo, branch, workflow is allowed."
+        }
+      }
+    }
+
+    if (
+      requestedTarget.repo !== authorityTarget.repo ||
+      requestedTarget.branch !== authorityTarget.branch ||
+      requestedTarget.workflow !== authorityTarget.workflow
+    ) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id || null,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error: "Requested target does not match ACTIVE authority constraints."
+        }
+      }
+    }
+
+    target = requestedTarget
+  }
+
+  if (target.system !== "github_actions") {
+    return {
+      code: 400,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        error: "Only github_actions is supported by /execute."
+      }
+    }
+  }
+
+  if (!target.repo || !target.branch || !target.workflow) {
+    return {
+      code: 409,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        error: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
+      }
+    }
+  }
+
+  if (!env.GITHUB_TOKEN || !env.GITHUB_OWNER || !env.GITHUB_REPO) {
+    return {
+      code: 500,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        error: "Missing required GitHub secrets: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO."
+      }
+    }
+  }
+
   const execution = await executeGithubDeploy(env, validation.authority, target, options)
   if (execution.status === "EXECUTED") {
     // Replay prevention: consume authority immediately after successful dispatch.
     await consumeAuthority(env, String(body.decision_id || ""))
+    return {
+      code: 200,
+      payload: {
+        execution_id: execution.execution_id,
+        decision_id: execution.decision_id,
+        status: "EXECUTED",
+        surface: "github_actions",
+        workflow: target.workflow,
+        branch: target.branch
+      }
+    }
   }
 
-  const code = execution.status === "FAILED" ? 502 : 200
-  return { code, payload: execution }
+  return {
+    code: 502,
+    payload: {
+      status: "FAILED",
+      decision_id: body.decision_id || null,
+      result: "NOT_EXECUTED",
+      message: "GitHub workflow dispatch failed.",
+      execution_id: execution.execution_id,
+      upstream_status: execution.upstream_status
+    }
+  }
 }
 
 function buildProof(body: any, execution: any) {
