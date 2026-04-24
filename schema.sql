@@ -1,41 +1,32 @@
--- Cloudflare D1 schema for the Worker runtime in src/index.ts.
--- JSON-style records are stored as TEXT.
-
-CREATE TABLE IF NOT EXISTS authority_registry (
-  authority_id TEXT PRIMARY KEY,
-  decision_id TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS authorities (
+  decision_id TEXT PRIMARY KEY,
   owner TEXT NOT NULL,
   intent TEXT NOT NULL,
   scope TEXT NOT NULL,
   constraints TEXT NOT NULL,
+  expiry TEXT NOT NULL,
   status TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_authority_registry_decision_id
-  ON authority_registry (decision_id);
-
-CREATE TABLE IF NOT EXISTS aeo_registry (
-  aeo_id TEXT PRIMARY KEY,
-  authority_id TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS compile_registry (
+  compile_id TEXT PRIMARY KEY,
   decision_id TEXT NOT NULL,
-  intent TEXT NOT NULL,
   aeo TEXT NOT NULL,
+  object_hash TEXT NOT NULL,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_aeo_registry_decision_id
-  ON aeo_registry (decision_id);
+CREATE INDEX IF NOT EXISTS idx_compile_registry_decision_id
+  ON compile_registry (decision_id);
 
 CREATE TABLE IF NOT EXISTS validation_registry (
   validation_id TEXT PRIMARY KEY,
-  authority_id TEXT NOT NULL,
-  aeo_id TEXT NOT NULL,
   decision_id TEXT NOT NULL,
-  intent TEXT NOT NULL,
-  result TEXT NOT NULL,
-  status TEXT NOT NULL,
+  validator_result TEXT NOT NULL,
+  validated_object_hash TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -44,13 +35,16 @@ CREATE INDEX IF NOT EXISTS idx_validation_registry_decision_id
 
 CREATE TABLE IF NOT EXISTS execution_registry (
   execution_id TEXT PRIMARY KEY,
-  authority_id TEXT NOT NULL,
   decision_id TEXT NOT NULL,
-  intent TEXT NOT NULL,
-  webhook_url TEXT NOT NULL,
-  upstream_status INTEGER,
+  system TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  validated_object_hash TEXT NOT NULL,
+  executed_object_hash TEXT NOT NULL,
+  github_run_id TEXT,
+  commit_sha TEXT,
+  workflow_name TEXT NOT NULL,
   status TEXT NOT NULL,
-  execution_event TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
@@ -60,10 +54,11 @@ CREATE INDEX IF NOT EXISTS idx_execution_registry_decision_id
 CREATE TABLE IF NOT EXISTS proof_registry (
   proof_id TEXT PRIMARY KEY,
   execution_id TEXT NOT NULL,
-  authority_id TEXT NOT NULL,
   decision_id TEXT NOT NULL,
-  surface TEXT NOT NULL,
-  proof_reference TEXT NOT NULL,
+  github_run_id TEXT,
+  commit_sha TEXT NOT NULL,
+  workflow_name TEXT NOT NULL,
+  proof_timestamp TEXT NOT NULL,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL
 );

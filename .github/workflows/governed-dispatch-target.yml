@@ -1,84 +1,59 @@
-# STATUS: ACTIVE
-# PURPOSE: Conduit receiver for governed dispatch execution
-# NOTE: Executes only when triggered by validated repository_dispatch from MindShift boundary
-
 name: governed-dispatch-target
 
 on:
-  repository_dispatch:
-    types: [mindshift_execute]
+  workflow_dispatch:
+    inputs:
+      decision_id:
+        description: "MindShift decision id"
+        required: true
+        type: string
+      validated_object_hash:
+        description: "Hash approved by MindShift validator"
+        required: true
+        type: string
 
 jobs:
-  receive:
+  governed-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Enforce MindShift dispatch
+      - name: Enforce MindShift workflow_dispatch payload
+        shell: bash
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
+          if [ -z "${{ inputs.decision_id }}" ]; then
             echo "NULL"
             exit 1
           fi
 
-          if [ "${{ github.event.action }}" != "mindshift_execute" ]; then
+          if [ -z "${{ inputs.validated_object_hash }}" ]; then
             echo "NULL"
             exit 1
           fi
 
-          if [ -z "${{ github.event.client_payload.decision_id }}" ]; then
-            echo "NULL"
-            exit 1
-          fi
+          echo "VALID"
 
-          if [ -z "${{ github.event.client_payload.signature }}" ]; then
-            echo "NULL"
-            exit 1
-          fi
-
-          if [ -z "${{ github.event.client_payload.payload }}" ]; then
-            echo "NULL"
-            exit 1
-          fi
-
-      - name: Parse Payload
-        id: payload
+      - name: Simulated production deploy surface
         run: |
-          set -euo pipefail
-          echo '${{ toJson(github.event.client_payload.payload) }}' > payload.json
+          echo "MindShift-governed deploy accepted"
+          echo "decision_id=${{ inputs.decision_id }}"
 
-      - name: Surface Execution (Example)
+      - name: Write proof artifact
         run: |
-          set -euo pipefail
-
-          echo "Executing governed action"
-          cat payload.json
-
-          # Example action — replace with real surface
-          curl -X POST "https://webhook.site/e0a659c1-d614-4db3-8855-88129ab304b0"
-
-      - name: Write Proof-of-Transfer
-        run: |
-          set -euo pipefail
-
           mkdir -p proof
+          cat > proof/github-proof.json <<EOF
+          {
+            "decision_id": "${{ inputs.decision_id }}",
+            "validated_object_hash": "${{ inputs.validated_object_hash }}",
+            "run_id": "${{ github.run_id }}",
+            "commit_sha": "${{ github.sha }}",
+            "workflow": "${{ github.workflow }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
 
-          jq -n \
-            --arg decision_id "${{ github.event.client_payload.decision_id }}" \
-            --arg run_id "${{ github.run_id }}" \
-            --arg repo "${{ github.repository }}" \
-            --arg commit "${{ github.sha }}" \
-            '{
-              decision_id: $decision_id,
-              run_id: $run_id,
-              repo: $repo,
-              commit: $commit,
-              status: "VALID"
-            }' > proof/proof.json
-
-      - name: Upload Proof Artifact
+      - name: Upload proof artifact
         uses: actions/upload-artifact@v4
         with:
-          name: proof-of-transfer
-          path: proof/proof.json
+          name: governed-dispatch-proof
+          path: proof/github-proof.json
