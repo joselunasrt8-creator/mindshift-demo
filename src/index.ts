@@ -816,15 +816,19 @@ export default {
         { simulateSuccess: true }
       )
 
+      const firstStatus = firstAttempt.code === 200 ? "EXECUTED" : "FAILED"
+      const replayStatus = replayAttempt.code === 200 ? "EXECUTED" : "BLOCKED"
+
       return jsonResponse({
         decision_id: authority.decision_id,
+        sequence: [firstStatus, replayStatus],
         first_attempt: {
-          status: firstAttempt.code === 200 ? "EXECUTED" : "FAILED",
+          status: firstStatus,
           details: firstAttempt.payload
         },
         authority_status_after_first: authorityAfterFirst?.status || null,
         replay_attempt: {
-          status: replayAttempt.code === 200 ? "EXECUTED" : "BLOCKED",
+          status: replayStatus,
           message:
             replayAttempt.code === 200
               ? "unexpected replay execution"
