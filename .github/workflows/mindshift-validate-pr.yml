@@ -1,0 +1,107 @@
+name: mindshift-validate-pr
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  mindshift-validate-pr:
+    if: ${{ github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-latest
+    env:
+      WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
+      API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
+      REPO: ${{ github.repository }}
+      BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure MindShift endpoint is configured
+        run: |
+          set -euo pipefail
+
+          if [ -z "${WORKER_URL:-}" ]; then
+            echo "Missing MINDSHIFT_WORKER_URL secret."
+            exit 1
+          fi
+
+          CLEAN_WORKER_URL="${WORKER_URL%/}"
+          if [ -z "$CLEAN_WORKER_URL" ]; then
+            echo "MINDSHIFT_WORKER_URL is invalid after normalization."
+            exit 1
+          fi
+
+          echo "CLEAN_WORKER_URL=$CLEAN_WORKER_URL" >> "$GITHUB_ENV"
+
+      - name: Collect changed files in PR
+        run: |
+          set -euo pipefail
+
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed_files.txt
+
+          if [ ! -s changed_files.txt ]; then
+            echo "No file changes detected in this PR diff."
+          fi
+
+          echo "Changed files:"
+          cat changed_files.txt || true
+
+      - name: Build validation payload
+        run: |
+          set -euo pipefail
+
+          CHANGED_FILES_JSON=$(jq -R -s -c 'split("\n") | map(select(length > 0))' changed_files.txt)
+
+          jq -n \
+            --arg repo "$REPO" \
+            --arg base_branch "$BASE_BRANCH" \
+            --argjson pr_number "$PR_NUMBER" \
+            --argjson changed_files "$CHANGED_FILES_JSON" \
+            '{
+              repo: $repo,
+              base_branch: $base_branch,
+              pr_number: $pr_number,
+              changed_files: $changed_files
+            }' > payload.json
+
+          echo "Validation payload:"
+          cat payload.json
+
+      - name: Validate PR with MindShift (/validate-pr)
+        run: |
+          set -euo pipefail
+
+          STATUS_CODE=$(curl -sS -o response.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/validate-pr" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: ${API_KEY:-}" \
+            --data @payload.json)
+
+          echo "MindShift HTTP status: $STATUS_CODE"
+          echo "MindShift response body:"
+          cat response.json
+
+          if [ "$STATUS_CODE" -lt 200 ] || [ "$STATUS_CODE" -gt 299 ]; then
+            echo "MindShift returned non-2xx status. Failing closed."
+            exit 1
+          fi
+
+          RESULT=$(jq -r '.result // empty' response.json)
+
+          if [ "$RESULT" != "VALID" ]; then
+            echo "MindShift result is not VALID. Failing closed."
+            echo "Reasons (if provided):"
+            jq -r '.reasons[]?' response.json || true
+            exit 1
+          fi
+
+          echo "MindShift returned VALID."
