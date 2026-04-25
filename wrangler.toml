@@ -1,5 +1,5 @@
 name = "mindshift-demo"
-main = "index.ts"
+main = "src/index.ts"
 compatibility_date = "2026-04-23"
 
 [[d1_databases]]
