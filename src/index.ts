@@ -364,6 +364,7 @@ async function executeGithubDeploy(
         body: JSON.stringify({
           ref: target.branch,
           inputs: {
+            environment: String(authority.scope?.environment || "production"),
             ...target.inputs,
             decision_id: authority.decision_id,
             authority_id: authority.authority_id
