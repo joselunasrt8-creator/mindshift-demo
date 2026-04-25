@@ -163,24 +163,6 @@ async function findAuthorityByDecisionId(env: Env, decisionId: string) {
     .first<any>()
 }
 
-async function findAuthorityById(env: Env, authorityId: string) {
-  return env.DB.prepare("SELECT * FROM authority_registry WHERE authority_id = ?1")
-    .bind(authorityId)
-    .first<any>()
-}
-
-async function findAeoById(env: Env, aeoId: string) {
-  return env.DB.prepare("SELECT * FROM aeo_registry WHERE aeo_id = ?1")
-    .bind(aeoId)
-    .first<any>()
-}
-
-async function findValidationById(env: Env, validationId: string) {
-  return env.DB.prepare("SELECT * FROM validation_registry WHERE validation_id = ?1")
-    .bind(validationId)
-    .first<any>()
-}
-
 function isAuthorityUsableForExecution(authorityStatus: string | null | undefined) {
   return ["ACTIVE"].includes((authorityStatus || "").toUpperCase())
 }
@@ -869,33 +851,6 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      // Governed deploy workflow payload compatibility:
-      // { decision_id, aeo: { intent, scope, target: { workflow }, ... } }
-      if (body.aeo && !body.constraints) {
-        const aeo = parseJsonObject(body.aeo)
-        const target = parseJsonObject(aeo.target)
-        const repo = `${env.GITHUB_OWNER || ""}/${env.GITHUB_REPO || ""}`.replace(/^\/|\/$/g, "")
-        const authority = buildAuthority({
-          decision_id: body.decision_id,
-          owner: body.owner || "governed_deploy_workflow",
-          intent: aeo.intent || body.intent || "deploy_production",
-          scope: aeo.scope || body.scope || {},
-          constraints: {
-            repo,
-            branch: "main",
-            workflow: target.workflow || "deploy.yml",
-            max_executions: 1
-          }
-        })
-
-        await saveAuthority(env, authority)
-        return jsonResponse({
-          status: "VALID",
-          authority_id: authority.authority_id,
-          authority_object: authority
-        })
-      }
-
       const authority = buildAuthority(body)
 
       if (!authority.constraints.repo || !authority.constraints.branch || !authority.constraints.workflow) {
@@ -926,27 +881,6 @@ export default {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
-      }
-
-      if (body.authority_id) {
-        const authority = await findAuthorityById(env, body.authority_id)
-        if (!authority) {
-          return jsonResponse({ status: "FAILED", error: "Unknown authority_id" }, 404)
-        }
-
-        const target = targetFromAuthority(authority)
-        if (!target) {
-          return jsonResponse({ status: "FAILED", error: "Unable to compile due to missing authority target constraints." }, 409)
-        }
-
-        const aeo = buildAeo(authority, target)
-        await saveAeo(env, aeo)
-
-        return jsonResponse({
-          status: "VALID",
-          compilation_id: aeo.aeo_id,
-          compiled_object: aeo
-        })
       }
 
       if (!body.decision_id) {
@@ -986,31 +920,6 @@ export default {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
       }
 
-      if (body.compilation_id) {
-        const compiled = await findAeoById(env, body.compilation_id)
-        if (!compiled) {
-          return jsonResponse({ status: "FAILED", error: "Unknown compilation_id" }, 404)
-        }
-
-        const compiledAeo = parseJsonObject(compiled.aeo)
-        const validation = await buildValidation({
-          ...compiledAeo,
-          aeo_id: compiled.aeo_id,
-          authority_id: compiled.authority_id,
-          decision_id: compiled.decision_id,
-          intent: compiled.intent
-        })
-        await saveValidation(env, validation)
-
-        return jsonResponse({
-          status: "VALID",
-          result: "VALID",
-          validation_id: validation.validation_id,
-          validated_object: compiledAeo,
-          validated_object_hash: validation.validated_object_hash
-        })
-      }
-
       const result = await validateAuthority(env, body)
       return jsonResponse(result.payload, result.code)
     }
@@ -1019,69 +928,6 @@ export default {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
-      }
-
-      if (body.validation_id) {
-        if (!body.webhook_url) {
-          return jsonResponse({ status: "FAILED", error: "Missing webhook_url" }, 400)
-        }
-
-        const validation = await findValidationById(env, body.validation_id)
-        if (!validation) {
-          return jsonResponse({ status: "FAILED", error: "Unknown validation_id" }, 404)
-        }
-
-        const authority = await findAuthorityById(env, validation.authority_id)
-        if (!authority) {
-          return jsonResponse({ status: "FAILED", error: "Authority not found for validation_id" }, 404)
-        }
-
-        const executionId = crypto.randomUUID()
-        const timestamp = new Date().toISOString()
-        let upstreamStatus: number | null = null
-        let status = "FAILED"
-
-        try {
-          const upstream = await fetch(String(body.webhook_url), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              validation_id: validation.validation_id,
-              authority_id: validation.authority_id,
-              decision_id: validation.decision_id,
-              validated_object_hash: validation.validated_object_hash
-            })
-          })
-          upstreamStatus = upstream.status
-          status = upstream.ok ? "EXECUTED" : "FAILED"
-        } catch {
-          status = "FAILED"
-        }
-
-        await saveExecution(env, {
-          execution_id: executionId,
-          authority_id: validation.authority_id,
-          decision_id: validation.decision_id,
-          intent: validation.intent,
-          webhook_url: String(body.webhook_url),
-          upstream_status: upstreamStatus,
-          status,
-          timestamp,
-          execution_event: {
-            system: "webhook",
-            action: "post",
-            validation_id: validation.validation_id
-          }
-        })
-
-        if (status !== "EXECUTED") {
-          return jsonResponse({ status: "FAILED", error: "Webhook execution failed", execution_id: executionId }, 502)
-        }
-
-        return jsonResponse({
-          status: "VALID",
-          execution_id: executionId
-        })
       }
 
       if (!body.intent) {
@@ -1117,38 +963,6 @@ export default {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
-      }
-
-      if (body.execution_id && !body.decision_id) {
-        const execution = await findExecution(env, body.execution_id)
-        if (!execution) {
-          return jsonResponse({ status: "FAILED", error: "Unknown execution_id. Run /execute first." }, 404)
-        }
-
-        if (execution.status !== "EXECUTED") {
-          return jsonResponse({ status: "FAILED", error: "Proof can only be recorded after successful execution." }, 409)
-        }
-
-        const proof = buildProof(
-          {
-            execution_id: body.execution_id,
-            decision_id: execution.decision_id,
-            surface: "github_actions",
-            run_id: body.run_id,
-            commit_sha: body.commit_sha,
-            workflow: body.workflow,
-            environment: body.environment
-          },
-          execution
-        )
-
-        await saveProof(env, proof)
-        await consumeAuthority(env, execution.decision_id)
-
-        return jsonResponse({
-          status: "VALID",
-          proof
-        })
       }
 
       const required = ["execution_id", "decision_id", "surface", "run_id", "commit_sha", "workflow", "environment"]
