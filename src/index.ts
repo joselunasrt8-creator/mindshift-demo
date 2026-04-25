@@ -341,6 +341,7 @@ async function executeGithubDeploy(
   const timestamp = new Date().toISOString()
   let status = "FAILED"
   let upstreamStatus: number | null = null
+  let upstreamBody: string | null = null
 
   const [targetOwner, targetRepo] = target.repo.split("/")
   const owner = targetOwner || env.GITHUB_OWNER
@@ -351,31 +352,30 @@ async function executeGithubDeploy(
   if (options?.simulateSuccess) {
     upstreamStatus = 204
     status = "EXECUTED"
+    upstreamBody = ""
   } else {
     try {
       const upstream = await fetch(dispatchUrl, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Accept: "application/vnd.github+json",
           Authorization: `Bearer ${env.GITHUB_TOKEN}`,
           "X-GitHub-Api-Version": "2022-11-28"
         },
         body: JSON.stringify({
-          ref: target.branch,
+          ref: "main",
           inputs: {
-            environment: String(authority.scope?.environment || "production"),
-            ...target.inputs,
-            decision_id: authority.decision_id,
-            authority_id: authority.authority_id
+            environment: "production"
           }
         })
       })
 
       upstreamStatus = upstream.status
+      upstreamBody = await upstream.text()
       status = upstream.ok ? "EXECUTED" : "FAILED"
-    } catch {
+    } catch (error) {
       status = "FAILED"
+      upstreamBody = error instanceof Error ? error.message : "Unknown dispatch error."
     }
   }
 
@@ -386,6 +386,7 @@ async function executeGithubDeploy(
     intent: authority.intent,
     webhook_url: dispatchUrl,
     upstream_status: upstreamStatus,
+    upstream_body: upstreamBody,
     status,
     timestamp,
     target,
@@ -522,7 +523,9 @@ async function runExecuteFlow(
         status: "EXECUTED",
         surface: "github_actions",
         workflow: target.workflow,
-        branch: target.branch
+        branch: target.branch,
+        upstream_status: execution.upstream_status,
+        upstream_body: execution.upstream_body
       }
     }
   }
@@ -535,7 +538,8 @@ async function runExecuteFlow(
       result: "NOT_EXECUTED",
       message: "GitHub workflow dispatch failed.",
       execution_id: execution.execution_id,
-      upstream_status: execution.upstream_status
+      upstream_status: execution.upstream_status,
+      upstream_body: execution.upstream_body
     }
   }
 }
