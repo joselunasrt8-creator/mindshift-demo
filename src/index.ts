@@ -834,16 +834,18 @@ async function runReplayTest(env: Env) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+    const normalizedPath = `/${url.pathname.replace(/^\/+|\/+$/g, "")}`
+    const route = (path: string) => normalizedPath === path || normalizedPath.endsWith(path)
 
-    if (url.pathname === "/" && request.method === "GET") {
+    if (normalizedPath === "/" && request.method === "GET") {
       return new Response("MindShift Runtime Live")
     }
 
-    if (url.pathname === "/health" && request.method === "GET") {
+    if (route("/health") && request.method === "GET") {
       return jsonResponse({ status: "ok", service: "mindshift-worker", timestamp: new Date().toISOString() })
     }
 
-    if (url.pathname === "/db-check" && request.method === "GET") {
+    if (route("/db-check") && request.method === "GET") {
       try {
         const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>()
         return jsonResponse({ status: "ok", db: probe?.ok === 1 ? "connected" : "unknown" })
@@ -852,22 +854,31 @@ export default {
       }
     }
 
-    if (url.pathname === "/records/authorities" && request.method === "GET") {
+    if (route("/records/authorities") && request.method === "GET") {
       const results = await listAuthorities(env)
       return jsonResponse(results.results ?? [])
     }
 
-    if (url.pathname === "/records/executions" && request.method === "GET") {
+    if (route("/records/executions") && request.method === "GET") {
       const results = await listExecutions(env)
       return jsonResponse(results.results ?? [])
     }
 
-    if (url.pathname === "/records/proofs" && request.method === "GET") {
+    if (route("/records/proofs") && request.method === "GET") {
       const results = await listProofs(env)
       return jsonResponse(results.results ?? [])
     }
 
-    if (url.pathname === "/authority" && request.method === "POST") {
+    if (route("/webhook") && request.method === "POST") {
+      const body = await readJson(request)
+      if (!body) {
+        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
+      }
+
+      return jsonResponse({ status: "ok", received: body })
+    }
+
+    if (route("/authority") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
@@ -931,7 +942,7 @@ export default {
       return jsonResponse(authority)
     }
 
-    if (url.pathname === "/compile" && request.method === "POST") {
+    if (route("/compile") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "VALID", aeo_id: crypto.randomUUID() })
@@ -989,7 +1000,7 @@ export default {
       return jsonResponse(aeo)
     }
 
-    if (url.pathname === "/validate" && request.method === "POST") {
+    if (route("/validate") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "VALID", result: "VALID" })
@@ -1024,7 +1035,7 @@ export default {
       return jsonResponse(result.payload, result.code)
     }
 
-    if (url.pathname === "/execute" && request.method === "POST") {
+    if (route("/execute") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "EXECUTED" })
@@ -1114,15 +1125,15 @@ export default {
       }
     }
 
-    if (url.pathname === "/replay-test" && request.method === "GET") {
+    if (route("/replay-test") && request.method === "GET") {
       return runReplayTest(env)
     }
 
-    if (url.pathname === "/github-proof-test" && request.method === "GET") {
+    if (route("/github-proof-test") && request.method === "GET") {
       return runGithubProofTest(env)
     }
 
-    if (url.pathname === "/proof" && request.method === "POST") {
+    if (route("/proof") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
         return jsonResponse({ status: "success" })
