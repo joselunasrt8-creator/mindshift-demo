@@ -55,7 +55,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          AUTHORITY_RESPONSE=$(curl -sS -X POST "$CLEAN_WORKER_URL/authority" \
+          AUTHORITY_STATUS_CODE=$(curl -sS -o authority.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/authority" \
+            -D authority.headers \
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n \
@@ -75,13 +76,28 @@ jobs:
                 }
               }')")
 
-          echo "$AUTHORITY_RESPONSE" > authority.json
+          AUTHORITY_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' authority.headers | tail -n1)
+          if [ "$AUTHORITY_CONTENT_TYPE" != "application/json" ]; then
+            echo "Authority endpoint returned non-JSON content-type."
+            echo "HTTP status: $AUTHORITY_STATUS_CODE"
+            echo "Content-Type: ${AUTHORITY_CONTENT_TYPE:-missing}"
+            cat authority.json
+            exit 1
+          fi
+
+          if ! jq -e . authority.json >/dev/null 2>&1; then
+            echo "Authority endpoint returned non-JSON response body."
+            echo "HTTP status: $AUTHORITY_STATUS_CODE"
+            cat authority.json
+            exit 1
+          fi
 
           AUTHORITY_STATUS=$(jq -r '.status // empty' authority.json)
           AUTHORITY_ID=$(jq -r '.authority_id // empty' authority.json)
 
-          if [ "$AUTHORITY_STATUS" != "VALID" ] || [ -z "$AUTHORITY_ID" ]; then
+          if [ "$AUTHORITY_STATUS_CODE" -lt 200 ] || [ "$AUTHORITY_STATUS_CODE" -gt 299 ] || [ "$AUTHORITY_STATUS" != "VALID" ] || [ -z "$AUTHORITY_ID" ]; then
             echo "Authority request failed."
+            echo "HTTP status: $AUTHORITY_STATUS_CODE"
             cat authority.json
             exit 1
           fi
@@ -92,18 +108,34 @@ jobs:
         run: |
           set -euo pipefail
 
-          COMPILE_RESPONSE=$(curl -sS -X POST "$CLEAN_WORKER_URL/compile" \
+          COMPILE_STATUS_CODE=$(curl -sS -o compile.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/compile" \
+            -D compile.headers \
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n --arg authority_id "$AUTHORITY_ID" '{authority_id: $authority_id}')")
 
-          echo "$COMPILE_RESPONSE" > compile.json
+          COMPILE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' compile.headers | tail -n1)
+          if [ "$COMPILE_CONTENT_TYPE" != "application/json" ]; then
+            echo "Compile endpoint returned non-JSON content-type."
+            echo "HTTP status: $COMPILE_STATUS_CODE"
+            echo "Content-Type: ${COMPILE_CONTENT_TYPE:-missing}"
+            cat compile.json
+            exit 1
+          fi
+
+          if ! jq -e . compile.json >/dev/null 2>&1; then
+            echo "Compile endpoint returned non-JSON response body."
+            echo "HTTP status: $COMPILE_STATUS_CODE"
+            cat compile.json
+            exit 1
+          fi
 
           COMPILE_STATUS=$(jq -r '.status // empty' compile.json)
           COMPILATION_ID=$(jq -r '.compilation_id // empty' compile.json)
 
-          if [ "$COMPILE_STATUS" != "VALID" ] || [ -z "$COMPILATION_ID" ]; then
+          if [ "$COMPILE_STATUS_CODE" -lt 200 ] || [ "$COMPILE_STATUS_CODE" -gt 299 ] || [ "$COMPILE_STATUS" != "VALID" ] || [ -z "$COMPILATION_ID" ]; then
             echo "Compile failed."
+            echo "HTTP status: $COMPILE_STATUS_CODE"
             cat compile.json
             exit 1
           fi
@@ -114,19 +146,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          VALIDATE_RESPONSE=$(curl -sS -X POST "$CLEAN_WORKER_URL/validate" \
+          VALIDATE_STATUS_CODE=$(curl -sS -o validate.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/validate" \
+            -D validate.headers \
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n --arg compilation_id "$COMPILATION_ID" '{compilation_id: $compilation_id}')")
 
-          echo "$VALIDATE_RESPONSE" > validate.json
+          VALIDATE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' validate.headers | tail -n1)
+          if [ "$VALIDATE_CONTENT_TYPE" != "application/json" ]; then
+            echo "Validate endpoint returned non-JSON content-type."
+            echo "HTTP status: $VALIDATE_STATUS_CODE"
+            echo "Content-Type: ${VALIDATE_CONTENT_TYPE:-missing}"
+            cat validate.json
+            exit 1
+          fi
+
+          if ! jq -e . validate.json >/dev/null 2>&1; then
+            echo "Validate endpoint returned non-JSON response body."
+            echo "HTTP status: $VALIDATE_STATUS_CODE"
+            cat validate.json
+            exit 1
+          fi
 
           VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
           VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
           VALIDATION_ID=$(jq -r '.validation_id // empty' validate.json)
 
-          if [ "$VALIDATION_STATUS" != "VALID" ] && [ "$VALIDATION_RESULT" != "VALID" ]; then
+          if [ "$VALIDATE_STATUS_CODE" -lt 200 ] || [ "$VALIDATE_STATUS_CODE" -gt 299 ] || [ "$VALIDATION_STATUS" != "VALID" ] || [ "$VALIDATION_RESULT" != "VALID" ]; then
             echo "Validation is not VALID. Failing closed."
+            echo "HTTP status: $VALIDATE_STATUS_CODE"
             cat validate.json
             exit 1
           fi
@@ -143,7 +191,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          EXECUTE_RESPONSE=$(curl -sS -X POST "$CLEAN_WORKER_URL/execute" \
+          EXECUTE_STATUS_CODE=$(curl -sS -o execute.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/execute" \
+            -D execute.headers \
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n \
@@ -151,13 +200,28 @@ jobs:
               --arg webhook_url "$CLEAN_WORKER_URL/webhook" \
               '{validation_id: $validation_id, webhook_url: $webhook_url}')")
 
-          echo "$EXECUTE_RESPONSE" > execute.json
+          EXECUTE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' execute.headers | tail -n1)
+          if [ "$EXECUTE_CONTENT_TYPE" != "application/json" ]; then
+            echo "Execute endpoint returned non-JSON content-type."
+            echo "HTTP status: $EXECUTE_STATUS_CODE"
+            echo "Content-Type: ${EXECUTE_CONTENT_TYPE:-missing}"
+            cat execute.json
+            exit 1
+          fi
+
+          if ! jq -e . execute.json >/dev/null 2>&1; then
+            echo "Execute endpoint returned non-JSON response body."
+            echo "HTTP status: $EXECUTE_STATUS_CODE"
+            cat execute.json
+            exit 1
+          fi
 
           EXECUTE_STATUS=$(jq -r '.status // empty' execute.json)
           EXECUTION_ID=$(jq -r '.execution_id // empty' execute.json)
 
-          if [ "$EXECUTE_STATUS" != "VALID" ] || [ -z "$EXECUTION_ID" ]; then
+          if [ "$EXECUTE_STATUS_CODE" -lt 200 ] || [ "$EXECUTE_STATUS_CODE" -gt 299 ] || [ "$EXECUTE_STATUS" != "VALID" ] || [ -z "$EXECUTION_ID" ]; then
             echo "Execute failed."
+            echo "HTTP status: $EXECUTE_STATUS_CODE"
             cat execute.json
             exit 1
           fi
@@ -168,7 +232,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          PROOF_RESPONSE=$(curl -sS -X POST "$CLEAN_WORKER_URL/proof" \
+          PROOF_STATUS_CODE=$(curl -sS -o proof.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/proof" \
+            -D proof.headers \
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n \
@@ -185,13 +250,28 @@ jobs:
                 environment: $environment
               }')")
 
-          echo "$PROOF_RESPONSE" > proof.json
+          PROOF_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' proof.headers | tail -n1)
+          if [ "$PROOF_CONTENT_TYPE" != "application/json" ]; then
+            echo "Proof endpoint returned non-JSON content-type."
+            echo "HTTP status: $PROOF_STATUS_CODE"
+            echo "Content-Type: ${PROOF_CONTENT_TYPE:-missing}"
+            cat proof.json
+            exit 1
+          fi
+
+          if ! jq -e . proof.json >/dev/null 2>&1; then
+            echo "Proof endpoint returned non-JSON response body."
+            echo "HTTP status: $PROOF_STATUS_CODE"
+            cat proof.json
+            exit 1
+          fi
 
           PROOF_STATUS=$(jq -r '.status // empty' proof.json)
           PROOF_ID=$(jq -r '.proof.proof_id // empty' proof.json)
 
-          if [ "$PROOF_STATUS" != "VALID" ] || [ -z "$PROOF_ID" ]; then
+          if [ "$PROOF_STATUS_CODE" -lt 200 ] || [ "$PROOF_STATUS_CODE" -gt 299 ] || [ "$PROOF_STATUS" != "VALID" ] || [ -z "$PROOF_ID" ]; then
             echo "Proof recording failed."
+            echo "HTTP status: $PROOF_STATUS_CODE"
             cat proof.json
             exit 1
           fi
