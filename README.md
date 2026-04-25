@@ -9,12 +9,17 @@ Cloudflare Worker runtime backed by D1.
 npx wrangler d1 execute mindshift-demo-prod --remote --file schema.sql
 ```
 
-### 2) Deploy
+### 2) Apply D1 migrations (governed deploy prerequisite)
+```bash
+npx wrangler d1 migrations apply mindshift-demo-prod --remote
+```
+
+### 3) Deploy
 ```bash
 npx wrangler deploy
 ```
 
-### 3) Test deterministic replay behavior
+### 4) Test deterministic replay behavior
 ```bash
 curl -s https://mindshift-demo.joselunasrt8.workers.dev/replay-test
 ```
