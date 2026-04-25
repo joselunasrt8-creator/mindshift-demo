@@ -229,6 +229,36 @@ async function saveAuthority(env: Env, authority: any) {
     .run()
 }
 
+async function getTableColumns(env: Env, tableName: string): Promise<Set<string> | null> {
+  try {
+    const result = await env.DB.prepare(`PRAGMA table_info(${tableName})`).all<{ name: string }>()
+    return new Set((result.results || []).map((row) => row.name))
+  } catch {
+    return null
+  }
+}
+
+async function canInsertAuthority(env: Env) {
+  const required = ["authority_id", "decision_id", "owner", "intent", "scope", "constraints", "status", "created_at"]
+  const columns = await getTableColumns(env, "authority_registry")
+  if (!columns) {
+    return {
+      ok: false,
+      error: "authority_registry is missing or inaccessible in D1."
+    }
+  }
+
+  const missing = required.filter((column) => !columns.has(column))
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: `authority_registry schema mismatch. Missing columns: ${missing.join(", ")}`
+    }
+  }
+
+  return { ok: true }
+}
+
 async function saveAeo(env: Env, aeo: any) {
   await env.DB.prepare(
     `INSERT INTO aeo_registry (
@@ -841,26 +871,53 @@ async function runReplayTest(env: Env) {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url)
-    const normalizedPath = `/${url.pathname.replace(/^\/+|\/+$/g, "")}`
-    const route = (path: string) => normalizedPath === path || normalizedPath.endsWith(path)
+    let normalizedPath = "/unknown"
 
-    if (normalizedPath === "/" && request.method === "GET") {
-      return new Response("MindShift Runtime Live")
-    }
+    try {
+      const url = new URL(request.url)
+      normalizedPath = `/${url.pathname.replace(/^\/+|\/+$/g, "")}`
+      const route = (path: string) => normalizedPath === path || normalizedPath.endsWith(path)
+
+      if (normalizedPath === "/" && request.method === "GET") {
+        return new Response("MindShift Runtime Live")
+      }
 
     if (route("/health") && request.method === "GET") {
       return jsonResponse({ status: "ok", service: "mindshift-worker", timestamp: new Date().toISOString() })
     }
 
-    if (route("/db-check") && request.method === "GET") {
-      try {
-        const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>()
-        return jsonResponse({ status: "ok", db: probe?.ok === 1 ? "connected" : "unknown" })
-      } catch (error: any) {
-        return jsonResponse({ status: "FAILED", error: error?.message || "D1 check failed" }, 500)
+      if (route("/db-check") && request.method === "GET") {
+        try {
+          const probe = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>()
+          return jsonResponse({ status: "ok", db: probe?.ok === 1 ? "connected" : "unknown" })
+        } catch (error: any) {
+          return jsonResponse({ status: "FAILED", error: error?.message || "D1 check failed" }, 500)
+        }
       }
-    }
+
+      if (route("/route-check") && request.method === "GET") {
+        return jsonResponse({
+          status: "ok",
+          method: "GET",
+          enabled_routes: [
+            "GET /",
+            "GET /health",
+            "GET /db-check",
+            "GET /route-check",
+            "GET /records/authorities",
+            "GET /records/executions",
+            "GET /records/proofs",
+            "GET /replay-test",
+            "GET /github-proof-test",
+            "POST /webhook",
+            "POST /authority",
+            "POST /compile",
+            "POST /validate",
+            "POST /execute",
+            "POST /proof"
+          ]
+        })
+      }
 
     if (route("/records/authorities") && request.method === "GET") {
       const results = await listAuthorities(env)
@@ -886,8 +943,7 @@ export default {
       return jsonResponse({ status: "ok", received: body })
     }
 
-    if (route("/authority") && request.method === "POST") {
-      try {
+      if (route("/authority") && request.method === "POST") {
         const body = await readJson(request)
         if (!body || !isObject(body)) {
           return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
@@ -896,6 +952,18 @@ export default {
         const dbError = missingDbBinding(env)
         if (dbError) {
           return jsonResponse({ status: "FAILED", error: dbError }, 500)
+        }
+
+        const insertCheck = await canInsertAuthority(env)
+        if (!insertCheck.ok) {
+          return jsonResponse(
+            {
+              status: "FAILED",
+              error: insertCheck.error,
+              route: "/authority"
+            },
+            500
+          )
         }
 
         // Governed deploy workflow payload compatibility:
@@ -932,7 +1000,18 @@ export default {
             constraints
           })
           authority.authority_id = authorityId
-          await saveAuthority(env, authority)
+          try {
+            await saveAuthority(env, authority)
+          } catch (error: any) {
+            return jsonResponse(
+              {
+                status: "FAILED",
+                error: error?.message || "Failed to write authority record to D1.",
+                route: "/authority"
+              },
+              500
+            )
+          }
 
           // Keep response minimal for governed-deploy pipeline.
           return jsonResponse({ status: "VALID", authority_id: authorityId, decision_id: decisionId })
@@ -960,22 +1039,25 @@ export default {
           )
         }
 
-        await saveAuthority(env, authority)
+        try {
+          await saveAuthority(env, authority)
+        } catch (error: any) {
+          return jsonResponse(
+            {
+              status: "FAILED",
+              error: error?.message || "Failed to write authority record to D1.",
+              route: "/authority"
+            },
+            500
+          )
+        }
         return jsonResponse({
           status: "VALID",
           authority_id: authority.authority_id,
           decision_id: authority.decision_id
         })
-      } catch (error: any) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: error?.message || "Failed to process /authority request"
-          },
-          500
-        )
       }
-    }
+      
 
     if (route("/compile") && request.method === "POST") {
       const body = await readJson(request)
@@ -1250,6 +1332,16 @@ export default {
       return jsonResponse(proof)
     }
 
-    return jsonResponse({ status: "FAILED", error: "Not Found" }, 404)
+      return jsonResponse({ status: "FAILED", error: "Not Found" }, 404)
+    } catch (error: any) {
+      return jsonResponse(
+        {
+          status: "FAILED",
+          error: error?.message || "Unhandled worker exception",
+          route: normalizedPath
+        },
+        500
+      )
+    }
   }
 }
