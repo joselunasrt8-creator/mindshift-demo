@@ -1,7 +1,7 @@
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: { "Content-Type": "application/json" }
+    headers: { "content-type": "application/json" }
   })
 }
 
@@ -910,10 +910,7 @@ export default {
         await saveAuthority(env, authority)
 
         // Keep response minimal for governed-deploy pipeline.
-        return jsonResponse({
-          status: "VALID",
-          authority_id: authorityId
-        })
+        return jsonResponse({ status: "VALID", authority_id: authorityId, decision_id: decisionId })
       }
 
       const authority = buildAuthority(body)
@@ -939,7 +936,11 @@ export default {
       }
 
       await saveAuthority(env, authority)
-      return jsonResponse(authority)
+      return jsonResponse({
+        status: "VALID",
+        authority_id: authority.authority_id,
+        decision_id: authority.decision_id
+      })
     }
 
     if (route("/compile") && request.method === "POST") {
