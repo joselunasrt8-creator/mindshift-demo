@@ -60,6 +60,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object"
 }
 
+function missingDbBinding(env: Env): string | null {
+  if (!env?.DB) {
+    return "Missing required D1 binding: DB."
+  }
+
+  return null
+}
+
 function ensureDeployConstraints(constraints: Record<string, unknown>) {
   return {
     ...constraints,
@@ -879,68 +887,94 @@ export default {
     }
 
     if (route("/authority") && request.method === "POST") {
-      const body = await readJson(request)
-      if (!body) {
-        return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
-      }
-
-      // Governed deploy workflow payload compatibility:
-      // { decision_id, aeo: { intent, scope, target, commit_sha } }
-      if (isObject(body.aeo) && !body.constraints) {
-        const authorityId = crypto.randomUUID()
-        const decisionId = String(body.decision_id || crypto.randomUUID())
-        const aeo = body.aeo as Record<string, unknown>
-        const target = parseJsonObject(aeo.target)
-        const constraints = {
-          repo: String(target.repo || `${env.GITHUB_OWNER || ""}/${env.GITHUB_REPO || ""}`.replace(/^\/|\/$/g, "")),
-          branch: String(target.branch || "main"),
-          workflow: String(target.workflow || "deploy.yml"),
-          max_executions: 1
+      try {
+        const body = await readJson(request)
+        if (!body || !isObject(body)) {
+          return jsonResponse({ status: "FAILED", error: "Invalid JSON body" }, 400)
         }
 
-        // Save a normal authority record so existing validate/execute logic still works.
-        const authority = buildAuthority({
-          decision_id: decisionId,
-          owner: body.owner || "governed_deploy_workflow",
-          intent: aeo.intent || body.intent || "deploy_production",
-          scope: aeo.scope || body.scope || {},
-          constraints
-        })
-        authority.authority_id = authorityId
+        const dbError = missingDbBinding(env)
+        if (dbError) {
+          return jsonResponse({ status: "FAILED", error: dbError }, 500)
+        }
+
+        // Governed deploy workflow payload compatibility:
+        // { decision_id, aeo: { intent, scope, target, commit_sha } }
+        if (isObject(body.aeo) && !body.constraints) {
+          const authorityId = crypto.randomUUID()
+          const decisionId = String(body.decision_id || crypto.randomUUID())
+          const aeo = body.aeo as Record<string, unknown>
+          const target = parseJsonObject(aeo.target)
+          const fallbackRepo = `${env.GITHUB_OWNER || ""}/${env.GITHUB_REPO || ""}`.replace(/^\/|\/$/g, "")
+          const constraints = {
+            repo: String(target.repo || fallbackRepo),
+            branch: String(target.branch || "main"),
+            workflow: String(target.workflow || "deploy.yml"),
+            max_executions: 1
+          }
+
+          if (!constraints.repo || !constraints.branch || !constraints.workflow) {
+            return jsonResponse(
+              {
+                status: "FAILED",
+                error: "constraints.repo, constraints.branch, and constraints.workflow are required"
+              },
+              400
+            )
+          }
+
+          // Save a normal authority record so existing validate/execute logic still works.
+          const authority = buildAuthority({
+            decision_id: decisionId,
+            owner: body.owner || "governed_deploy_workflow",
+            intent: aeo.intent || body.intent || "deploy_production",
+            scope: aeo.scope || body.scope || {},
+            constraints
+          })
+          authority.authority_id = authorityId
+          await saveAuthority(env, authority)
+
+          // Keep response minimal for governed-deploy pipeline.
+          return jsonResponse({ status: "VALID", authority_id: authorityId, decision_id: decisionId })
+        }
+
+        const authority = buildAuthority(body)
+
+        if (!authority.constraints.repo || !authority.constraints.branch || !authority.constraints.workflow) {
+          return jsonResponse(
+            {
+              status: "FAILED",
+              error: "constraints.repo, constraints.branch, and constraints.workflow are required"
+            },
+            400
+          )
+        }
+
+        if (authority.constraints.max_executions !== 1) {
+          return jsonResponse(
+            {
+              status: "FAILED",
+              error: "constraints.max_executions must be 1 for non-bypassable production deploy flow"
+            },
+            400
+          )
+        }
+
         await saveAuthority(env, authority)
-
-        // Keep response minimal for governed-deploy pipeline.
-        return jsonResponse({ status: "VALID", authority_id: authorityId, decision_id: decisionId })
-      }
-
-      const authority = buildAuthority(body)
-
-      if (!authority.constraints.repo || !authority.constraints.branch || !authority.constraints.workflow) {
+        return jsonResponse({
+          status: "VALID",
+          authority_id: authority.authority_id,
+          decision_id: authority.decision_id
+        })
+      } catch (error: any) {
         return jsonResponse(
           {
             status: "FAILED",
-            error: "constraints.repo, constraints.branch, and constraints.workflow are required"
+            error: error?.message || "Failed to process /authority request"
           },
-          400
+          500
         )
       }
-
-      if (authority.constraints.max_executions !== 1) {
-        return jsonResponse(
-          {
-            status: "FAILED",
-            error: "constraints.max_executions must be 1 for non-bypassable production deploy flow"
-          },
-          400
-        )
-      }
-
-      await saveAuthority(env, authority)
-      return jsonResponse({
-        status: "VALID",
-        authority_id: authority.authority_id,
-        decision_id: authority.decision_id
-      })
     }
 
     if (route("/compile") && request.method === "POST") {
