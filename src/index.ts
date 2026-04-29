@@ -154,8 +154,27 @@ function targetFromAuthority(authority: any): GithubDeployTarget | null {
   }
 }
 
-async function buildValidation(aeo: any) {
+async function buildValidation(aeo: any, authority: any) {
   const validated_object_hash = await sha256Hex(JSON.stringify(aeo))
+  const constraints = ensureDeployConstraints(parseJsonObject(aeo?.constraints))
+  const target = parseJsonObject(aeo?.target)
+  const finality = parseJsonObject(aeo?.finality)
+  const hasRequiredAeoFields = Boolean(aeo?.intent && aeo?.scope && aeo?.validation && aeo?.target && aeo?.finality)
+  const isAuthorityActive = Boolean(authority && String(authority.status || "").toUpperCase() === "ACTIVE")
+  const hasTargetFields = Boolean(target.repo && target.branch && target.workflow)
+  const constraintsMatchTarget =
+    constraints.repo === String(target.repo || "") &&
+    constraints.branch === String(target.branch || "") &&
+    constraints.workflow === String(target.workflow || "")
+  const isValid =
+    Boolean(authority) &&
+    isAuthorityActive &&
+    hasRequiredAeoFields &&
+    Boolean(aeo?.target) &&
+    finality.proof_required === true &&
+    hasTargetFields &&
+    constraintsMatchTarget
+
   return {
     validation_id: crypto.randomUUID(),
     authority_id: aeo.authority_id,
@@ -163,7 +182,7 @@ async function buildValidation(aeo: any) {
     decision_id: aeo.decision_id,
     intent: aeo.intent,
     validated_object_hash,
-    result: "VALID",
+    result: isValid ? "VALID" : "NULL",
     status: "VALIDATED",
     created_at: new Date().toISOString()
   }
@@ -682,7 +701,7 @@ async function validateAuthority(env: Env, body: any) {
   const aeo = buildAeo(authority, targetFromAuthority(authority) as GithubDeployTarget)
   await saveAeo(env, aeo)
 
-  const validation = await buildValidation(aeo)
+  const validation = await buildValidation(aeo, authority)
   await saveValidation(env, validation)
 
   return {
@@ -1067,7 +1086,7 @@ export default {
     if (route("/compile") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
-        return jsonResponse({ status: "VALID", aeo_id: crypto.randomUUID() })
+        return jsonResponse({ status: "NULL", result: "NULL", error: "Missing request body" }, 400)
       }
 
       if (body.authority_id) {
@@ -1125,7 +1144,7 @@ export default {
     if (route("/validate") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
-        return jsonResponse({ status: "VALID", result: "VALID" })
+        return jsonResponse({ status: "NULL", result: "NULL", error: "Missing request body" }, 400)
       }
 
       if (body.compilation_id) {
@@ -1141,16 +1160,16 @@ export default {
           authority_id: compiled.authority_id,
           decision_id: compiled.decision_id,
           intent: compiled.intent
-        })
+        }, await findAuthorityById(env, compiled.authority_id))
         await saveValidation(env, validation)
 
         return jsonResponse({
-          status: "VALID",
-          result: "VALID",
+          status: validation.result === "VALID" ? "VALID" : "NULL",
+          result: validation.result,
           validation_id: validation.validation_id,
           validated_object: compiledAeo,
           validated_object_hash: validation.validated_object_hash
-        })
+        }, validation.result === "VALID" ? 200 : 409)
       }
 
       const result = await validateAuthority(env, body)
@@ -1160,7 +1179,7 @@ export default {
     if (route("/execute") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
-        return jsonResponse({ status: "EXECUTED" })
+        return jsonResponse({ status: "NULL", result: "NOT_EXECUTED", error: "Missing request body" }, 400)
       }
 
       if (body.validation_id) {
@@ -1258,7 +1277,7 @@ export default {
     if (route("/proof") && request.method === "POST") {
       const body = await readJson(request)
       if (!body) {
-        return jsonResponse({ status: "success" })
+        return jsonResponse({ status: "NULL", result: "NULL", error: "Missing request body" }, 400)
       }
 
       if (body.execution_id && !body.decision_id) {
