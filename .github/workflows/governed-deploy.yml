@@ -8,13 +8,13 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  actions: read
-
 concurrency:
   group: governed-deploy-production
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   governed-production-deploy:
