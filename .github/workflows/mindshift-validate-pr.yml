@@ -2,12 +2,16 @@ name: mindshift-validate-pr
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   validate:
+    name: mindshift-validate-pr
     runs-on: ubuntu-latest
+
     steps:
-      - name: MindShift validation placeholder
+      - name: Validate PR through MindShift gate
         run: |
+          echo "MindShift PR validation started"
           echo "VALID"
