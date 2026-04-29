@@ -243,6 +243,19 @@ async function findValidationById(env: Env, validationId: string) {
     .first<any>()
 }
 
+async function findValidationByHashAndDecisionId(env: Env, validatedObjectHash: string, decisionId: string) {
+  return env.DB.prepare(
+    `SELECT * FROM validation_registry
+     WHERE validated_object_hash = ?1
+       AND decision_id = ?2
+       AND result = 'VALID'
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
+    .bind(validatedObjectHash, decisionId)
+    .first<any>()
+}
+
 function isAuthorityUsableForExecution(authorityStatus: string | null | undefined) {
   return ["ACTIVE"].includes((authorityStatus || "").toUpperCase())
 }
@@ -459,20 +472,6 @@ async function runExecuteFlow(
   body: { decision_id?: string; intent?: string; target?: any; validated_object_hash?: string },
   options?: { simulateSuccess?: boolean }
 ) {
-  const validation = await validateAuthority(env, body)
-  if (!validation.ok || !validation.authority) {
-    return {
-      code: validation.code,
-      payload: {
-        status: "FAILED",
-        decision_id: body.decision_id || null,
-        result: "NOT_EXECUTED",
-        message: "execution blocked",
-        validation: validation.payload
-      }
-    }
-  }
-
   if (!body.validated_object_hash) {
     return {
       code: 400,
@@ -486,20 +485,85 @@ async function runExecuteFlow(
     }
   }
 
-  if (body.validated_object_hash !== validation.payload.validated_object_hash) {
-    return {
-      code: 409,
-      payload: {
-        status: "FAILED",
-        decision_id: body.decision_id || null,
-        result: "NOT_EXECUTED",
-        message: "execution blocked",
-        error: "validated_object_hash mismatch. Execute only the exact object returned by /validate."
+  let validationPayload: any | null = null
+  let authority: any | null = null
+
+  if (body.validated_object_hash && body.decision_id) {
+    const existingValidation = await findValidationByHashAndDecisionId(
+      env,
+      body.validated_object_hash,
+      body.decision_id
+    )
+    if (!existingValidation) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id || null,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error: "validated_object_hash mismatch. Execute only the exact object returned by /validate."
+        }
+      }
+    }
+
+    const existingAuthority = await findAuthorityById(env, existingValidation.authority_id)
+    if (!existingAuthority || String(existingAuthority.status || "").toUpperCase() !== "ACTIVE") {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id || null,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          validation: {
+            validation_id: existingValidation.validation_id,
+            decision_id: body.decision_id,
+            status: "FAILED",
+            result: "INVALID",
+            message: existingAuthority
+              ? `Authority exists, but status '${existingAuthority.status}' is not valid for execution.`
+              : "authority not found"
+          }
+        }
+      }
+    }
+
+    validationPayload = existingValidation
+    authority = existingAuthority
+  } else {
+    const validation = await validateAuthority(env, body)
+    if (!validation.ok || !validation.authority) {
+      return {
+        code: validation.code,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id || null,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          validation: validation.payload
+        }
+      }
+    }
+
+    validationPayload = validation.payload
+    authority = validation.authority
+
+    if (body.validated_object_hash !== validationPayload.validated_object_hash) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id || null,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error: "validated_object_hash mismatch. Execute only the exact object returned by /validate."
+        }
       }
     }
   }
 
-  const authorityTarget = targetFromAuthority(validation.authority)
+  const authorityTarget = targetFromAuthority(authority)
   if (!authorityTarget) {
     return {
       code: 409,
@@ -563,9 +627,9 @@ async function runExecuteFlow(
     }
   }
 
-  const execution = await executeGithubDeploy(env, validation.authority, target, {
+  const execution = await executeGithubDeploy(env, authority, target, {
     ...options,
-    validatedObjectHash: validation.payload.validated_object_hash
+    validatedObjectHash: validationPayload.validated_object_hash
   })
 
   if (execution.status === "EXECUTED") {
