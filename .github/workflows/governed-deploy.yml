@@ -10,6 +10,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: governed-deploy-production
+  cancel-in-progress: false
 
 jobs:
   governed-production-deploy:
@@ -31,6 +36,61 @@ jobs:
 
           if [ "$DEPLOY_ENVIRONMENT" != "production" ]; then
             echo "Environment must be exactly 'production'."
+            exit 1
+          fi
+
+      - name: Guard single active production governed deploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo "Missing GitHub token for concurrency guard."
+            exit 1
+          fi
+
+          RUNS_URL="https://api.github.com/repos/$REPOSITORY/actions/workflows/governed-deploy.yml/runs?status=in_progress&event=workflow_dispatch&per_page=100"
+          API_STATUS_CODE=$(curl -sS -o workflow-runs.json -w "%{http_code}" \
+            -D workflow-runs.headers \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$RUNS_URL")
+
+          API_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' workflow-runs.headers | tail -n1)
+          if [ "$API_STATUS_CODE" -lt 200 ] || [ "$API_STATUS_CODE" -gt 299 ] || [ -z "$API_CONTENT_TYPE" ] || [[ "$API_CONTENT_TYPE" != application/json* ]]; then
+            echo "Unable to verify deploy lock state. Failing closed."
+            echo "HTTP status: $API_STATUS_CODE"
+            echo "Content-Type: ${API_CONTENT_TYPE:-missing}"
+            cat workflow-runs.json
+            exit 1
+          fi
+
+          if ! jq -e . workflow-runs.json >/dev/null 2>&1; then
+            echo "GitHub API returned invalid JSON for lock state. Failing closed."
+            cat workflow-runs.json
+            exit 1
+          fi
+
+          OTHER_ACTIVE_COUNT=$(jq --arg current_run_id "$RUN_ID" '
+            [
+              .workflow_runs[]?
+              | select((.id | tostring) != $current_run_id)
+              | select(.status == "in_progress")
+              | select(.event == "workflow_dispatch")
+              | select(.name == "governed-deploy")
+            ] | length
+          ' workflow-runs.json)
+
+          if [ -z "${OTHER_ACTIVE_COUNT:-}" ] || ! [[ "$OTHER_ACTIVE_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "Lock state count is ambiguous. Failing closed."
+            cat workflow-runs.json
+            exit 1
+          fi
+
+          if [ "$OTHER_ACTIVE_COUNT" -gt 0 ]; then
+            echo "Another governed production deploy is already active. Failing this run."
             exit 1
           fi
 
