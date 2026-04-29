@@ -18,6 +18,9 @@ permissions:
 
 jobs:
   governed-production-deploy:
+    concurrency:
+      group: governed-deploy-production
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
