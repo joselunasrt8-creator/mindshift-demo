@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS execution_registry (
   authority_id TEXT NOT NULL,
   decision_id TEXT NOT NULL,
   intent TEXT NOT NULL,
+  validated_object_hash TEXT,
   webhook_url TEXT NOT NULL,
   upstream_status INTEGER,
   status TEXT NOT NULL,
