@@ -159,6 +159,7 @@ async function buildValidation(aeo: any, authority: any) {
   const constraints = ensureDeployConstraints(parseJsonObject(aeo?.constraints))
   const target = parseJsonObject(aeo?.target)
   const finality = parseJsonObject(aeo?.finality)
+  const validation = parseJsonObject(aeo?.validation)
   const hasRequiredAeoFields = Boolean(aeo?.intent && aeo?.scope && aeo?.validation && aeo?.target && aeo?.finality)
   const isAuthorityActive = Boolean(authority && String(authority.status || "").toUpperCase() === "ACTIVE")
   const hasTargetFields = Boolean(target.repo && target.branch && target.workflow)
@@ -166,6 +167,27 @@ async function buildValidation(aeo: any, authority: any) {
     constraints.repo === String(target.repo || "") &&
     constraints.branch === String(target.branch || "") &&
     constraints.workflow === String(target.workflow || "")
+
+  const authorityBindingChecks = [
+    {
+      ok: aeo?.authority_id === authority?.authority_id,
+      message: "aeo.authority_id does not match authority.authority_id"
+    },
+    {
+      ok: aeo?.decision_id === authority?.decision_id,
+      message: "aeo.decision_id does not match authority.decision_id"
+    },
+    {
+      ok: validation.authority_id === authority?.authority_id,
+      message: "aeo.validation.authority_id does not match authority.authority_id"
+    },
+    {
+      ok: validation.decision_id === authority?.decision_id,
+      message: "aeo.validation.decision_id does not match authority.decision_id"
+    }
+  ]
+  const authorityBindingFailure = authorityBindingChecks.find((check) => !check.ok)
+
   const isValid =
     Boolean(authority) &&
     isAuthorityActive &&
@@ -173,7 +195,15 @@ async function buildValidation(aeo: any, authority: any) {
     Boolean(aeo?.target) &&
     finality.proof_required === true &&
     hasTargetFields &&
-    constraintsMatchTarget
+    constraintsMatchTarget &&
+    !authorityBindingFailure
+
+  const status = isValid ? "VALIDATED" : "FAILED"
+  const message = authorityBindingFailure
+    ? `Authority binding mismatch: ${authorityBindingFailure.message}.`
+    : isValid
+      ? "Validation succeeded."
+      : "Validation failed due to unmet constraints or missing required fields."
 
   return {
     validation_id: crypto.randomUUID(),
@@ -183,7 +213,8 @@ async function buildValidation(aeo: any, authority: any) {
     intent: aeo.intent,
     validated_object_hash,
     result: isValid ? "VALID" : "NULL",
-    status: "VALIDATED",
+    status,
+    message,
     created_at: new Date().toISOString()
   }
 }
