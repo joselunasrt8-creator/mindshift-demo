@@ -243,6 +243,19 @@ async function findValidationById(env: Env, validationId: string) {
     .first<any>()
 }
 
+
+async function findLatestValidValidationByDecisionId(env: Env, decisionId: string) {
+  return env.DB.prepare(
+    `SELECT * FROM validation_registry
+     WHERE decision_id = ?1
+       AND result = 'VALID'
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
+    .bind(decisionId)
+    .first<any>()
+}
+
 async function findValidationByHashAndDecisionId(env: Env, hash: string, decisionId: string) {
   return env.DB.prepare(
     `SELECT * FROM validation_registry
@@ -859,6 +872,51 @@ async function validateAuthority(env: Env, body: any) {
         result: "INVALID",
         message
       }
+    }
+  }
+
+  if (body.validated_object_hash) {
+    const existingValidation = await findLatestValidValidationByDecisionId(env, body.decision_id)
+    if (!existingValidation) {
+      return {
+        ok: false,
+        code: 404,
+        payload: {
+          validation_id: validationId,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          message: "No VALID validation record found for decision_id.",
+          error: "unknown_or_expired"
+        }
+      }
+    }
+
+    if (body.validated_object_hash !== existingValidation.validated_object_hash) {
+      return {
+        ok: false,
+        code: 409,
+        payload: {
+          validation_id: existingValidation.validation_id,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          message: "validated_object_hash mismatch for decision_id.",
+          error: "hash_mismatch"
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      code: 200,
+      payload: {
+        ...existingValidation,
+        status: "VALID",
+        result: "VALID",
+        message: "Exact-object validation succeeded for ACTIVE authority."
+      },
+      authority
     }
   }
 
