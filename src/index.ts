@@ -252,7 +252,11 @@ async function findValidationByHashAndDecisionId(env: Env, hash: string, decisio
      ORDER BY created_at DESC
      LIMIT 1`
   )
+<<<<<<< HEAD
         .bind(hash, decisionId)
+=======
+    .bind(hash, decisionId)
+>>>>>>> 2612c7d (Fix execute validation lookup)
     .first<any>()
 }
 
@@ -429,8 +433,13 @@ async function executeGithubDeploy(
         headers: {
           Accept: "application/vnd.github+json",
           Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+<<<<<<< HEAD
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": "mindshift-demo-worker"
+=======
+          "User-Agent": "mindshift-demo-worker",
+          "X-GitHub-Api-Version": "2022-11-28"
+>>>>>>> 2612c7d (Fix execute validation lookup)
         },
         body: JSON.stringify({
           ref: "main",
@@ -479,26 +488,133 @@ async function runExecuteFlow(
   body: { decision_id?: string; intent?: string; target?: any; validated_object_hash?: string },
   options?: { simulateSuccess?: boolean }
 ) {
+<<<<<<< HEAD
 
   let validationPayload: any | null = null
   let authority: any | null = null
 
+=======
+>>>>>>> 2612c7d (Fix execute validation lookup)
   if (body.validated_object_hash && body.decision_id) {
     const existingValidation = await findValidationByHashAndDecisionId(
       env,
       body.validated_object_hash,
       body.decision_id
     )
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2612c7d (Fix execute validation lookup)
     if (!existingValidation) {
       return {
         code: 409,
         payload: {
           status: "FAILED",
+<<<<<<< HEAD
           decision_id: body.decision_id || null,
+=======
+          decision_id: body.decision_id,
+>>>>>>> 2612c7d (Fix execute validation lookup)
           result: "NOT_EXECUTED",
           message: "execution blocked",
           error: "No existing VALID validation found for decision_id and validated_object_hash."
         }
+<<<<<<< HEAD
+=======
+      }
+    }
+
+    const authority = await findAuthorityById(env, existingValidation.authority_id)
+    if (!authority || !isAuthorityUsableForExecution(authority.status)) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error: "Authority is not ACTIVE for this validated object."
+        }
+      }
+    }
+
+    const authorityTarget = targetFromAuthority(authority)
+    if (!authorityTarget) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error: "Authority constraints are missing deploy target fields (repo, branch, workflow)."
+        }
+      }
+    }
+
+    if (!options?.simulateSuccess && (!env.GITHUB_TOKEN || !env.GITHUB_OWNER || !env.GITHUB_REPO)) {
+      return {
+        code: 500,
+        payload: {
+          status: "FAILED",
+          decision_id: body.decision_id,
+          result: "NOT_EXECUTED",
+          message: "execution blocked",
+          error: "Missing required GitHub secrets: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO."
+        }
+      }
+    }
+
+    const execution = await executeGithubDeploy(
+      env,
+      authority,
+      authorityTarget,
+      options,
+      body.validated_object_hash
+    )
+
+    if (execution.status === "EXECUTED") {
+      await consumeAuthority(env, body.decision_id)
+      return {
+        code: 200,
+        payload: {
+          execution_id: execution.execution_id,
+          decision_id: execution.decision_id,
+          status: "VALID",
+          surface: "github_actions",
+          workflow: authorityTarget.workflow,
+          branch: authorityTarget.branch,
+          upstream_status: execution.upstream_status,
+          upstream_body: execution.upstream_body
+        }
+      }
+    }
+
+    return {
+      code: 502,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id,
+        result: "NOT_EXECUTED",
+        message: "GitHub workflow dispatch failed.",
+        execution_id: execution.execution_id,
+        upstream_status: execution.upstream_status,
+        upstream_body: execution.upstream_body
+      }
+    }
+  }
+
+  const validation = await validateAuthority(env, body)
+  if (!validation.ok || !validation.authority) {
+    return {
+      code: validation.code,
+      payload: {
+        status: "FAILED",
+        decision_id: body.decision_id || null,
+        result: "NOT_EXECUTED",
+        message: "execution blocked",
+        validation: validation.payload
+>>>>>>> 2612c7d (Fix execute validation lookup)
       }
     }
 
@@ -617,10 +733,17 @@ async function runExecuteFlow(
 
   const execution = await executeGithubDeploy(
     env,
+<<<<<<< HEAD
     authority,
     target,
     options,
     validationPayload.validated_object_hash
+=======
+    validation.authority,
+    target,
+    options,
+    validation.payload.validated_object_hash
+>>>>>>> 2612c7d (Fix execute validation lookup)
   )
 
   if (execution.status === "EXECUTED") {
