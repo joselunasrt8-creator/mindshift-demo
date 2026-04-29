@@ -386,18 +386,20 @@ async function saveExecution(env: Env, execution: any) {
       authority_id,
       decision_id,
       intent,
+      validated_object_hash,
       webhook_url,
       upstream_status,
       status,
       execution_event,
       created_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
   )
     .bind(
       execution.execution_id,
       execution.authority_id,
       execution.decision_id,
       execution.intent,
+      execution.validated_object_hash,
       execution.webhook_url,
       execution.upstream_status,
       execution.status,
@@ -467,6 +469,7 @@ async function executeGithubDeploy(
     authority_id: authority.authority_id,
     decision_id: authority.decision_id,
     intent: authority.intent,
+    validated_object_hash: validatedObjectHash || null,
     webhook_url: dispatchUrl,
     upstream_status: upstreamStatus,
     upstream_body: upstreamBody,
@@ -487,12 +490,37 @@ async function executeGithubDeploy(
   return execution
 }
 
+async function findReplayExecutionByHash(env: Env, validatedObjectHash: string) {
+  return env.DB.prepare(
+    `SELECT execution_id, status
+     FROM execution_registry
+     WHERE validated_object_hash = ?1
+       AND UPPER(status) IN ('EXECUTED', 'SUCCESS')
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
+    .bind(validatedObjectHash)
+    .first<any>()
+}
+
 async function runExecuteFlow(
   env: Env,
   body: { decision_id?: string; intent?: string; target?: any; validated_object_hash?: string },
   options?: { simulateSuccess?: boolean }
 ) {
   if (body.validated_object_hash && body.decision_id) {
+    const replayExecution = await findReplayExecutionByHash(env, body.validated_object_hash)
+    if (replayExecution) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          result: "INVALID",
+          error: "replay_detected"
+        }
+      }
+    }
+
     const existingValidation = await findValidationByHashAndDecisionId(
       env,
       body.validated_object_hash,
@@ -592,6 +620,20 @@ async function runExecuteFlow(
   }
 
   const validation = await validateAuthority(env, body)
+  if (validation.payload.validated_object_hash) {
+    const replayExecution = await findReplayExecutionByHash(env, validation.payload.validated_object_hash)
+    if (replayExecution) {
+      return {
+        code: 409,
+        payload: {
+          status: "FAILED",
+          result: "INVALID",
+          error: "replay_detected"
+        }
+      }
+    }
+  }
+
   if (!validation.ok || !validation.authority) {
     return {
       code: validation.code,
