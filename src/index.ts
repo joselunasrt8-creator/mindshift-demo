@@ -385,7 +385,7 @@ async function executeGithubDeploy(
   env: Env,
   authority: any,
   target: GithubDeployTarget,
-  options?: { simulateSuccess?: boolean }
+  options?: { simulateSuccess?: boolean; validatedObjectHash?: string }
 ) {
   const executionId = crypto.randomUUID()
   const timestamp = new Date().toISOString()
@@ -445,7 +445,8 @@ async function executeGithubDeploy(
       action: target.action,
       repo: dispatchRepo,
       branch: target.branch,
-      workflow: target.workflow
+      workflow: target.workflow,
+      ...(options?.validatedObjectHash ? { validated_object_hash: options.validatedObjectHash } : {})
     }
   }
 
@@ -562,7 +563,11 @@ async function runExecuteFlow(
     }
   }
 
-  const execution = await executeGithubDeploy(env, validation.authority, target, options)
+  const execution = await executeGithubDeploy(env, validation.authority, target, {
+    ...options,
+    validatedObjectHash: validation.payload.validated_object_hash
+  })
+
   if (execution.status === "EXECUTED") {
     await consumeAuthority(env, String(body.decision_id || ""))
     return {
@@ -595,13 +600,22 @@ async function runExecuteFlow(
 }
 
 function buildProof(body: any, execution: any) {
+  const executionEvent = parseJsonObject(execution?.execution_event)
+  const validatedObjectHash =
+    typeof executionEvent.validated_object_hash === "string" ? executionEvent.validated_object_hash : undefined
+
   return {
     proof_id: crypto.randomUUID(),
     execution_id: body.execution_id,
     decision_id: body.decision_id,
     authority_id: execution.authority_id,
     surface: body.surface || "github_actions",
-    proof_reference: body.proof_reference || `github_run:${body.run_id || "unknown"}`,
+    proof_reference:
+      body.proof_reference ||
+      {
+        source: `github_run:${body.run_id || "unknown"}`,
+        ...(validatedObjectHash ? { validated_object_hash: validatedObjectHash } : {})
+      },
     run_id: body.run_id,
     commit_sha: body.commit_sha,
     environment_url: body.environment_url || null,
@@ -614,6 +628,11 @@ function buildProof(body: any, execution: any) {
 }
 
 async function saveProof(env: Env, proof: any) {
+  const normalizedProofReference =
+    typeof proof.proof_reference === "string"
+      ? { source: proof.proof_reference }
+      : parseJsonObject(proof.proof_reference)
+
   await env.DB.prepare(
     `INSERT INTO proof_registry (
       proof_id,
@@ -633,12 +652,15 @@ async function saveProof(env: Env, proof: any) {
       proof.decision_id,
       proof.surface,
       JSON.stringify({
-        proof_reference: proof.proof_reference,
+        proof_reference: normalizedProofReference,
         run_id: proof.run_id,
         commit_sha: proof.commit_sha,
         environment_url: proof.environment_url,
         workflow: proof.workflow,
-        environment: proof.environment
+        environment: proof.environment,
+        ...(normalizedProofReference.validated_object_hash
+          ? { validated_object_hash: normalizedProofReference.validated_object_hash }
+          : {})
       }),
       proof.status,
       proof.timestamp
@@ -1262,7 +1284,8 @@ export default {
           execution_event: {
             system: "webhook",
             action: "post",
-            validation_id: validation.validation_id
+            validation_id: validation.validation_id,
+            validated_object_hash: validation.validated_object_hash
           }
         })
 
