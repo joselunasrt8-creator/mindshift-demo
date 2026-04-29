@@ -279,6 +279,16 @@ async function consumeAuthority(env: Env, decisionId: string) {
     .run()
 }
 
+async function consumeAuthorityIfActive(env: Env, decisionId: string) {
+  const result = await env.DB.prepare(
+    "UPDATE authority_registry SET status = ?1 WHERE decision_id = ?2 AND UPPER(status) = 'ACTIVE'"
+  )
+    .bind("CONSUMED", decisionId)
+    .run()
+
+  return Number(result.meta?.changes || 0) > 0
+}
+
 async function saveAuthority(env: Env, authority: any) {
   await env.DB.prepare(
     `INSERT INTO authority_registry (
@@ -899,11 +909,7 @@ async function validateAuthority(env: Env, body: any) {
   }
 
   if (!isAuthorityUsableForExecution(authority.status)) {
-    const message =
-      String(authority.status).toUpperCase() === "CONSUMED"
-        ? "authority already consumed"
-        : `Authority exists, but status '${authority.status}' is not valid for execution.`
-
+    const isConsumed = String(authority.status).toUpperCase() === "CONSUMED"
     return {
       ok: false,
       code: 409,
@@ -912,7 +918,10 @@ async function validateAuthority(env: Env, body: any) {
         decision_id: body.decision_id,
         status: "FAILED",
         result: "INVALID",
-        message
+        message: isConsumed
+          ? "authority already consumed"
+          : `Authority exists, but status '${authority.status}' is not valid for execution.`,
+        ...(isConsumed ? { error: "replay_detected" } : {})
       }
     }
   }
@@ -949,6 +958,21 @@ async function validateAuthority(env: Env, body: any) {
       }
     }
 
+    const consumed = await consumeAuthorityIfActive(env, body.decision_id)
+    if (!consumed) {
+      return {
+        ok: false,
+        code: 409,
+        payload: {
+          validation_id: validationId,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          error: "replay_detected"
+        }
+      }
+    }
+
     return {
       ok: true,
       code: 200,
@@ -958,7 +982,10 @@ async function validateAuthority(env: Env, body: any) {
         result: "VALID",
         message: "Exact-object validation succeeded for ACTIVE authority."
       },
-      authority
+      authority: {
+        ...authority,
+        status: "CONSUMED"
+      }
     }
   }
 
