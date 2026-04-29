@@ -479,18 +479,6 @@ async function runExecuteFlow(
   body: { decision_id?: string; intent?: string; target?: any; validated_object_hash?: string },
   options?: { simulateSuccess?: boolean }
 ) {
-  if (!body.validated_object_hash) {
-    return {
-      code: 400,
-      payload: {
-        status: "FAILED",
-        decision_id: body.decision_id || null,
-        result: "NOT_EXECUTED",
-        message: "execution blocked",
-        error: "Missing validated_object_hash from /validate. Replay protection requires an exact validated hash."
-      }
-    }
-  }
 
   let validationPayload: any | null = null
   let authority: any | null = null
@@ -548,7 +536,7 @@ async function runExecuteFlow(
     validationPayload = validation.payload
     authority = validation.authority
 
-    if (body.validated_object_hash !== validationPayload.validated_object_hash) {
+    if (body.validated_object_hash && body.validated_object_hash !== validationPayload.validated_object_hash) {
       return {
         code: 409,
         payload: {
@@ -560,6 +548,7 @@ async function runExecuteFlow(
         }
       }
     }
+
   }
 
   const authorityTarget = targetFromAuthority(authority)
@@ -635,7 +624,7 @@ async function runExecuteFlow(
   )
 
   if (execution.status === "EXECUTED") {
-    await consumeAuthority(env, String(body.decision_id || ""))
+    await consumeAuthority(env, execution.decision_id)
     return {
       code: 200,
       payload: {
