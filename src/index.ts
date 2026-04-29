@@ -411,7 +411,12 @@ async function executeGithubDeploy(
   const owner = targetOwner || env.GITHUB_OWNER
   const repo = targetRepo || env.GITHUB_REPO
   const dispatchRepo = `${owner}/${repo}`
-  const dispatchUrl = `https://api.github.com/repos/${dispatchRepo}/actions/workflows/${target.workflow}/dispatches`
+  const workflow = String(target.workflow).split("/").pop() || String(target.workflow)
+  if (!workflow.endsWith(".yml") && !workflow.endsWith(".yaml")) {
+    throw new Error("Invalid workflow target: must be workflow file name")
+  }
+  const dispatchUrl = `https://api.github.com/repos/${dispatchRepo}/actions/workflows/${workflow}/dispatches`
+  console.log("Dispatch URL:", dispatchUrl)
 
   if (options?.simulateSuccess) {
     upstreamStatus = 204
