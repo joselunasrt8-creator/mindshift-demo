@@ -423,7 +423,8 @@ async function executeGithubDeploy(
         headers: {
           Accept: "application/vnd.github+json",
           Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-          "X-GitHub-Api-Version": "2022-11-28"
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "mindshift-demo-worker"
         },
         body: JSON.stringify({
           ref: "main",
