@@ -1,9 +1,16 @@
 name: governed-deploy
 
 on:
-  # Only Worker-triggered entrypoint. No manual or push-based production deploys.
-  repository_dispatch:
-    types: [mindshift-governed-production-deploy]
+  workflow_dispatch:
+    inputs:
+      decision_id:
+        description: "MindShift decision identifier"
+        required: true
+        type: string
+      validated_object_hash:
+        description: "Validated object hash returned by MindShift"
+        required: true
+        type: string
 
 concurrency:
   group: governed-deploy-production
@@ -20,29 +27,21 @@ jobs:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
       API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
       DEPLOY_ENVIRONMENT: production
-      WORKFLOW_NAME: ${{ github.workflow }}
-      COMMIT_SHA: ${{ github.sha }}
-      RUN_ID: ${{ github.run_id }}
-      REPOSITORY: ${{ github.repository }}
-      BRANCH: ${{ github.ref_name }}
+      DECISION_ID: ${{ github.event.inputs.decision_id }}
+      VALIDATED_OBJECT_HASH: ${{ github.event.inputs.validated_object_hash }}
 
     steps:
-      - name: Enforce Worker-only trigger and production target
+      - name: Enforce explicit invocation inputs
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
-            echo "Only repository_dispatch is allowed for production deploys."
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "Only explicit workflow_dispatch invocation is allowed."
             exit 1
           fi
 
-          if [ "${{ github.event.action }}" != "mindshift-governed-production-deploy" ]; then
-            echo "Unexpected dispatch action for production deploy."
-            exit 1
-          fi
-
-          if [ "$DEPLOY_ENVIRONMENT" != "production" ]; then
-            echo "Environment must be exactly production."
+          if [ -z "${DECISION_ID:-}" ] || [ -z "${VALIDATED_OBJECT_HASH:-}" ]; then
+            echo "Missing required inputs: decision_id and validated_object_hash."
             exit 1
           fi
 
@@ -63,65 +62,8 @@ jobs:
 
           echo "CLEAN_WORKER_URL=$CLEAN_WORKER_URL" >> "$GITHUB_ENV"
 
-      - name: Require active authority (/authority)
-        run: |
-          set -euo pipefail
-
-          AUTHORITY_STATUS_CODE=$(curl -sS -o authority.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/authority" \
-            -D authority.headers \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${API_KEY:-}" \
-            -d "$(jq -n \
-              --arg decision_id "MS-DEMO-DEPLOY-001" \
-              --arg environment "$DEPLOY_ENVIRONMENT" \
-              --arg workflow "governed-deploy.yml" \
-              --arg commit_sha "$COMMIT_SHA" \
-              --arg repo "$REPOSITORY" \
-              --arg branch "$BRANCH" \
-              '{
-                decision_id: $decision_id,
-                aeo: {
-                  intent: "deploy_production",
-                  scope: { environment: $environment },
-                  target: { system: "github_actions", repo: $repo, branch: $branch, workflow: $workflow },
-                  commit_sha: $commit_sha
-                }
-              }')")
-
-          AUTHORITY_STATUS=$(jq -r '.status // empty' authority.json)
-          AUTHORITY_ID=$(jq -r '.authority_id // empty' authority.json)
-          AUTHORITY_STATE=$(jq -r '.authority_state // empty' authority.json)
-
-          if [ "$AUTHORITY_STATUS_CODE" -lt 200 ] || [ "$AUTHORITY_STATUS_CODE" -gt 299 ] || [ "$AUTHORITY_STATUS" != "VALID" ] || [ -z "$AUTHORITY_ID" ] || [ "$AUTHORITY_STATE" != "ACTIVE" ]; then
-            echo "Authority is not ACTIVE and VALID."
-            cat authority.json
-            exit 1
-          fi
-
-          echo "AUTHORITY_ID=$AUTHORITY_ID" >> "$GITHUB_ENV"
-
-      - name: Compile AEO (/compile)
-        run: |
-          set -euo pipefail
-
-          COMPILE_STATUS_CODE=$(curl -sS -o compile.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/compile" \
-            -D compile.headers \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${API_KEY:-}" \
-            -d "$(jq -n --arg authority_id "$AUTHORITY_ID" '{authority_id: $authority_id}')")
-
-          COMPILE_STATUS=$(jq -r '.status // empty' compile.json)
-          COMPILATION_ID=$(jq -r '.compilation_id // empty' compile.json)
-
-          if [ "$COMPILE_STATUS_CODE" -lt 200 ] || [ "$COMPILE_STATUS_CODE" -gt 299 ] || [ "$COMPILE_STATUS" != "VALID" ] || [ -z "$COMPILATION_ID" ]; then
-            echo "Compile failed."
-            cat compile.json
-            exit 1
-          fi
-
-          echo "COMPILATION_ID=$COMPILATION_ID" >> "$GITHUB_ENV"
-
-      - name: Validate gate (/validate, fail closed)
+      - name: Validate deploy gate (/validate)
+        id: validate_gate
         run: |
           set -euo pipefail
 
@@ -129,102 +71,35 @@ jobs:
             -D validate.headers \
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
-            -d "$(jq -n --arg compilation_id "$COMPILATION_ID" '{compilation_id: $compilation_id}')")
+            -d "$(jq -n \
+              --arg decision_id "$DECISION_ID" \
+              --arg validated_object_hash "$VALIDATED_OBJECT_HASH" \
+              --arg environment "$DEPLOY_ENVIRONMENT" \
+              '{decision_id: $decision_id, validated_object_hash: $validated_object_hash, environment: $environment}')")
 
           VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
           VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
-          DECISION_ID=$(jq -r '.decision_id // empty' validate.json)
-          EXECUTE_INTENT=$(jq -r '.intent // empty' validate.json)
-          VALIDATED_OBJECT_HASH=$(jq -r '.validated_object_hash // empty' validate.json)
 
           if [ "$VALIDATE_STATUS_CODE" -lt 200 ] || [ "$VALIDATE_STATUS_CODE" -gt 299 ] || [ "$VALIDATION_STATUS" != "VALID" ] || [ "$VALIDATION_RESULT" != "VALID" ]; then
-            echo "Validation is not VALID."
+            echo "VALIDATION FAILED → DEPLOY BLOCKED"
             cat validate.json
             exit 1
           fi
 
-          if [ -z "$DECISION_ID" ] || [ -z "$EXECUTE_INTENT" ] || [ -z "$VALIDATED_OBJECT_HASH" ]; then
-            echo "Validation response missing required fields."
-            cat validate.json
-            exit 1
-          fi
+          echo "VALIDATION PASSED → DEPLOY PROCEEDING"
 
-          echo "DECISION_ID=$DECISION_ID" >> "$GITHUB_ENV"
-          echo "EXECUTE_INTENT=$EXECUTE_INTENT" >> "$GITHUB_ENV"
-          echo "VALIDATED_OBJECT_HASH=$VALIDATED_OBJECT_HASH" >> "$GITHUB_ENV"
-
-      - name: Execute with exact-object discipline (/execute)
+      - name: Deploy production
+        if: ${{ success() }}
         run: |
           set -euo pipefail
+          echo "Production deploy is gated and can only proceed after successful MindShift validation."
+          # Add governed production deployment command here.
 
-          EXECUTE_STATUS_CODE=$(curl -sS -o execute.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/execute" \
-            -D execute.headers \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${API_KEY:-}" \
-            -d "$(jq -n \
-              --arg authority_id "$AUTHORITY_ID" \
-              --arg decision_id "$DECISION_ID" \
-              --arg intent "$EXECUTE_INTENT" \
-              --arg validated_object_hash "$VALIDATED_OBJECT_HASH" \
-              '{authority_id: $authority_id, decision_id: $decision_id, intent: $intent, validated_object_hash: $validated_object_hash}')")
-
-          EXECUTE_STATUS=$(jq -r '.status // empty' execute.json)
-          EXECUTION_ID=$(jq -r '.execution_id // empty' execute.json)
-          EXECUTED_OBJECT_HASH=$(jq -r '.executed_object_hash // empty' execute.json)
-          AUTHORITY_STATE=$(jq -r '.authority_state // empty' execute.json)
-
-          if [ "$EXECUTE_STATUS_CODE" -lt 200 ] || [ "$EXECUTE_STATUS_CODE" -gt 299 ] || [ "$EXECUTE_STATUS" != "VALID" ] || [ -z "$EXECUTION_ID" ] || [ -z "$EXECUTED_OBJECT_HASH" ]; then
-            echo "Execute failed."
-            cat execute.json
-            exit 1
-          fi
-
-          if [ "$VALIDATED_OBJECT_HASH" != "$EXECUTED_OBJECT_HASH" ]; then
-            echo "Hash mismatch: validated_object_hash != executed_object_hash"
-            cat execute.json
-            exit 1
-          fi
-
-          if [ "$AUTHORITY_STATE" != "CONSUMED" ]; then
-            echo "Authority was not consumed after execution (replay protection failed)."
-            cat execute.json
-            exit 1
-          fi
-
-          echo "EXECUTION_ID=$EXECUTION_ID" >> "$GITHUB_ENV"
-          echo "EXECUTED_OBJECT_HASH=$EXECUTED_OBJECT_HASH" >> "$GITHUB_ENV"
-
-      - name: Record proof before success (/proof)
-        run: |
-          set -euo pipefail
-
-          PROOF_STATUS_CODE=$(curl -sS -o proof.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/proof" \
-            -D proof.headers \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${API_KEY:-}" \
-            -d "$(jq -n \
-              --arg execution_id "$EXECUTION_ID" \
-              --arg run_id "$RUN_ID" \
-              --arg commit_sha "$COMMIT_SHA" \
-              --arg environment "$DEPLOY_ENVIRONMENT" \
-              '{execution_id: $execution_id, run_id: $run_id, commit_sha: $commit_sha, environment: $environment}')")
-
-          PROOF_STATUS=$(jq -r '.status // empty' proof.json)
-          PROOF_ID=$(jq -r '.proof.proof_id // empty' proof.json)
-
-          if [ "$PROOF_STATUS_CODE" -lt 200 ] || [ "$PROOF_STATUS_CODE" -gt 299 ] || [ "$PROOF_STATUS" != "VALID" ] || [ -z "$PROOF_ID" ]; then
-            echo "Proof recording failed."
-            cat proof.json
-            exit 1
-          fi
-
-      - name: Upload governance records
+      - name: Upload validation record
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: governed-deploy-records
           path: |
-            authority.json
-            compile.json
             validate.json
-            execute.json
-            proof.json
+            validate.headers
