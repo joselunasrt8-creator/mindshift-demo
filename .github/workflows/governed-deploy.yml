@@ -1,16 +1,13 @@
 name: governed-deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target environment (must be production)"
-        required: true
-        type: string
+  # Only Worker-triggered entrypoint. No manual or push-based production deploys.
+  repository_dispatch:
+    types: [mindshift-governed-production-deploy]
 
 concurrency:
   group: governed-deploy-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -18,14 +15,11 @@ permissions:
 
 jobs:
   governed-production-deploy:
-    concurrency:
-      group: governed-deploy-production
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
       API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
-      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      DEPLOY_ENVIRONMENT: production
       WORKFLOW_NAME: ${{ github.workflow }}
       COMMIT_SHA: ${{ github.sha }}
       RUN_ID: ${{ github.run_id }}
@@ -33,67 +27,22 @@ jobs:
       BRANCH: ${{ github.ref_name }}
 
     steps:
-      - name: Require explicit production input
+      - name: Enforce Worker-only trigger and production target
         run: |
           set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
+            echo "Only repository_dispatch is allowed for production deploys."
+            exit 1
+          fi
+
+          if [ "${{ github.event.action }}" != "mindshift-governed-production-deploy" ]; then
+            echo "Unexpected dispatch action for production deploy."
+            exit 1
+          fi
 
           if [ "$DEPLOY_ENVIRONMENT" != "production" ]; then
-            echo "Environment must be exactly 'production'."
-            exit 1
-          fi
-
-      - name: Guard single active production governed deploy
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GITHUB_TOKEN:-}" ]; then
-            echo "Missing GitHub token for concurrency guard."
-            exit 1
-          fi
-
-          RUNS_URL="https://api.github.com/repos/$REPOSITORY/actions/workflows/governed-deploy.yml/runs?status=in_progress&event=workflow_dispatch&per_page=100"
-          API_STATUS_CODE=$(curl -sS -o workflow-runs.json -w "%{http_code}" \
-            -D workflow-runs.headers \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$RUNS_URL")
-
-          API_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' workflow-runs.headers | tail -n1)
-          if [ "$API_STATUS_CODE" -lt 200 ] || [ "$API_STATUS_CODE" -gt 299 ] || [ -z "$API_CONTENT_TYPE" ] || [[ "$API_CONTENT_TYPE" != application/json* ]]; then
-            echo "Unable to verify deploy lock state. Failing closed."
-            echo "HTTP status: $API_STATUS_CODE"
-            echo "Content-Type: ${API_CONTENT_TYPE:-missing}"
-            cat workflow-runs.json
-            exit 1
-          fi
-
-          if ! jq -e . workflow-runs.json >/dev/null 2>&1; then
-            echo "GitHub API returned invalid JSON for lock state. Failing closed."
-            cat workflow-runs.json
-            exit 1
-          fi
-
-          OTHER_ACTIVE_COUNT=$(jq --arg current_run_id "$RUN_ID" '
-            [
-              .workflow_runs[]?
-              | select((.id | tostring) != $current_run_id)
-              | select(.status == "in_progress")
-              | select(.event == "workflow_dispatch")
-              | select(.name == "governed-deploy")
-            ] | length
-          ' workflow-runs.json)
-
-          if [ -z "${OTHER_ACTIVE_COUNT:-}" ] || ! [[ "$OTHER_ACTIVE_COUNT" =~ ^[0-9]+$ ]]; then
-            echo "Lock state count is ambiguous. Failing closed."
-            cat workflow-runs.json
-            exit 1
-          fi
-
-          if [ "$OTHER_ACTIVE_COUNT" -gt 0 ]; then
-            echo "Another governed production deploy is already active. Failing this run."
+            echo "Environment must be exactly production."
             exit 1
           fi
 
@@ -114,7 +63,7 @@ jobs:
 
           echo "CLEAN_WORKER_URL=$CLEAN_WORKER_URL" >> "$GITHUB_ENV"
 
-      - name: Create authority (Authority)
+      - name: Require active authority (/authority)
         run: |
           set -euo pipefail
 
@@ -139,28 +88,12 @@ jobs:
                 }
               }')")
 
-          AUTHORITY_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' authority.headers | tail -n1)
-          if [ "$AUTHORITY_CONTENT_TYPE" != "application/json" ]; then
-            echo "Authority endpoint returned non-JSON content-type."
-            echo "HTTP status: $AUTHORITY_STATUS_CODE"
-            echo "Content-Type: ${AUTHORITY_CONTENT_TYPE:-missing}"
-            cat authority.json
-            exit 1
-          fi
-
-          if ! jq -e . authority.json >/dev/null 2>&1; then
-            echo "Authority endpoint returned non-JSON response body."
-            echo "HTTP status: $AUTHORITY_STATUS_CODE"
-            cat authority.json
-            exit 1
-          fi
-
           AUTHORITY_STATUS=$(jq -r '.status // empty' authority.json)
           AUTHORITY_ID=$(jq -r '.authority_id // empty' authority.json)
+          AUTHORITY_STATE=$(jq -r '.authority_state // empty' authority.json)
 
-          if [ "$AUTHORITY_STATUS_CODE" -lt 200 ] || [ "$AUTHORITY_STATUS_CODE" -gt 299 ] || [ "$AUTHORITY_STATUS" != "VALID" ] || [ -z "$AUTHORITY_ID" ]; then
-            echo "Authority request failed."
-            echo "HTTP status: $AUTHORITY_STATUS_CODE"
+          if [ "$AUTHORITY_STATUS_CODE" -lt 200 ] || [ "$AUTHORITY_STATUS_CODE" -gt 299 ] || [ "$AUTHORITY_STATUS" != "VALID" ] || [ -z "$AUTHORITY_ID" ] || [ "$AUTHORITY_STATE" != "ACTIVE" ]; then
+            echo "Authority is not ACTIVE and VALID."
             cat authority.json
             exit 1
           fi
@@ -177,35 +110,18 @@ jobs:
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n --arg authority_id "$AUTHORITY_ID" '{authority_id: $authority_id}')")
 
-          COMPILE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' compile.headers | tail -n1)
-          if [ "$COMPILE_CONTENT_TYPE" != "application/json" ]; then
-            echo "Compile endpoint returned non-JSON content-type."
-            echo "HTTP status: $COMPILE_STATUS_CODE"
-            echo "Content-Type: ${COMPILE_CONTENT_TYPE:-missing}"
-            cat compile.json
-            exit 1
-          fi
-
-          if ! jq -e . compile.json >/dev/null 2>&1; then
-            echo "Compile endpoint returned non-JSON response body."
-            echo "HTTP status: $COMPILE_STATUS_CODE"
-            cat compile.json
-            exit 1
-          fi
-
           COMPILE_STATUS=$(jq -r '.status // empty' compile.json)
           COMPILATION_ID=$(jq -r '.compilation_id // empty' compile.json)
 
           if [ "$COMPILE_STATUS_CODE" -lt 200 ] || [ "$COMPILE_STATUS_CODE" -gt 299 ] || [ "$COMPILE_STATUS" != "VALID" ] || [ -z "$COMPILATION_ID" ]; then
             echo "Compile failed."
-            echo "HTTP status: $COMPILE_STATUS_CODE"
             cat compile.json
             exit 1
           fi
 
           echo "COMPILATION_ID=$COMPILATION_ID" >> "$GITHUB_ENV"
 
-      - name: Validate (fail closed)
+      - name: Validate gate (/validate, fail closed)
         run: |
           set -euo pipefail
 
@@ -215,22 +131,6 @@ jobs:
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n --arg compilation_id "$COMPILATION_ID" '{compilation_id: $compilation_id}')")
 
-          VALIDATE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' validate.headers | tail -n1)
-          if [ "$VALIDATE_CONTENT_TYPE" != "application/json" ]; then
-            echo "Validate endpoint returned non-JSON content-type."
-            echo "HTTP status: $VALIDATE_STATUS_CODE"
-            echo "Content-Type: ${VALIDATE_CONTENT_TYPE:-missing}"
-            cat validate.json
-            exit 1
-          fi
-
-          if ! jq -e . validate.json >/dev/null 2>&1; then
-            echo "Validate endpoint returned non-JSON response body."
-            echo "HTTP status: $VALIDATE_STATUS_CODE"
-            cat validate.json
-            exit 1
-          fi
-
           VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
           VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
           DECISION_ID=$(jq -r '.decision_id // empty' validate.json)
@@ -238,14 +138,13 @@ jobs:
           VALIDATED_OBJECT_HASH=$(jq -r '.validated_object_hash // empty' validate.json)
 
           if [ "$VALIDATE_STATUS_CODE" -lt 200 ] || [ "$VALIDATE_STATUS_CODE" -gt 299 ] || [ "$VALIDATION_STATUS" != "VALID" ] || [ "$VALIDATION_RESULT" != "VALID" ]; then
-            echo "Validation is not VALID. Failing closed."
-            echo "HTTP status: $VALIDATE_STATUS_CODE"
+            echo "Validation is not VALID."
             cat validate.json
             exit 1
           fi
 
           if [ -z "$DECISION_ID" ] || [ -z "$EXECUTE_INTENT" ] || [ -z "$VALIDATED_OBJECT_HASH" ]; then
-            echo "Validation did not return required execute fields (decision_id, intent, validated_object_hash)."
+            echo "Validation response missing required fields."
             cat validate.json
             exit 1
           fi
@@ -254,7 +153,7 @@ jobs:
           echo "EXECUTE_INTENT=$EXECUTE_INTENT" >> "$GITHUB_ENV"
           echo "VALIDATED_OBJECT_HASH=$VALIDATED_OBJECT_HASH" >> "$GITHUB_ENV"
 
-      - name: Execute only after VALID (/execute)
+      - name: Execute with exact-object discipline (/execute)
         run: |
           set -euo pipefail
 
@@ -263,40 +162,39 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n \
+              --arg authority_id "$AUTHORITY_ID" \
               --arg decision_id "$DECISION_ID" \
               --arg intent "$EXECUTE_INTENT" \
               --arg validated_object_hash "$VALIDATED_OBJECT_HASH" \
-              '{decision_id: $decision_id, intent: $intent, validated_object_hash: $validated_object_hash}')")
-
-          EXECUTE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' execute.headers | tail -n1)
-          if [ "$EXECUTE_CONTENT_TYPE" != "application/json" ]; then
-            echo "Execute endpoint returned non-JSON content-type."
-            echo "HTTP status: $EXECUTE_STATUS_CODE"
-            echo "Content-Type: ${EXECUTE_CONTENT_TYPE:-missing}"
-            cat execute.json
-            exit 1
-          fi
-
-          if ! jq -e . execute.json >/dev/null 2>&1; then
-            echo "Execute endpoint returned non-JSON response body."
-            echo "HTTP status: $EXECUTE_STATUS_CODE"
-            cat execute.json
-            exit 1
-          fi
+              '{authority_id: $authority_id, decision_id: $decision_id, intent: $intent, validated_object_hash: $validated_object_hash}')")
 
           EXECUTE_STATUS=$(jq -r '.status // empty' execute.json)
           EXECUTION_ID=$(jq -r '.execution_id // empty' execute.json)
+          EXECUTED_OBJECT_HASH=$(jq -r '.executed_object_hash // empty' execute.json)
+          AUTHORITY_STATE=$(jq -r '.authority_state // empty' execute.json)
 
-          if [ "$EXECUTE_STATUS_CODE" -lt 200 ] || [ "$EXECUTE_STATUS_CODE" -gt 299 ] || [ "$EXECUTE_STATUS" != "VALID" ] || [ -z "$EXECUTION_ID" ]; then
+          if [ "$EXECUTE_STATUS_CODE" -lt 200 ] || [ "$EXECUTE_STATUS_CODE" -gt 299 ] || [ "$EXECUTE_STATUS" != "VALID" ] || [ -z "$EXECUTION_ID" ] || [ -z "$EXECUTED_OBJECT_HASH" ]; then
             echo "Execute failed."
-            echo "HTTP status: $EXECUTE_STATUS_CODE"
+            cat execute.json
+            exit 1
+          fi
+
+          if [ "$VALIDATED_OBJECT_HASH" != "$EXECUTED_OBJECT_HASH" ]; then
+            echo "Hash mismatch: validated_object_hash != executed_object_hash"
+            cat execute.json
+            exit 1
+          fi
+
+          if [ "$AUTHORITY_STATE" != "CONSUMED" ]; then
+            echo "Authority was not consumed after execution (replay protection failed)."
             cat execute.json
             exit 1
           fi
 
           echo "EXECUTION_ID=$EXECUTION_ID" >> "$GITHUB_ENV"
+          echo "EXECUTED_OBJECT_HASH=$EXECUTED_OBJECT_HASH" >> "$GITHUB_ENV"
 
-      - name: Record proof (/proof)
+      - name: Record proof before success (/proof)
         run: |
           set -euo pipefail
 
@@ -308,38 +206,14 @@ jobs:
               --arg execution_id "$EXECUTION_ID" \
               --arg run_id "$RUN_ID" \
               --arg commit_sha "$COMMIT_SHA" \
-              --arg workflow "$WORKFLOW_NAME" \
               --arg environment "$DEPLOY_ENVIRONMENT" \
-              '{
-                execution_id: $execution_id,
-                run_id: $run_id,
-                commit_sha: $commit_sha,
-                workflow: $workflow,
-                environment: $environment
-              }')")
-
-          PROOF_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' proof.headers | tail -n1)
-          if [ "$PROOF_CONTENT_TYPE" != "application/json" ]; then
-            echo "Proof endpoint returned non-JSON content-type."
-            echo "HTTP status: $PROOF_STATUS_CODE"
-            echo "Content-Type: ${PROOF_CONTENT_TYPE:-missing}"
-            cat proof.json
-            exit 1
-          fi
-
-          if ! jq -e . proof.json >/dev/null 2>&1; then
-            echo "Proof endpoint returned non-JSON response body."
-            echo "HTTP status: $PROOF_STATUS_CODE"
-            cat proof.json
-            exit 1
-          fi
+              '{execution_id: $execution_id, run_id: $run_id, commit_sha: $commit_sha, environment: $environment}')")
 
           PROOF_STATUS=$(jq -r '.status // empty' proof.json)
           PROOF_ID=$(jq -r '.proof.proof_id // empty' proof.json)
 
           if [ "$PROOF_STATUS_CODE" -lt 200 ] || [ "$PROOF_STATUS_CODE" -gt 299 ] || [ "$PROOF_STATUS" != "VALID" ] || [ -z "$PROOF_ID" ]; then
             echo "Proof recording failed."
-            echo "HTTP status: $PROOF_STATUS_CODE"
             cat proof.json
             exit 1
           fi
