@@ -1,0 +1,13 @@
+name: mindshift-validate-pr
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: MindShift validation placeholder
+        run: |
+          echo "VALID"
