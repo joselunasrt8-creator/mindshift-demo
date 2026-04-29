@@ -62,7 +62,7 @@ jobs:
             -d "$(jq -n \
               --arg decision_id "MS-DEMO-DEPLOY-001" \
               --arg environment "$DEPLOY_ENVIRONMENT" \
-              --arg workflow "$WORKFLOW_NAME" \
+              --arg workflow "governed-deploy.yml" \
               --arg commit_sha "$COMMIT_SHA" \
               --arg repo "$REPOSITORY" \
               --arg branch "$BRANCH" \
