@@ -16,6 +16,8 @@ permissions:
 jobs:
   governed-production-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: production
     env:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
       API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
