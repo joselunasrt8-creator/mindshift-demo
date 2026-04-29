@@ -25,9 +25,11 @@ jobs:
       RUN_ID: ${{ github.run_id }}
       REPOSITORY: ${{ github.repository }}
       BRANCH: ${{ github.ref_name }}
+      DISPATCH_DECISION_ID: ${{ github.event.client_payload.decision_id }}
+      DISPATCH_VALIDATED_OBJECT_HASH: ${{ github.event.client_payload.validated_object_hash }}
 
     steps:
-      - name: Enforce Worker-only trigger and production target
+      - name: Enforce MindShift boundary-only trigger and production target
         run: |
           set -euo pipefail
 
@@ -38,6 +40,16 @@ jobs:
 
           if [ "${{ github.event.action }}" != "mindshift-governed-production-deploy" ]; then
             echo "Unexpected dispatch action for production deploy."
+            exit 1
+          fi
+
+          if [ "${{ github.event.client_payload.source }}" != "mindshift-boundary" ]; then
+            echo "Production deploys must be dispatched by the MindShift boundary."
+            exit 1
+          fi
+
+          if [ -z "${{ github.event.client_payload.decision_id }}" ] || [ -z "${{ github.event.client_payload.validated_object_hash }}" ]; then
+            echo "Dispatch payload missing decision_id and/or validated_object_hash."
             exit 1
           fi
 
@@ -152,6 +164,11 @@ jobs:
           echo "DECISION_ID=$DECISION_ID" >> "$GITHUB_ENV"
           echo "EXECUTE_INTENT=$EXECUTE_INTENT" >> "$GITHUB_ENV"
           echo "VALIDATED_OBJECT_HASH=$VALIDATED_OBJECT_HASH" >> "$GITHUB_ENV"
+
+          if [ "$DISPATCH_DECISION_ID" != "$DECISION_ID" ] || [ "$DISPATCH_VALIDATED_OBJECT_HASH" != "$VALIDATED_OBJECT_HASH" ]; then
+            echo "Dispatch payload does not match validated decision artifacts."
+            exit 1
+          fi
 
       - name: Execute with exact-object discipline (/execute)
         run: |
