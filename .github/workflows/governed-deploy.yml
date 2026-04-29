@@ -170,7 +170,9 @@ jobs:
 
           VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
           VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
-          VALIDATION_ID=$(jq -r '.validation_id // empty' validate.json)
+          DECISION_ID=$(jq -r '.decision_id // empty' validate.json)
+          EXECUTE_INTENT=$(jq -r '.intent // empty' validate.json)
+          VALIDATED_OBJECT_HASH=$(jq -r '.validated_object_hash // empty' validate.json)
 
           if [ "$VALIDATE_STATUS_CODE" -lt 200 ] || [ "$VALIDATE_STATUS_CODE" -gt 299 ] || [ "$VALIDATION_STATUS" != "VALID" ] || [ "$VALIDATION_RESULT" != "VALID" ]; then
             echo "Validation is not VALID. Failing closed."
@@ -179,13 +181,15 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$VALIDATION_ID" ]; then
-            echo "Validation did not return validation_id."
+          if [ -z "$DECISION_ID" ] || [ -z "$EXECUTE_INTENT" ] || [ -z "$VALIDATED_OBJECT_HASH" ]; then
+            echo "Validation did not return required execute fields (decision_id, intent, validated_object_hash)."
             cat validate.json
             exit 1
           fi
 
-          echo "VALIDATION_ID=$VALIDATION_ID" >> "$GITHUB_ENV"
+          echo "DECISION_ID=$DECISION_ID" >> "$GITHUB_ENV"
+          echo "EXECUTE_INTENT=$EXECUTE_INTENT" >> "$GITHUB_ENV"
+          echo "VALIDATED_OBJECT_HASH=$VALIDATED_OBJECT_HASH" >> "$GITHUB_ENV"
 
       - name: Execute only after VALID (/execute)
         run: |
@@ -196,9 +200,10 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-API-Key: ${API_KEY:-}" \
             -d "$(jq -n \
-              --arg validation_id "$VALIDATION_ID" \
-              --arg webhook_url "$CLEAN_WORKER_URL/webhook" \
-              '{validation_id: $validation_id, webhook_url: $webhook_url}')")
+              --arg decision_id "$DECISION_ID" \
+              --arg intent "$EXECUTE_INTENT" \
+              --arg validated_object_hash "$VALIDATED_OBJECT_HASH" \
+              '{decision_id: $decision_id, intent: $intent, validated_object_hash: $validated_object_hash}')")
 
           EXECUTE_CONTENT_TYPE=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/, "", $2); print tolower($2)}' execute.headers | tail -n1)
           if [ "$EXECUTE_CONTENT_TYPE" != "application/json" ]; then

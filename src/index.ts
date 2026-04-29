@@ -1220,6 +1220,8 @@ export default {
           status: validation.result === "VALID" ? "VALID" : "NULL",
           result: validation.result,
           validation_id: validation.validation_id,
+          decision_id: validation.decision_id,
+          intent: validation.intent,
           validated_object: compiledAeo,
           validated_object_hash: validation.validated_object_hash
         }, validation.result === "VALID" ? 200 : 409)
