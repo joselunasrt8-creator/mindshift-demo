@@ -258,6 +258,44 @@ async function ensureInvocationAuthority(env: Env, decisionId: string, validated
   return createInvocationAuthority(env, decisionId, validatedObjectHash)
 }
 
+async function prepareDeployInvocation(env: Env) {
+  const authority = buildAuthority({
+    owner: "prepare_deploy_endpoint",
+    intent: "deploy_production",
+    scope: { environment: "production", mode: "prepare_deploy" },
+    constraints: {
+      repo: `${env.GITHUB_OWNER}/${env.GITHUB_REPO}`,
+      branch: "main",
+      workflow: "deploy.yml",
+      max_executions: 1
+    }
+  })
+
+  await saveAuthority(env, authority)
+
+  const target = targetFromAuthority(authority)
+  if (!target) {
+    throw new Error("Failed to derive GitHub deploy target for production authority.")
+  }
+
+  const aeo = buildAeo(authority, target)
+  await saveAeo(env, aeo)
+
+  const validation = await buildValidation(aeo, authority)
+  if (validation.result !== "VALID") {
+    throw new Error("Failed to compile a valid production deploy AEO.")
+  }
+
+  await saveValidation(env, validation)
+  const invocationNonce = await createInvocationAuthority(env, authority.decision_id, validation.validated_object_hash)
+
+  return {
+    decision_id: authority.decision_id,
+    validated_object_hash: validation.validated_object_hash,
+    invocation_nonce: invocationNonce
+  }
+}
+
 async function findInvocationAuthority(env: Env, decisionId: string, validatedObjectHash: string, invocationNonce: string) {
   await ensureInvocationRegistry(env)
   return env.DB.prepare(`SELECT * FROM invocation_registry
@@ -1333,6 +1371,7 @@ export default {
             "GET /github-proof-test",
             "POST /webhook",
             "POST /authority",
+            "POST /prepare-deploy",
             "POST /compile",
             "POST /validate",
             "POST /validate-pr",
@@ -1365,6 +1404,29 @@ export default {
 
       return jsonResponse({ status: "ok", received: body })
     }
+
+      if (route("/prepare-deploy") && request.method === "POST") {
+        const dbError = missingDbBinding(env)
+        if (dbError) {
+          return jsonResponse({ status: "FAILED", error: dbError }, 500)
+        }
+
+        if (!env.GITHUB_OWNER || !env.GITHUB_REPO) {
+          return jsonResponse({ status: "FAILED", error: "Missing required GitHub target config: GITHUB_OWNER and GITHUB_REPO." }, 500)
+        }
+
+        const insertCheck = await canInsertAuthority(env)
+        if (!insertCheck.ok) {
+          return jsonResponse({ status: "FAILED", error: insertCheck.error, route: "/prepare-deploy" }, 500)
+        }
+
+        try {
+          const prepared = await prepareDeployInvocation(env)
+          return jsonResponse(prepared)
+        } catch (error: any) {
+          return jsonResponse({ status: "FAILED", error: error?.message || "Failed to prepare deploy invocation." }, 500)
+        }
+      }
 
       if (route("/authority") && request.method === "POST") {
         const body = await readJson(request)
@@ -1501,8 +1563,6 @@ export default {
 
         const aeo = buildAeo(authority, target)
         await saveAeo(env, aeo)
-        const validatedObjectHash = await sha256Hex(JSON.stringify(aeo))
-        await ensureInvocationAuthority(env, authority.decision_id, validatedObjectHash)
 
         return jsonResponse({
           status: "VALID",
@@ -1539,8 +1599,6 @@ export default {
 
       const aeo = buildAeo(authority, target)
       await saveAeo(env, aeo)
-      const validatedObjectHash = await sha256Hex(JSON.stringify(aeo))
-      await ensureInvocationAuthority(env, authority.decision_id, validatedObjectHash)
       return jsonResponse(aeo)
     }
 
