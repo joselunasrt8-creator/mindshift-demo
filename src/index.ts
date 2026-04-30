@@ -1228,6 +1228,7 @@ export default {
             "POST /authority",
             "POST /compile",
             "POST /validate",
+            "POST /validate-pr",
             "POST /execute",
             "POST /proof"
           ]
@@ -1430,6 +1431,31 @@ export default {
       const aeo = buildAeo(authority, target)
       await saveAeo(env, aeo)
       return jsonResponse(aeo)
+    }
+
+
+    if (route("/validate-pr") && request.method === "POST") {
+      const body = await readJson(request)
+      if (!body || !isObject(body)) {
+        return jsonResponse({ status: "NULL", result: "NULL", reasons: ["Invalid JSON body"] }, 400)
+      }
+
+      const repo = String(body.repo || "")
+      const branch = String(body.branch || "")
+      const headSha = String(body.head_sha || "")
+      const prNumber = String(body.pr_number || "")
+
+      const reasons: string[] = []
+      if (repo !== "joselunasrt8-creator/mindshift-demo") reasons.push("repo must be joselunasrt8-creator/mindshift-demo")
+      if (!branch) reasons.push("branch is required")
+      if (!headSha) reasons.push("head_sha is required")
+      if (!prNumber) reasons.push("pr_number is required")
+
+      if (reasons.length === 0) {
+        return jsonResponse({ status: "VALID", result: "VALID" })
+      }
+
+      return jsonResponse({ status: "NULL", result: "NULL", reasons }, 200)
     }
 
     if (route("/validate") && request.method === "POST") {
