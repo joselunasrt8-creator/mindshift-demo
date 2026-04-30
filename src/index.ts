@@ -243,6 +243,21 @@ async function createInvocationAuthority(env: Env, decisionId: string, validated
   return invocationNonce
 }
 
+async function findLatestActiveInvocationNonce(env: Env, decisionId: string, validatedObjectHash: string) {
+  await ensureInvocationRegistry(env)
+  return env.DB.prepare(`SELECT invocation_nonce FROM invocation_registry
+    WHERE decision_id = ?1 AND validated_object_hash = ?2 AND UPPER(status) = 'ACTIVE'
+    ORDER BY created_at DESC LIMIT 1`)
+    .bind(decisionId, validatedObjectHash)
+    .first<{ invocation_nonce: string }>()
+}
+
+async function ensureInvocationAuthority(env: Env, decisionId: string, validatedObjectHash: string) {
+  const existing = await findLatestActiveInvocationNonce(env, decisionId, validatedObjectHash)
+  if (existing?.invocation_nonce) return existing.invocation_nonce
+  return createInvocationAuthority(env, decisionId, validatedObjectHash)
+}
+
 async function findInvocationAuthority(env: Env, decisionId: string, validatedObjectHash: string, invocationNonce: string) {
   await ensureInvocationRegistry(env)
   return env.DB.prepare(`SELECT * FROM invocation_registry
@@ -1086,14 +1101,12 @@ async function validateAuthority(env: Env, body: any) {
 
   const validation = await buildValidation(aeo, authority)
   await saveValidation(env, validation)
-  const invocation_nonce = await createInvocationAuthority(env, validation.decision_id, validation.validated_object_hash)
 
   return {
     ok: true,
     code: 200,
     payload: {
       ...validation,
-      invocation_nonce,
       message: "Authority is ACTIVE and valid for execution."
     },
     authority
@@ -1488,6 +1501,8 @@ export default {
 
         const aeo = buildAeo(authority, target)
         await saveAeo(env, aeo)
+        const validatedObjectHash = await sha256Hex(JSON.stringify(aeo))
+        await ensureInvocationAuthority(env, authority.decision_id, validatedObjectHash)
 
         return jsonResponse({
           status: "VALID",
@@ -1524,6 +1539,8 @@ export default {
 
       const aeo = buildAeo(authority, target)
       await saveAeo(env, aeo)
+      const validatedObjectHash = await sha256Hex(JSON.stringify(aeo))
+      await ensureInvocationAuthority(env, authority.decision_id, validatedObjectHash)
       return jsonResponse(aeo)
     }
 
@@ -1690,9 +1707,11 @@ export default {
     if (route("/nonce-validation-test") && request.method === "GET") {
       const authority = buildAuthority({ owner: "nonce_test", constraints: { repo: "local/repo", branch: "main", workflow: "deploy.yml", max_executions: 1 } })
       await saveAuthority(env, authority)
-      const compiled = await validateAuthority(env, { decision_id: authority.decision_id })
-      const hash = compiled.payload.validated_object_hash
-      const nonce = compiled.payload.invocation_nonce
+      const aeo = buildAeo(authority, targetFromAuthority(authority) as GithubDeployTarget)
+      await saveAeo(env, aeo)
+      const hash = await sha256Hex(JSON.stringify(aeo))
+      const nonce = await ensureInvocationAuthority(env, authority.decision_id, hash)
+      await saveValidation(env, await buildValidation(aeo, authority))
       const missing = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, environment: "production" })
       const wrong = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, invocation_nonce: "bad", environment: "production" })
       const good = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, invocation_nonce: nonce, environment: "production" })
