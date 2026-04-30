@@ -1120,6 +1120,20 @@ async function validateAuthority(env: Env, body: any) {
       }
     }
 
+    const invocationConsumed = await consumeInvocationAuthority(env, body.decision_id, body.validated_object_hash, body.invocation_nonce)
+    if (!invocationConsumed) {
+      return {
+        ok: false,
+        code: 409,
+        payload: { validation_id: validationId, decision_id: body.decision_id, status: "FAILED", result: "INVALID", message: "replay detected" }
+      }
+    }
+
+    const authorityConstraints = ensureDeployConstraints(parseJsonObject(authority.constraints))
+    if (authorityConstraints.max_executions === 1) {
+      await consumeAuthorityIfActive(env, body.decision_id)
+    }
+
     return {
       ok: true,
       code: 200,
@@ -1773,7 +1787,6 @@ export default {
       const missing = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, environment: "production" })
       const wrong = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, invocation_nonce: "bad", environment: "production" })
       const good = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, invocation_nonce: nonce, environment: "production" })
-      await consumeInvocationAuthority(env, authority.decision_id, hash, nonce)
       const replay = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: hash, invocation_nonce: nonce, environment: "production" })
       const wrongHash = await validateAuthority(env, { decision_id: authority.decision_id, validated_object_hash: "deadbeef", invocation_nonce: nonce, environment: "production" })
       return jsonResponse({ missing: missing.payload, wrong: wrong.payload, good: good.payload, replay: replay.payload, wrongHash: wrongHash.payload })
