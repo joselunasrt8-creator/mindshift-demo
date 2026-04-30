@@ -79,8 +79,9 @@ jobs:
             -d "$(jq -n \
               --arg decision_id "$DECISION_ID" \
               --arg validated_object_hash "$VALIDATED_OBJECT_HASH" \
+              --arg invocation_nonce "$INVOCATION_NONCE" \
               --arg environment "$DEPLOY_ENVIRONMENT" \
-              '{decision_id: $decision_id, validated_object_hash: $validated_object_hash, environment: $environment}')")
+              '{decision_id: $decision_id, validated_object_hash: $validated_object_hash, invocation_nonce: $invocation_nonce, environment: $environment}')")
 
           VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
           VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
