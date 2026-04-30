@@ -1,16 +1,9 @@
 name: governed-deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      decision_id:
-        description: "MindShift decision identifier"
-        required: true
-        type: string
-      validated_object_hash:
-        description: "Validated object hash returned by MindShift"
-        required: true
-        type: string
+  repository_dispatch:
+    types:
+      - mindshift_deploy
 
 concurrency:
   group: governed-deploy-production
@@ -27,16 +20,16 @@ jobs:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
       API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
       DEPLOY_ENVIRONMENT: production
-      DECISION_ID: ${{ github.event.inputs.decision_id }}
-      VALIDATED_OBJECT_HASH: ${{ github.event.inputs.validated_object_hash }}
+      DECISION_ID: ${{ github.event.client_payload.decision_id }}
+      VALIDATED_OBJECT_HASH: ${{ github.event.client_payload.validated_object_hash }}
 
     steps:
       - name: Enforce explicit invocation inputs
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
-            echo "Only explicit workflow_dispatch invocation is allowed."
+          if [ "${{ github.event_name }}" != "repository_dispatch" ]; then
+            echo "Only repository_dispatch invocation is allowed."
             exit 1
           fi
 
