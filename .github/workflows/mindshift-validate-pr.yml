@@ -1,17 +1,27 @@
-name: mindshift-validate-pr
+if (url.pathname === "/validate-pr" && request.method === "POST") {
+  const apiKey = request.headers.get("X-API-Key") || ""
+  if (env.MINDSHIFT_API_KEY && apiKey !== env.MINDSHIFT_API_KEY) {
+    return json({ status: "FAILED", result: "NULL", error: "unauthorized" }, 401)
+  }
 
-on:
-  pull_request:
-    branches:
-      - main
+  const body = await request.json()
 
-jobs:
-  validate:
-    name: mindshift-validate-pr
-    runs-on: ubuntu-latest
+  if (
+    body.repo !== "joselunasrt8-creator/mindshift-demo" ||
+    body.branch !== "main" ||
+    !body.pr_number ||
+    !body.head_sha ||
+    !body.base_sha
+  ) {
+    return json({ status: "FAILED", result: "NULL", error: "invalid_pr_context" }, 400)
+  }
 
-    steps:
-      - name: Validate PR through MindShift gate
-        run: |
-          echo "MindShift PR validation started"
-          echo "VALID"
+  return json({
+    status: "VALID",
+    result: "VALID",
+    surface: "github_pr",
+    repo: body.repo,
+    branch: body.branch,
+    pr_number: body.pr_number
+  })
+}
