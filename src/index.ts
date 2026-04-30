@@ -1131,20 +1131,6 @@ async function validateAuthority(env: Env, body: any) {
       }
     }
 
-    const invocationConsumed = await consumeInvocationAuthority(env, body.decision_id, body.validated_object_hash, body.invocation_nonce)
-    if (!invocationConsumed) {
-      return {
-        ok: false,
-        code: 409,
-        payload: { validation_id: validationId, decision_id: body.decision_id, status: "FAILED", result: "INVALID", message: "replay detected" }
-      }
-    }
-
-    const authorityConstraints = ensureDeployConstraints(parseJsonObject(authority.constraints))
-    if (authorityConstraints.max_executions === 1) {
-      await consumeAuthorityIfActive(env, body.decision_id)
-    }
-
     return {
       ok: true,
       code: 200,
