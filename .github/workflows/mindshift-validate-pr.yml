@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   validate:
     name: mindshift-validate-pr
@@ -13,5 +17,27 @@ jobs:
     steps:
       - name: Validate PR through MindShift gate
         run: |
+          set -euo pipefail
+
           echo "MindShift PR validation started"
-          echo "VALID"
+
+          STATUS_CODE=$(curl -sS -o validate-pr.json -w "%{http_code}" -X POST "${{ secrets.MINDSHIFT_WORKER_URL }}/validate-pr" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.MINDSHIFT_API_KEY }}" \
+            -d "$(jq -n \
+              --arg repo "${{ github.repository }}" \
+              --arg branch "${{ github.base_ref }}" \
+              --arg head_sha "${{ github.event.pull_request.head.sha }}" \
+              --arg base_sha "${{ github.event.pull_request.base.sha }}" \
+              --arg pr_number "${{ github.event.pull_request.number }}" \
+              '{repo: $repo, branch: $branch, head_sha: $head_sha, base_sha: $base_sha, pr_number: $pr_number}')")
+
+          RESULT=$(jq -r '.result // .status // empty' validate-pr.json)
+
+          if [ "$STATUS_CODE" -lt 200 ] || [ "$STATUS_CODE" -gt 299 ] || [ "$RESULT" != "VALID" ]; then
+            echo "PR VALIDATION FAILED → MERGE BLOCKED"
+            cat validate-pr.json
+            exit 1
+          fi
+
+          echo "PR VALIDATION PASSED"
