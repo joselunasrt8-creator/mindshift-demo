@@ -18,6 +18,7 @@ type Env = {
   GITHUB_TOKEN: string
   GITHUB_OWNER: string
   GITHUB_REPO: string
+  PREPARE_DEPLOY_API_KEY: string
 }
 
 type GithubDeployTarget = {
@@ -66,6 +67,16 @@ function missingDbBinding(env: Env): string | null {
   }
 
   return null
+}
+
+function hasValidPrepareDeployApiKey(request: Request, env: Env): boolean {
+  const expectedApiKey = env.PREPARE_DEPLOY_API_KEY
+  if (!expectedApiKey) {
+    return false
+  }
+
+  const providedApiKey = request.headers.get("X-API-Key")
+  return providedApiKey === expectedApiKey
 }
 
 function ensureDeployConstraints(constraints: Record<string, unknown>) {
@@ -1420,6 +1431,10 @@ export default {
     }
 
       if (route("/prepare-deploy") && request.method === "POST") {
+        if (!hasValidPrepareDeployApiKey(request, env)) {
+          return jsonResponse({ status: "FAILED", error: "Unauthorized" }, 401)
+        }
+
         const dbError = missingDbBinding(env)
         if (dbError) {
           return jsonResponse({ status: "FAILED", error: dbError }, 500)
