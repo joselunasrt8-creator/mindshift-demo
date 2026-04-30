@@ -269,7 +269,9 @@ async function ensureInvocationAuthority(env: Env, decisionId: string, validated
   return createInvocationAuthority(env, decisionId, validatedObjectHash)
 }
 
-async function prepareDeployInvocation(env: Env) {
+async function prepareDeployTriple(env: Env) {
+  // Prepare-only route: generate a fresh deploy authorization triple.
+  // This must not execute deployment and must not consume nonce.
   const authority = buildAuthority({
     owner: "prepare_deploy_endpoint",
     intent: "deploy_production",
@@ -1436,7 +1438,7 @@ export default {
         }
 
         try {
-          const prepared = await prepareDeployInvocation(env)
+          const prepared = await prepareDeployTriple(env)
           return jsonResponse(prepared)
         } catch (error: any) {
           return jsonResponse({ status: "FAILED", error: error?.message || "Failed to prepare deploy invocation." }, 500)
