@@ -164,7 +164,6 @@ bundle = {
     "signature_algorithm": algorithm,
     "signer": signer,
     "signer_public_key_reference": f"sha256:{public_key_fingerprint}",
-    "signer_public_key": public_key,
     "activation_receipt": receipt
 }
 
@@ -190,13 +189,6 @@ echo "  • $SIG_BIN"
 echo "  • $SIG_B64"
 echo "  • $RECEIPT_JSON"
 echo "  • $BUNDLE_JSON"
-echo
-echo "AEO Hash:"
-cat "$HASH_FILE"
-echo
-echo "Local signature verification command:"
-echo "  printf '%s' \"\$(cat aeo_hash.txt)\" | \\"
-echo "  openssl pkeyutl -verify -rawin -pubin -inkey $PUBLIC_KEY -sigfile $SIG_BIN"
 echo
 echo "Submit to validator (full chain):"
 echo "  curl -X POST http://localhost:3000/validate -H \"Content-Type: application/json\" --data @$BUNDLE_JSON"

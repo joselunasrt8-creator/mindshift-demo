@@ -13,12 +13,54 @@ async function sha256Hex(input: string): Promise<string> {
     .join("")
 }
 
+function canonicalizeJson(value: unknown): string {
+  const normalize = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(normalize)
+    if (input && typeof input === "object") {
+      const sorted = Object.keys(input as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = normalize((input as Record<string, unknown>)[key])
+          return acc
+        }, {})
+      return sorted
+    }
+    return input
+  }
+  return JSON.stringify(normalize(value))
+}
+
+function pemToSpkiBytes(pem: string): Uint8Array | null {
+  const b64 = pem.replace(/-----BEGIN PUBLIC KEY-----/g, "")
+    .replace(/-----END PUBLIC KEY-----/g, "")
+    .replace(/\s+/g, "")
+  if (!b64) return null
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+async function verifyEd25519Signature(signatureB64: string, hashHex: string, publicKeyPem: string): Promise<boolean> {
+  try {
+    const spki = pemToSpkiBytes(publicKeyPem)
+    if (!spki) return false
+    const key = await crypto.subtle.importKey("spki", spki, { name: "Ed25519" }, false, ["verify"])
+    const signature = Uint8Array.from(atob(signatureB64), (char) => char.charCodeAt(0))
+    const payload = new TextEncoder().encode(hashHex)
+    return crypto.subtle.verify("Ed25519", key, signature, payload)
+  } catch {
+    return false
+  }
+}
+
 type Env = {
   DB: D1Database
   GITHUB_TOKEN: string
   GITHUB_OWNER: string
   GITHUB_REPO: string
   PREPARE_DEPLOY_API_KEY: string
+  GOVERNED_SIGNER_PUBLIC_KEY: string
 }
 
 type GithubDeployTarget = {
@@ -166,7 +208,7 @@ function targetFromAuthority(authority: any): GithubDeployTarget | null {
 }
 
 async function buildValidation(aeo: any, authority: any) {
-  const validated_object_hash = await sha256Hex(JSON.stringify(aeo))
+  const validated_object_hash = await sha256Hex(canonicalizeJson(aeo))
   const constraints = ensureDeployConstraints(parseJsonObject(aeo?.constraints))
   const target = parseJsonObject(aeo?.target)
   const finality = parseJsonObject(aeo?.finality)
@@ -1198,6 +1240,84 @@ async function validateAuthority(env: Env, body: any) {
   }
 
   if (body.validated_object_hash) {
+    if (!body.canonical_deploy_aeo || !body.signature_value || !body.signer_public_key_reference) {
+      return {
+        ok: false,
+        code: 400,
+        payload: {
+          validation_id: validationId,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          message: "missing canonical_deploy_aeo, signature_value, or signer_public_key_reference"
+        }
+      }
+    }
+    if (!env.GOVERNED_SIGNER_PUBLIC_KEY) {
+      return {
+        ok: false,
+        code: 500,
+        payload: { validation_id: validationId, decision_id: body.decision_id, status: "FAILED", result: "INVALID", message: "validator signer key not configured" }
+      }
+    }
+    const configuredKeyFingerprint = await sha256Hex(env.GOVERNED_SIGNER_PUBLIC_KEY)
+    if (body.signer_public_key_reference !== `sha256:${configuredKeyFingerprint}`) {
+      return {
+        ok: false,
+        code: 409,
+        payload: { validation_id: validationId, decision_id: body.decision_id, status: "FAILED", result: "INVALID", message: "signer key reference mismatch", error: "key_mismatch" }
+      }
+    }
+
+    const canonicalAeo = parseJsonObject(body.canonical_deploy_aeo)
+    const canonicalHash = await sha256Hex(canonicalizeJson(canonicalAeo))
+    if (canonicalHash !== body.validated_object_hash) {
+      return {
+        ok: false,
+        code: 409,
+        payload: {
+          validation_id: validationId,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          message: "canonical object hash mismatch",
+          error: "hash_mismatch"
+        }
+      }
+    }
+
+    const signedHash = typeof body.aeo_hash === "string" ? body.aeo_hash : null
+    if (signedHash && signedHash !== canonicalHash) {
+      return {
+        ok: false,
+        code: 409,
+        payload: {
+          validation_id: validationId,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          message: "signed hash mismatch",
+          error: "hash_mismatch"
+        }
+      }
+    }
+
+    const signatureValid = await verifyEd25519Signature(body.signature_value, canonicalHash, env.GOVERNED_SIGNER_PUBLIC_KEY)
+    if (!signatureValid) {
+      return {
+        ok: false,
+        code: 409,
+        payload: {
+          validation_id: validationId,
+          decision_id: body.decision_id,
+          status: "FAILED",
+          result: "INVALID",
+          message: "invalid signature",
+          error: "signature_invalid"
+        }
+      }
+    }
+
     if (!body.invocation_nonce) {
       return {
         ok: false,
