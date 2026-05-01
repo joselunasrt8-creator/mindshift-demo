@@ -1,6 +1,9 @@
 name: mindshift-pr-validate
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -16,7 +19,9 @@ permissions:
 
 jobs:
   validate-pr:
+    name: mindshift-pr-validate   # IMPORTANT: this is the status check name
     runs-on: ubuntu-latest
+
     env:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
 
@@ -35,9 +40,10 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg repo "${{ github.repository }}" \
             --arg pr_number "${{ github.event.pull_request.number }}" \
-            --arg branch "${{ github.event.pull_request.head.ref }}" \
-            --arg head_sha "${{ github.event.pull_request.head.sha }}" \
-            '{repo: $repo, pr_number: $pr_number, branch: $branch, head_sha: $head_sha}')
+            --arg base_branch "${{ github.event.pull_request.base.ref }}" \
+            --arg head_branch "${{ github.event.pull_request.head.ref }}" \
+            --arg commit_sha "${{ github.event.pull_request.head.sha }}" \
+            '{repo: $repo, pr_number: $pr_number, base_branch: $base_branch, head_branch: $head_branch, commit_sha: $commit_sha}')
 
           STATUS_CODE=$(curl -sS -o pr-validate.json -w "%{http_code}" \
             -X POST "$CLEAN_WORKER_URL/validate-pr" \
