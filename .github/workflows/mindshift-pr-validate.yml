@@ -15,24 +15,27 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
-      API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
+      MINDSHIFT_WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
+      MINDSHIFT_API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
 
     steps:
       - name: HARD FAIL — Missing secrets and context
         run: |
           set -euo pipefail
 
-          for var in WORKER_URL API_KEY; do
-            if [ -z "${!var:-}" ]; then
-              echo "NULL — Missing required secret: $var"
-              exit 1
-            fi
-          done
+          if [ -z "${MINDSHIFT_WORKER_URL:-}" ]; then
+            echo "NULL — Missing required secret: MINDSHIFT_WORKER_URL"
+            exit 1
+          fi
 
-          CLEAN_WORKER_URL="${WORKER_URL%/}"
+          if [ -z "${MINDSHIFT_API_KEY:-}" ]; then
+            echo "NULL — Missing required secret: MINDSHIFT_API_KEY"
+            exit 1
+          fi
+
+          CLEAN_WORKER_URL="${MINDSHIFT_WORKER_URL%/}"
           if [ -z "$CLEAN_WORKER_URL" ]; then
-            echo "NULL — Invalid WORKER_URL"
+            echo "NULL — Invalid MINDSHIFT_WORKER_URL"
             exit 1
           fi
 
@@ -81,7 +84,7 @@ jobs:
           RESPONSE_CODE=$(curl -sS -o pr-validate.json -w "%{http_code}" \
             -X POST "$CLEAN_WORKER_URL/validate-pr" \
             -H "Content-Type: application/json" \
-            -H "X-API-Key: $API_KEY" \
+            -H "X-API-Key: $MINDSHIFT_API_KEY" \
             -d "$PAYLOAD")
 
           echo "PR validation response (HTTP $RESPONSE_CODE):"
