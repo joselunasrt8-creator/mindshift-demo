@@ -4,21 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       decision_id:
-        description: "MindShift decision identifier"
         required: true
         type: string
       validated_object_hash:
-        description: "Validated object hash returned by MindShift"
         required: true
         type: string
       invocation_nonce:
-        description: "MindShift invocation nonce"
         required: true
         type: string
 
 concurrency:
   group: governed-deploy-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -27,55 +24,49 @@ permissions:
 jobs:
   governed-production-deploy:
     runs-on: ubuntu-latest
+
     env:
       WORKER_URL: ${{ secrets.MINDSHIFT_WORKER_URL }}
       API_KEY: ${{ secrets.MINDSHIFT_API_KEY }}
-      DEPLOY_ENVIRONMENT: production
       DECISION_ID: ${{ github.event.inputs.decision_id }}
       VALIDATED_OBJECT_HASH: ${{ github.event.inputs.validated_object_hash }}
       INVOCATION_NONCE: ${{ github.event.inputs.invocation_nonce }}
+      DEPLOY_ENVIRONMENT: production
 
     steps:
-      - name: Enforce explicit invocation inputs
+      - name: HARD FAIL — Missing critical inputs or secrets
         run: |
           set -euo pipefail
 
           if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
-            echo "Only explicit workflow_dispatch invocation is allowed."
+            echo "NULL — Only explicit invocation allowed"
             exit 1
           fi
 
-          if [ -z "${DECISION_ID:-}" ] || [ -z "${VALIDATED_OBJECT_HASH:-}" ] || [ -z "${INVOCATION_NONCE:-}" ]; then
-            echo "Missing required inputs: decision_id, validated_object_hash, and invocation_nonce."
-            exit 1
-          fi
-
-      - name: Require MindShift worker URL
-        run: |
-          set -euo pipefail
-
-          if [ -z "${WORKER_URL:-}" ]; then
-            echo "Missing MINDSHIFT_WORKER_URL secret."
-            exit 1
-          fi
+          for var in DECISION_ID VALIDATED_OBJECT_HASH INVOCATION_NONCE WORKER_URL API_KEY; do
+            if [ -z "${!var:-}" ]; then
+              echo "NULL — Missing required variable: $var"
+              exit 1
+            fi
+          done
 
           CLEAN_WORKER_URL="${WORKER_URL%/}"
           if [ -z "$CLEAN_WORKER_URL" ]; then
-            echo "MINDSHIFT_WORKER_URL is invalid after normalization."
+            echo "NULL — Invalid WORKER_URL"
             exit 1
           fi
 
           echo "CLEAN_WORKER_URL=$CLEAN_WORKER_URL" >> "$GITHUB_ENV"
 
-      - name: Validate deploy gate (/validate)
+      - name: VALIDATE — Exact object must be approved
         id: validate_gate
         run: |
           set -euo pipefail
 
-          VALIDATE_STATUS_CODE=$(curl -sS -o validate.json -w "%{http_code}" -X POST "$CLEAN_WORKER_URL/validate" \
-            -D validate.headers \
+          RESPONSE_CODE=$(curl -sS -o validate.json -w "%{http_code}" \
+            -X POST "$CLEAN_WORKER_URL/validate" \
             -H "Content-Type: application/json" \
-            -H "X-API-Key: ${API_KEY:-}" \
+            -H "X-API-Key: $API_KEY" \
             -d "$(jq -n \
               --arg decision_id "$DECISION_ID" \
               --arg validated_object_hash "$VALIDATED_OBJECT_HASH" \
@@ -83,29 +74,55 @@ jobs:
               --arg environment "$DEPLOY_ENVIRONMENT" \
               '{decision_id: $decision_id, validated_object_hash: $validated_object_hash, invocation_nonce: $invocation_nonce, environment: $environment}')")
 
-          VALIDATION_STATUS=$(jq -r '.status // empty' validate.json)
-          VALIDATION_RESULT=$(jq -r '.result // empty' validate.json)
+          if [ "$RESPONSE_CODE" -lt 200 ] || [ "$RESPONSE_CODE" -gt 299 ]; then
+            echo "NULL — Validation endpoint error"
+            exit 1
+          fi
 
-          if [ "$VALIDATE_STATUS_CODE" -lt 200 ] || [ "$VALIDATE_STATUS_CODE" -gt 299 ] || [ "$VALIDATION_STATUS" != "VALID" ] || [ "$VALIDATION_RESULT" != "VALID" ]; then
-            echo "VALIDATION FAILED → DEPLOY BLOCKED"
+          STATUS=$(jq -r '.status // empty' validate.json)
+          RESULT=$(jq -r '.result // empty' validate.json)
+          RETURNED_HASH=$(jq -r '.validated_object_hash // empty' validate.json)
+
+          if [ "$STATUS" != "VALID" ] || [ "$RESULT" != "VALID" ]; then
+            echo "NULL — Validation failed"
             cat validate.json
             exit 1
           fi
 
-          echo "VALIDATION PASSED → DEPLOY PROCEEDING"
+          if [ -z "$RETURNED_HASH" ]; then
+            echo "NULL — Missing validated_object_hash in response"
+            exit 1
+          fi
 
-      - name: Deploy production
-        if: ${{ success() }}
+          if [ "$RETURNED_HASH" != "$VALIDATED_OBJECT_HASH" ]; then
+            echo "NULL — Hash mismatch (object drift detected)"
+            exit 1
+          fi
+
+          echo "VALID — Exact object confirmed"
+
+      - name: EXECUTE — Only exact validated object allowed
         run: |
           set -euo pipefail
-          echo "Production deploy is gated and can only proceed after successful MindShift validation."
-          # Add governed production deployment command here.
 
-      - name: Upload validation record
+          echo "Executing governed deploy..."
+          # REAL DEPLOY COMMAND HERE
+          # Example:
+          # npm run deploy
+
+      - name: PROOF — Capture execution evidence
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+
+          echo "Proof-of-Transfer"
+          echo "run_id=${{ github.run_id }}"
+          echo "commit_sha=${{ github.sha }}"
+
+      - name: Upload artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: governed-deploy-records
           path: |
             validate.json
-            validate.headers
