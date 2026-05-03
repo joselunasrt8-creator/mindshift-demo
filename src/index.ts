@@ -906,7 +906,7 @@ async function runExecuteFlow(
     }
 
     const authorityTarget = targetFromAuthority(authority)
-    if (authorityTarget?.workflow !== "governed-deploy.yml" || authorityTarget?.action !== "deploy_production") {
+    if (authorityTarget?.workflow !== CANONICAL_GOVERNED_WORKFLOW || authorityTarget?.action !== "deploy_production") {
       return {
         code: 409,
         payload: { status: "FAILED", result: "INVALID", error: "wrong_workflow_or_action" }

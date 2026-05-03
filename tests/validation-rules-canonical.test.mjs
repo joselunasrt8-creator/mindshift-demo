@@ -27,7 +27,6 @@ test('validated object hash must equal executed object hash', () => {
 
 test('canonical execution path is authority -> compile -> validate -> execute -> proof', () => {
   const order = [
-    'AUTHORITY — Create deploy authority',
     'COMPILE — Create exact AEO and canonical hash',
     'VALIDATE — Fail closed unless exact VALID + exact hash + nonce reserved',
     'EXECUTE — Require exact validated object hash',
@@ -64,4 +63,20 @@ test('proof is required and fail closed behavior is explicit', () => {
   assert.match(workflow, /PROOF — Required for production completion/)
   assert.match(workflow, /NULL — Missing required proof/)
   assert.match(source, /proof_required: true/)
+})
+
+
+test('canonical governed workflow constant is enforced in runtime and workflows', () => {
+  const prepareWorkflow = readFileSync(new URL('../.github/workflows/prepare-governed-deploy.yml', import.meta.url), 'utf8')
+  assert.match(source, /const CANONICAL_GOVERNED_WORKFLOW = "governed-deploy\.yml"/)
+  assert.match(source, /constraints\.workflow === CANONICAL_GOVERNED_WORKFLOW/)
+  assert.match(workflow, /--arg workflow "governed-deploy\.yml"/)
+  assert.match(prepareWorkflow, /constraints:\{repo:"\$\{\{ github\.repository \}\}",branch:"\$\{\{ github\.ref_name \}\}",workflow:"governed-deploy\.yml",max_executions:1\}/)
+})
+
+test('prepare-governed-deploy summary prints copyable values safely', () => {
+  const prepareWorkflow = readFileSync(new URL('../.github/workflows/prepare-governed-deploy.yml', import.meta.url), 'utf8')
+  assert.match(prepareWorkflow, /printf '### governed-deploy\.yml manual inputs/) 
+  assert.match(prepareWorkflow, /printf '%s\n' '```text'/)
+  assert.doesNotMatch(prepareWorkflow, /echo "- decision_id: \\`\$DECISION_ID\\`"/)
 })
