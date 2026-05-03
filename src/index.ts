@@ -287,11 +287,11 @@ async function buildValidation(aeo: any, authority: any) {
 
   const authorityBindingChecks = [
     {
-      ok: aeo?.authority_id === authority?.authority_id,
+      ok: metadata.authority_id === authority?.authority_id,
       message: "aeo.authority_id does not match authority.authority_id"
     },
     {
-      ok: aeo?.decision_id === authority?.decision_id,
+      ok: metadata.decision_id === authority?.decision_id,
       message: "aeo.decision_id does not match authority.decision_id"
     },
     {
@@ -325,10 +325,10 @@ async function buildValidation(aeo: any, authority: any) {
 
   return {
     validation_id: crypto.randomUUID(),
-    authority_id: aeo.authority_id,
-    aeo_id: aeo.aeo_id,
-    decision_id: aeo.decision_id,
-    intent: aeo.intent,
+    authority_id: metadata.authority_id,
+    aeo_id: metadata.aeo_id,
+    decision_id: metadata.decision_id,
+    intent: canonicalAeo.intent,
     validated_object_hash,
     result: isValid ? "VALID" : "NULL",
     status,
@@ -2068,11 +2068,14 @@ export default {
 
         const compiledAeo = parseJsonObject(compiled.aeo)
         const validation = await buildValidation({
-          ...compiledAeo,
-          aeo_id: compiled.aeo_id,
-          authority_id: compiled.authority_id,
-          decision_id: compiled.decision_id,
-          intent: compiled.intent
+          canonical_aeo: compiledAeo,
+          metadata: {
+            aeo_id: compiled.aeo_id,
+            authority_id: compiled.authority_id,
+            decision_id: compiled.decision_id,
+            status: compiled.status,
+            created_at: compiled.created_at
+          }
         }, await findAuthorityById(env, compiled.authority_id))
         await saveValidation(env, validation)
 
