@@ -110,9 +110,17 @@ jobs:
           echo "invocation_nonce=$INVOCATION_NONCE"
 
           {
-            echo "### governed-deploy.yml manual inputs"
-            echo
-            echo "- decision_id: \\`$DECISION_ID\\`"
-            echo "- validated_object_hash: \\`$VALIDATED_OBJECT_HASH\\`"
-            echo "- invocation_nonce: \\`$INVOCATION_NONCE\\`"
+            printf '### governed-deploy.yml manual inputs
+
+'
+            printf '%s
+' '```text'
+            printf 'decision_id=%s
+' "$DECISION_ID"
+            printf 'validated_object_hash=%s
+' "$VALIDATED_OBJECT_HASH"
+            printf 'invocation_nonce=%s
+' "$INVOCATION_NONCE"
+            printf '%s
+' '```'
           } >> "$GITHUB_STEP_SUMMARY"

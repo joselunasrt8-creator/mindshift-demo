@@ -36,7 +36,7 @@ test('direct deploy and webhook paths are fail closed', () => {
 })
 
 test('workflow routes through authority -> compile -> validate -> execute -> proof', () => {
-  const order = ['AUTHORITY — Create deploy authority', 'COMPILE — Create exact AEO and canonical hash', 'VALIDATE — Fail closed unless exact VALID + exact hash + nonce reserved', 'EXECUTE — Require exact validated object hash', 'PROOF — Required for production completion']
+  const order = ['COMPILE — Create exact AEO and canonical hash', 'VALIDATE — Fail closed unless exact VALID + exact hash + nonce reserved', 'EXECUTE — Require exact validated object hash', 'PROOF — Required for production completion']
   let last = -1
   for (const step of order) {
     const i = workflow.indexOf(step)
@@ -55,7 +55,7 @@ test('proof response persists proof and hashes', () => {
 
 test('execute is locked to governed workflow and deploy_production action', () => {
   assert.match(source, /wrong_workflow_or_action/)
-  assert.match(source, /authorityTarget\?\.workflow !== "governed-deploy\.yml"/)
+  assert.match(source, /authorityTarget\?\.workflow !== CANONICAL_GOVERNED_WORKFLOW/)
   assert.match(source, /authorityTarget\?\.action !== "deploy_production"/)
 })
 
@@ -65,4 +65,9 @@ test('proof response includes persisted decision, run, commit, result, and times
   assert.match(source, /commit_sha: proof\.commit_sha/)
   assert.match(source, /result: proof\.result/)
   assert.match(source, /timestamp: proof\.timestamp/)
+})
+
+
+test('governed deploy recognizes workflow_mismatch as a known NULL validation reason', () => {
+  assert.match(workflow, /workflow_mismatch/)
 })
