@@ -81,3 +81,11 @@ test('prepare-governed-deploy summary prints copyable values safely', () => {
   assert.match(prepareWorkflow, /printf '%s\n' '```text'/)
   assert.doesNotMatch(prepareWorkflow, /echo "- decision_id: \\`\$DECISION_ID\\`"/)
 })
+
+
+test('validated hash is computed from canonical AEO only (metadata excluded)', () => {
+  assert.match(source, /function buildAeo\(authority: any, target: GithubDeployTarget\) \{/)
+  assert.match(source, /return \{ canonical_aeo, registry \}/)
+  assert.match(source, /const validated_object_hash = await sha256Hex\(canonicalizeJson\(canonicalAeoFrom\(aeo\)\)\)/)
+  assert.match(source, /JSON\.stringify\(compiled\.canonical_aeo\)/)
+})

@@ -197,7 +197,7 @@ function buildAeo(authority: any, target: GithubDeployTarget) {
     validation: {
       authority_id: authority.authority_id,
       decision_id: authority.decision_id,
-      max_executions: ensureDeployConstraints(parseJsonObject(authority.constraints)).max_executions
+      max_executions: constraints.max_executions
     },
     target,
     finality: {
@@ -213,6 +213,8 @@ function buildAeo(authority: any, target: GithubDeployTarget) {
     constraints: ensureDeployConstraints(parseJsonObject(authority.constraints)),
     status: "COMPILED"
   }
+
+  return { canonical_aeo, registry }
 }
 
 function toAeoCore(aeo: any) {
@@ -396,10 +398,10 @@ async function prepareDeployTriple(env: Env) {
     throw new Error("Failed to derive GitHub deploy target for production authority.")
   }
 
-  const aeo = buildAeo(authority, target)
-  await saveAeo(env, aeo)
+  const compiled = buildAeo(authority, target)
+  await saveAeo(env, compiled)
 
-  const validation = await buildValidation(aeo, authority)
+  const validation = await buildValidation({ ...compiled.canonical_aeo, ...compiled.registry }, authority)
   if (validation.result !== "VALID") {
     throw new Error("Failed to compile a valid production deploy AEO.")
   }
@@ -689,7 +691,7 @@ async function canInsertAuthority(env: Env) {
   return { ok: true }
 }
 
-async function saveAeo(env: Env, aeo: any) {
+async function saveAeo(env: Env, compiled: { canonical_aeo: any; registry: any }) {
   await env.DB.prepare(
     `INSERT INTO aeo_registry (
       aeo_id,
@@ -701,7 +703,7 @@ async function saveAeo(env: Env, aeo: any) {
       created_at
     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
   )
-    .bind(aeo.aeo_id, aeo.authority_id, aeo.decision_id, aeo.intent, JSON.stringify(aeo), aeo.status, new Date().toISOString())
+    .bind(compiled.registry.aeo_id, compiled.registry.authority_id, compiled.registry.decision_id, compiled.canonical_aeo.intent, JSON.stringify(compiled.canonical_aeo), compiled.registry.status, compiled.registry.created_at || new Date().toISOString())
     .run()
 }
 
@@ -1999,13 +2001,13 @@ export default {
           return jsonResponse({ status: "FAILED", error: "Unable to compile due to missing authority target constraints." }, 409)
         }
 
-        const aeo = buildAeo(authority, target)
-        await saveAeo(env, aeo)
+        const compiled = buildAeo(authority, target)
+        await saveAeo(env, compiled)
 
         return jsonResponse({
           status: "VALID",
-          compilation_id: aeo.aeo_id,
-          compiled_object: aeo
+          compilation_id: compiled.registry.aeo_id,
+          compiled_object: compiled.canonical_aeo
         })
       }
 
@@ -2039,7 +2041,7 @@ export default {
       await saveAeo(env, aeo)
       const exactAeo = toAeoCore(aeo)
       const compiledHash = await sha256Hex(canonicalizeJson(exactAeo))
-      return jsonResponse({ aeo: exactAeo, validated_object_hash: compiledHash })
+      return jsonResponse({ aeo: exactAeo, validated_object_hash: compiledHash, registry: compiled.registry })
     }
 
 
@@ -2146,12 +2148,12 @@ export default {
       if (authFailure) return authFailure
       const authority = buildAuthority({ owner: "nonce_test", constraints: { repo: "local/repo", branch: "main", workflow: "governed-deploy.yml", max_executions: 1 } })
       await saveAuthority(env, authority)
-      const aeo = buildAeo(authority, targetFromAuthority(authority) as GithubDeployTarget)
-      await saveAeo(env, aeo)
-      const canonicalAeo = canonicalizeJson(aeo)
+      const compiled = buildAeo(authority, targetFromAuthority(authority) as GithubDeployTarget)
+      await saveAeo(env, compiled)
+      const canonicalAeo = canonicalizeJson(compiled.canonical_aeo)
       const hash = await sha256Hex(canonicalAeo)
       const nonce = await ensureInvocationAuthority(env, authority.decision_id, hash)
-      await saveValidation(env, await buildValidation(aeo, authority))
+      await saveValidation(env, await buildValidation({ ...compiled.canonical_aeo, ...compiled.registry }, authority))
       const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair
       const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", keyPair.privateKey, new TextEncoder().encode(hash)))
       const publicSpki = new Uint8Array(await crypto.subtle.exportKey("spki", keyPair.publicKey) as ArrayBuffer)
