@@ -6,7 +6,7 @@ const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const workflow = readFileSync(new URL('../.github/workflows/governed-deploy.yml', import.meta.url), 'utf8')
 const workflowNames = readdirSync(new URL('../.github/workflows/', import.meta.url)).map((name) => name.toLowerCase())
 
-const canonicalAeoObjectPattern = /const exactAeo = \{ intent: aeo\.intent, scope: aeo\.scope, validation: aeo\.validation, target: aeo\.target, finality: aeo\.finality \}/
+const canonicalAeoObjectPattern = /const exactAeo = \{ intent: compiled\.canonical_aeo\.intent, scope: compiled\.canonical_aeo\.scope, validation: compiled\.canonical_aeo\.validation, target: compiled\.canonical_aeo\.target, finality: compiled\.canonical_aeo\.finality \}/
 
 test('AEO canonical schema is exact and closed', () => {
   assert.match(source, canonicalAeoObjectPattern)
@@ -79,4 +79,12 @@ test('prepare-governed-deploy summary prints copyable values safely', () => {
   assert.match(prepareWorkflow, /printf '### governed-deploy\.yml manual inputs/) 
   assert.match(prepareWorkflow, /printf '%s\n' '```text'/)
   assert.doesNotMatch(prepareWorkflow, /echo "- decision_id: \\`\$DECISION_ID\\`"/)
+})
+
+
+test('validated hash is computed from canonical AEO only (metadata excluded)', () => {
+  assert.match(source, /function buildAeo\(authority: any, target: GithubDeployTarget\) \{/)
+  assert.match(source, /return \{ canonical_aeo, registry \}/)
+  assert.match(source, /const validated_object_hash = await sha256Hex\(canonicalizeJson\(canonicalAeoFrom\(aeo\)\)\)/)
+  assert.match(source, /JSON\.stringify\(compiled\.canonical_aeo\)/)
 })

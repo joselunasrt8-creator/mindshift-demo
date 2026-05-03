@@ -14,7 +14,7 @@ test('authority endpoint persists required fields including expiry and ACTIVE', 
 })
 
 test('compile emits exact AEO + canonical hash output', () => {
-  assert.match(source, /const exactAeo = \{ intent: aeo\.intent, scope: aeo\.scope, validation: aeo\.validation, target: aeo\.target, finality: aeo\.finality \}/)
+  assert.match(source, /const exactAeo = \{ intent: compiled\.canonical_aeo\.intent, scope: compiled\.canonical_aeo\.scope, validation: compiled\.canonical_aeo\.validation, target: compiled\.canonical_aeo\.target, finality: compiled\.canonical_aeo\.finality \}/)
   assert.match(source, /validated_object_hash: compiledHash/)
 })
 
