@@ -43,6 +43,7 @@ jobs:
       - name: AUTHORITY — Create deploy authority and decision
         run: |
           set -euo pipefail
+          EXPIRY="$(date -u -d '+15 minutes' +%Y-%m-%dT%H:%M:%SZ)"
 
           RESPONSE_CODE=$(curl -sS -o authority.json -w "%{http_code}" \
             -X POST "$CLEAN_WORKER_URL/authority" \
@@ -51,7 +52,8 @@ jobs:
             -d "$(jq -n \
               --arg owner "github_actions" \
               --arg intent "deploy_production" \
-              '{owner:$owner,intent:$intent,scope:{environment:"production"},constraints:{repo:"${{ github.repository }}",branch:"${{ github.ref_name }}",workflow:"governed-deploy.yml",max_executions:1}}')")
+              --arg expiry "$EXPIRY" \
+              '{owner:$owner,intent:$intent,scope:{environment:"production"},constraints:{repo:"${{ github.repository }}",branch:"${{ github.ref_name }}",workflow:"governed-deploy.yml",max_executions:1},expiry:$expiry}')")
 
           if [ "$RESPONSE_CODE" -lt 200 ] || [ "$RESPONSE_CODE" -gt 299 ]; then
             echo "NULL — Authority endpoint error"
