@@ -54,7 +54,7 @@ test('proof response persists proof and hashes', () => {
 
 test('execute is locked to canonical governed workflow and deploy_production action', () => {
   assert.match(source, /wrong_workflow_or_action/)
-  assert.match(source, /!isCanonicalWorkflow\(authorityTarget\?\.workflow\)/)
+  assert.match(source, /canonicalWorkflowName\(authorityTarget\?\.workflow\) !== CANONICAL_GOVERNED_WORKFLOW/)
   assert.match(source, /authorityTarget\?\.action !== "deploy_production"/)
 })
 

@@ -169,6 +169,10 @@ function ensureDeployConstraints(constraints: Record<string, unknown>) {
   }
 }
 
+function canonicalWorkflowName(workflow: unknown): string {
+  return normalizeWorkflowName(workflow)
+}
+
 function buildAuthority(body: any) {
   const constraints = ensureDeployConstraints(parseJsonObject(body.constraints))
   const scope = parseJsonObject(body.scope)
@@ -263,8 +267,7 @@ async function buildValidation(aeo: any, authority: any) {
   const constraintsMatchTarget =
     constraints.repo === String(target.repo || "") &&
     constraints.branch === String(target.branch || "") &&
-    constraints.workflow === String(target.workflow || "")
-  const workflowIsCanonical = isCanonicalWorkflow(constraints.workflow) && isCanonicalWorkflow(target.workflow)
+    canonicalWorkflowName(constraints.workflow) === canonicalWorkflowName(target.workflow)
 
   const authorityBindingChecks = [
     {
@@ -758,9 +761,9 @@ async function executeGithubDeploy(
   const owner = targetOwner || env.GITHUB_OWNER
   const repo = targetRepo || env.GITHUB_REPO
   const dispatchRepo = `${owner}/${repo}`
-  const workflow = String(target.workflow)
-  if (!isCanonicalWorkflow(workflow)) {
-    throw new Error("Invalid workflow target: workflow must be governed-deploy.yml")
+  const workflow = canonicalWorkflowName(target.workflow)
+  if (!workflow.endsWith(".yml") && !workflow.endsWith(".yaml")) {
+    throw new Error("Invalid workflow target: must be workflow file name")
   }
   const dispatchUrl = `https://api.github.com/repos/${dispatchRepo}/actions/workflows/${workflow}/dispatches`
 
@@ -914,7 +917,7 @@ async function runExecuteFlow(
     }
 
     const authorityTarget = targetFromAuthority(authority)
-    if (!isCanonicalWorkflow(authorityTarget?.workflow) || authorityTarget?.action !== "deploy_production") {
+    if (canonicalWorkflowName(authorityTarget?.workflow) !== CANONICAL_GOVERNED_WORKFLOW || authorityTarget?.action !== "deploy_production") {
       return {
         code: 409,
         payload: { status: "FAILED", result: "INVALID", error: "wrong_workflow_or_action" }
