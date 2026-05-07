@@ -22,7 +22,30 @@ function json(data: unknown, status = 200) {
 
 async function body(req: Request): Promise<any> { try { return await req.json() } catch { return {} } }
 function authorized(req: Request, env: Env): boolean { return typeof env.API_KEY === "string" && env.API_KEY.length > 0 && req.headers.get("X-API-Key") === env.API_KEY }
-function canonicalize(v: any): string { if (Array.isArray(v)) return `[${v.map(canonicalize).join(",")}]`; if (v && typeof v === "object") return `{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${canonicalize(v[k])}`).join(",")}}`; return JSON.stringify(v) }
+function isPlainRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v)
+}
+
+function normalizeCanonicalValue(v: unknown): unknown {
+  if (v === undefined) return null
+  if (v === null || typeof v === "string" || typeof v === "boolean") return v
+  if (typeof v === "number") return Number.isFinite(v) ? v : null
+  if (Array.isArray(v)) return v.map(normalizeCanonicalValue)
+  if (isPlainRecord(v)) {
+    return Object.freeze(Object.keys(v).sort().reduce<Record<string, unknown>>((normalized, key) => {
+      normalized[key] = normalizeCanonicalValue(v[key])
+      return normalized
+    }, {}))
+  }
+  return null
+}
+
+function canonicalize(v: unknown): string {
+  const normalized = normalizeCanonicalValue(v)
+  if (Array.isArray(normalized)) return `[${normalized.map(canonicalize).join(",")}]`
+  if (isPlainRecord(normalized)) return `{${Object.keys(normalized).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(normalized[key])}`).join(",")}}`
+  return JSON.stringify(normalized)
+}
 async function sha256Hex(input: string): Promise<string> { const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,"0")).join("") }
 
 function canonicalDeployTarget(input: any): { repo: string, branch: string, workflow: string } {
@@ -37,13 +60,13 @@ function toCanonicalAeo(input: any): CanonicalAEO | null {
   const keys = Object.keys(input || {}).sort()
   if (keys.length !== REQUIRED_AEO_KEYS.length) return null
   if (keys.join("|") !== [...REQUIRED_AEO_KEYS].sort().join("|")) return null
-  return {
+  return Object.freeze({
     intent: String(input.intent || ""),
-    scope: input.scope || {},
-    validation: input.validation || {},
-    target: input.target || {},
-    finality: input.finality || {}
-  }
+    scope: canonicalRecord(input.scope),
+    validation: canonicalRecord(input.validation),
+    target: canonicalRecord(input.target),
+    finality: canonicalRecord(input.finality)
+  })
 }
 
 async function ensureSchema(env: Env) {
@@ -221,10 +244,11 @@ export default {
         if (target.workflow !== GOVERNED_WORKFLOW) return rejectWithTelemetry(env, { status: "NULL", route: "/compile", reason: "workflow_mismatch" }, { event_type: "VALIDATION_REJECTED", decision_id, authority_id: String(authority.authority_id || ""), severity: "HIGH", payload: { route: "/compile", workflow: target.workflow, indicator: "unmanaged_deploy_surface" }, drift_class: "registry_drift" })
         const canonical_aeo = toCanonicalAeo({ intent: authority.intent, scope: JSON.parse(String(authority.scope || "{}")), validation: { workflow: GOVERNED_WORKFLOW }, target, finality: { proof_required: true } })
         if (!canonical_aeo) return rejectWithTelemetry(env, { status: "NULL", route: "/compile", reason: "invalid_canonical_aeo" }, { event_type: "VALIDATION_REJECTED", decision_id, authority_id: String(authority.authority_id || ""), severity: "HIGH", payload: { route: "/compile" }, drift_class: "registry_drift" })
-        const validated_object_hash = await sha256Hex(canonicalize(canonical_aeo))
-        await env.DB.prepare(`INSERT INTO aeo_registry (aeo_id,authority_id,decision_id,canonical_aeo,validated_object_hash,status,created_at) VALUES (?1,?2,?3,?4,?5,'COMPILED',?6)`).bind(crypto.randomUUID(), authority.authority_id, decision_id, JSON.stringify(canonical_aeo), validated_object_hash, new Date().toISOString()).run()
+        const canonical_aeo_json = canonicalize(canonical_aeo)
+        const validated_object_hash = await sha256Hex(canonical_aeo_json)
+        await env.DB.prepare(`INSERT INTO aeo_registry (aeo_id,authority_id,decision_id,canonical_aeo,validated_object_hash,status,created_at) VALUES (?1,?2,?3,?4,?5,'COMPILED',?6)`).bind(crypto.randomUUID(), authority.authority_id, decision_id, canonical_aeo_json, validated_object_hash, new Date().toISOString()).run()
         await emitTelemetry(env, { event_type: "AEO_COMPILED", decision_id, authority_id: String(authority.authority_id || ""), severity: "INFO", payload: { route: "/compile", validated_object_hash } })
-        return json({ status: "COMPILED", decision_id, validated_object_hash, canonical_aeo })
+        return json({ status: "COMPILED", decision_id, validated_object_hash, canonical_aeo: JSON.parse(canonical_aeo_json) })
       } catch (error: any) {
         await recordDrift(env, { drift_class: "registry_drift", severity: "CRITICAL", payload: { route: "/compile", error: String(error?.message || error || "unknown_error") } })
         return json({
