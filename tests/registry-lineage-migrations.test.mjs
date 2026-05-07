@@ -71,25 +71,29 @@ test('migration chain reproduces canonical runtime registry schemas', () => {
   try {
     applyMigrationChain(dbPath)
 
-    assertColumns(dbPath, 'authority_registry', ['authority_id', 'decision_id', 'owner', 'intent', 'scope', 'constraints', 'expiry', 'status', 'created_at'])
-    assertNotNull(dbPath, 'authority_registry', ['decision_id', 'owner', 'intent', 'scope', 'constraints', 'expiry', 'status', 'created_at'])
+    assertColumns(dbPath, 'session_registry', ['session_id', 'identity_id', 'owner', 'trust_tier', 'continuity_status', 'created_at', 'expires_at'])
+    assertNotNull(dbPath, 'session_registry', ['identity_id', 'owner', 'trust_tier', 'continuity_status', 'created_at', 'expires_at'])
+    assertIndex(dbPath, 'session_registry', 'idx_session_registry_status_expiry', ['continuity_status', 'expires_at'])
+
+    assertColumns(dbPath, 'authority_registry', ['authority_id', 'decision_id', 'session_id', 'owner', 'intent', 'scope', 'constraints', 'expiry', 'status', 'created_at'])
+    assertNotNull(dbPath, 'authority_registry', ['decision_id', 'session_id', 'owner', 'intent', 'scope', 'constraints', 'expiry', 'status', 'created_at'])
     assert.ok(indexList(dbPath, 'authority_registry').some((index) => index.unique === 1 && index.origin === 'u'), 'authority_registry must retain UNIQUE(decision_id) lifecycle guard')
 
     assertColumns(dbPath, 'aeo_registry', ['aeo_id', 'authority_id', 'decision_id', 'canonical_aeo', 'validated_object_hash', 'status', 'created_at'])
     assertNotNull(dbPath, 'aeo_registry', ['authority_id', 'decision_id', 'canonical_aeo', 'validated_object_hash', 'status', 'created_at'])
     assertIndex(dbPath, 'aeo_registry', 'idx_aeo_registry_decision_hash', ['decision_id', 'validated_object_hash'])
 
-    assertColumns(dbPath, 'validation_registry', ['validation_id', 'decision_id', 'validated_object_hash', 'invocation_nonce', 'environment', 'result', 'reason', 'status', 'created_at'])
-    assertNotNull(dbPath, 'validation_registry', ['decision_id', 'validated_object_hash', 'invocation_nonce', 'result', 'status', 'created_at'])
+    assertColumns(dbPath, 'validation_registry', ['validation_id', 'session_id', 'decision_id', 'validated_object_hash', 'invocation_nonce', 'environment', 'result', 'reason', 'status', 'created_at'])
+    assertNotNull(dbPath, 'validation_registry', ['session_id', 'decision_id', 'validated_object_hash', 'invocation_nonce', 'result', 'status', 'created_at'])
     assertIndex(dbPath, 'validation_registry', 'idx_validation_registry_decision_hash_nonce', ['decision_id', 'validated_object_hash', 'invocation_nonce'])
 
-    assertColumns(dbPath, 'execution_registry', ['execution_id', 'decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
-    assertNotNull(dbPath, 'execution_registry', ['decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
+    assertColumns(dbPath, 'execution_registry', ['execution_id', 'session_id', 'decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
+    assertNotNull(dbPath, 'execution_registry', ['session_id', 'decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
     assertIndex(dbPath, 'execution_registry', 'idx_execution_registry_decision_hash', ['decision_id', 'validated_object_hash'])
     assert.ok(indexList(dbPath, 'execution_registry').some((index) => index.unique === 1 && index.origin === 'u'), 'execution_registry must retain UNIQUE(decision_id, validated_object_hash) replay guard')
 
-    assertColumns(dbPath, 'proof_registry', ['proof_id', 'execution_id', 'decision_id', 'validated_object_hash', 'surface', 'run_id', 'commit_sha', 'workflow', 'environment', 'created_at'])
-    assertNotNull(dbPath, 'proof_registry', ['execution_id', 'decision_id', 'validated_object_hash', 'created_at'])
+    assertColumns(dbPath, 'proof_registry', ['proof_id', 'session_id', 'execution_id', 'decision_id', 'validated_object_hash', 'surface', 'run_id', 'commit_sha', 'workflow', 'environment', 'created_at'])
+    assertNotNull(dbPath, 'proof_registry', ['session_id', 'execution_id', 'decision_id', 'validated_object_hash', 'created_at'])
     assertIndex(dbPath, 'proof_registry', 'idx_proof_registry_execution_decision_hash', ['execution_id', 'decision_id', 'validated_object_hash'])
 
     assertColumns(dbPath, 'invocation_registry', ['decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
@@ -173,7 +177,11 @@ test('runtime lifecycle persists against migration-built canonical registries', 
   try {
     applyMigrationChain(dbPath)
 
+    const session = await post('/session', { identity_id: 'lineage-identity' })
+    assert.equal(session.status, 'SESSION_ACTIVE')
+
     const authority = await post('/authority', {
+      session_id: session.session_id,
       decision_id,
       owner: 'lineage-test',
       intent: 'deploy_production',
@@ -191,18 +199,20 @@ test('runtime lifecycle persists against migration-built canonical registries', 
       decision_id,
       validated_object_hash: compiled.validated_object_hash,
       invocation_nonce,
-      environment: 'production'
+      environment: 'production',
+      session_id: session.session_id
     })
     assert.equal(validation.status, 'VALID')
 
     const execution = await post('/execute', {
       decision_id,
       validated_object_hash: compiled.validated_object_hash,
-      invocation_nonce
+      invocation_nonce,
+      session_id: session.session_id
     })
     assert.equal(execution.status, 'EXECUTED')
     assert.ok(execution.execution_id)
-    assert.deepEqual(Object.keys(execution).sort(), ['execution_id', 'status'])
+    assert.deepEqual(Object.keys(execution).sort(), ['execution_id', 'session_id', 'status'])
 
     const proof = await post('/proof', {
       execution_id: execution.execution_id,
@@ -212,15 +222,20 @@ test('runtime lifecycle persists against migration-built canonical registries', 
       run_id: '123',
       commit_sha: 'abc123',
       workflow: 'governed-deploy.yml',
-      environment: 'production'
+      environment: 'production',
+      session_id: session.session_id
     })
     assert.equal(proof.status, 'PROVEN')
     assert.ok(proof.proof_id)
     assert.equal(proof.proof?.validated_object_hash, compiled.validated_object_hash)
 
+    assert.equal(runSqlite([dbPath, `SELECT session_id FROM authority_registry WHERE decision_id='${decision_id}'`]).trim(), session.session_id)
+    assert.equal(runSqlite([dbPath, `SELECT session_id FROM validation_registry WHERE decision_id='${decision_id}'`]).trim(), session.session_id)
     assert.equal(runSqlite([dbPath, `SELECT validated_object_hash FROM validation_registry WHERE decision_id='${decision_id}'`]).trim(), compiled.validated_object_hash)
+    assert.equal(runSqlite([dbPath, `SELECT session_id FROM execution_registry WHERE decision_id='${decision_id}'`]).trim(), session.session_id)
     assert.equal(runSqlite([dbPath, `SELECT invocation_nonce FROM execution_registry WHERE decision_id='${decision_id}'`]).trim(), invocation_nonce)
     assert.equal(runSqlite([dbPath, `SELECT status FROM execution_registry WHERE decision_id='${decision_id}'`]).trim(), 'EXECUTED')
+    assert.equal(runSqlite([dbPath, `SELECT session_id FROM proof_registry WHERE decision_id='${decision_id}'`]).trim(), session.session_id)
     assert.equal(runSqlite([dbPath, `SELECT environment FROM proof_registry WHERE decision_id='${decision_id}'`]).trim(), 'production')
     assert.equal(runSqlite([dbPath, `SELECT status FROM authority_registry WHERE decision_id='${decision_id}'`]).trim(), 'CONSUMED')
     const eventTypes = runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${decision_id}' ORDER BY created_at, rowid`]).trim().split('\n')
@@ -253,7 +268,9 @@ test('runtime telemetry records replay, hash mismatch, proof, and bypass drift',
   }
 
   async function prepareDecision(decision_id, nonce) {
+    const session = await post('/session', { identity_id: `${decision_id}-identity` })
     await post('/authority', {
+      session_id: session.session_id,
       decision_id,
       owner: 'observability-test',
       intent: 'deploy_production',
@@ -261,9 +278,9 @@ test('runtime telemetry records replay, hash mismatch, proof, and bypass drift',
       constraints: { repo: 'example/repo', branch: 'main', workflow: 'governed-deploy.yml' }
     })
     const compiled = await post('/compile', { decision_id })
-    const validation = await post('/validate', { decision_id, validated_object_hash: compiled.validated_object_hash, invocation_nonce: nonce, environment: 'production' })
+    const validation = await post('/validate', { session_id: session.session_id, decision_id, validated_object_hash: compiled.validated_object_hash, invocation_nonce: nonce, environment: 'production' })
     assert.equal(validation.status, 'VALID')
-    return compiled
+    return { ...compiled, session_id: session.session_id }
   }
 
   try {
@@ -271,7 +288,7 @@ test('runtime telemetry records replay, hash mismatch, proof, and bypass drift',
 
     const replayDecision = 'decision-replay-telemetry'
     const replayCompiled = await prepareDecision(replayDecision, 'nonce-replay')
-    const replay = await post('/validate', { decision_id: replayDecision, validated_object_hash: replayCompiled.validated_object_hash, invocation_nonce: 'nonce-replay', environment: 'production' })
+    const replay = await post('/validate', { session_id: replayCompiled.session_id, decision_id: replayDecision, validated_object_hash: replayCompiled.validated_object_hash, invocation_nonce: 'nonce-replay', environment: 'production' })
     assert.equal(replay.reason, 'nonce_used')
     assert.equal(runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${replayDecision}' AND event_type='REPLAY_BLOCKED'`]).trim(), 'REPLAY_BLOCKED')
     assert.equal(runSqlite([dbPath, `SELECT drift_class FROM drift_registry WHERE decision_id='${replayDecision}'`]).trim(), 'replay_drift')
@@ -279,15 +296,15 @@ test('runtime telemetry records replay, hash mismatch, proof, and bypass drift',
     const hashDecision = 'decision-hash-telemetry'
     const hashCompiled = await prepareDecision(hashDecision, 'nonce-hash')
     runSqlite([dbPath, `UPDATE aeo_registry SET canonical_aeo='{}' WHERE decision_id='${hashDecision}'`])
-    const hashExecution = await post('/execute', { decision_id: hashDecision, validated_object_hash: hashCompiled.validated_object_hash, invocation_nonce: 'nonce-hash' })
+    const hashExecution = await post('/execute', { session_id: hashCompiled.session_id, decision_id: hashDecision, validated_object_hash: hashCompiled.validated_object_hash, invocation_nonce: 'nonce-hash' })
     assert.equal(hashExecution.reason, 'wrong_hash')
     assert.equal(runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${hashDecision}' AND event_type='HASH_MISMATCH'`]).trim(), 'HASH_MISMATCH')
     assert.equal(runSqlite([dbPath, `SELECT drift_class FROM drift_registry WHERE decision_id='${hashDecision}'`]).trim(), 'hash_drift')
 
     const proofDecision = 'decision-proof-telemetry'
     const proofCompiled = await prepareDecision(proofDecision, 'nonce-proof')
-    const execution = await post('/execute', { decision_id: proofDecision, validated_object_hash: proofCompiled.validated_object_hash, invocation_nonce: 'nonce-proof' })
-    const proof = await post('/proof', { execution_id: execution.execution_id, decision_id: proofDecision, validated_object_hash: proofCompiled.validated_object_hash, workflow: 'governed-deploy.yml' })
+    const execution = await post('/execute', { session_id: proofCompiled.session_id, decision_id: proofDecision, validated_object_hash: proofCompiled.validated_object_hash, invocation_nonce: 'nonce-proof' })
+    const proof = await post('/proof', { session_id: proofCompiled.session_id, execution_id: execution.execution_id, decision_id: proofDecision, validated_object_hash: proofCompiled.validated_object_hash, workflow: 'governed-deploy.yml' })
     assert.equal(proof.status, 'PROVEN')
     assert.deepEqual(runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${proofDecision}' AND event_type IN ('PROOF_PERSISTED','AUTHORITY_CONSUMED') ORDER BY created_at, rowid`]).trim().split('\n'), ['PROOF_PERSISTED', 'AUTHORITY_CONSUMED'])
 
