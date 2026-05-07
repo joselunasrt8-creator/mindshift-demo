@@ -97,6 +97,9 @@ test('migration chain reproduces canonical runtime registry schemas', () => {
     assertIndex(dbPath, 'proof_registry', 'idx_proof_registry_execution_decision_hash', ['execution_id', 'decision_id', 'validated_object_hash'])
     assertIndex(dbPath, 'proof_registry', 'idx_proof_registry_decision_hash_unique', ['decision_id', 'validated_object_hash'], true)
 
+    assertColumns(dbPath, 'proof_registry_duplicate_archive', ['archive_id', 'proof_id', 'session_id', 'execution_id', 'decision_id', 'validated_object_hash', 'surface', 'run_id', 'commit_sha', 'workflow', 'environment', 'created_at', 'archived_at', 'archive_reason', 'canonical_proof_id'])
+    assertNotNull(dbPath, 'proof_registry_duplicate_archive', ['proof_id', 'session_id', 'execution_id', 'decision_id', 'validated_object_hash', 'created_at', 'archived_at', 'archive_reason', 'canonical_proof_id'])
+
     assertColumns(dbPath, 'invocation_registry', ['decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
     assertNotNull(dbPath, 'invocation_registry', ['decision_id', 'validated_object_hash', 'invocation_nonce', 'status', 'created_at'])
     assert.ok(indexList(dbPath, 'invocation_registry').some((index) => index.unique === 1 && index.origin === 'pk'), 'invocation_registry must use canonical triple primary key')
@@ -413,6 +416,40 @@ test('duplicate and concurrent proof attempts fail closed without duplicate proo
     assert.equal(replay.status, 'NULL')
     assert.equal(replay.reason, 'authority_not_executed')
     assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM proof_registry WHERE decision_id='${decision_id}'`]).trim(), '1')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('runtime startup quarantines historical duplicate proof lineage before enforcing uniqueness', async () => {
+  const { transformSync } = await import('esbuild')
+  const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
+  const worker = (await import(`data:text/javascript;base64,${Buffer.from(transformSync(source, { loader: 'ts', format: 'esm' }).code).toString('base64')}`)).default
+  const dir = mkdtempSync(join(tmpdir(), 'mindshift-proof-startup-'))
+  const dbPath = join(dir, 'startup.sqlite')
+  const env = { API_KEY: 'test-key', DB: new SqliteD1Database(dbPath) }
+
+  try {
+    runSqlite([dbPath, `CREATE TABLE proof_registry (proof_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, execution_id TEXT NOT NULL, decision_id TEXT NOT NULL, validated_object_hash TEXT NOT NULL, surface TEXT, run_id TEXT, commit_sha TEXT, workflow TEXT, environment TEXT, created_at TEXT NOT NULL);`])
+    runSqlite([dbPath, `INSERT INTO proof_registry (proof_id,session_id,execution_id,decision_id,validated_object_hash,surface,run_id,commit_sha,workflow,environment,created_at) VALUES ('proof-canonical','session-1','execution-1','decision-historical','hash-historical','github-actions','1','aaa','governed-deploy.yml','production','2026-01-01T00:00:00.000Z');`])
+    runSqlite([dbPath, `INSERT INTO proof_registry (proof_id,session_id,execution_id,decision_id,validated_object_hash,surface,run_id,commit_sha,workflow,environment,created_at) VALUES ('proof-duplicate','session-1','execution-2','decision-historical','hash-historical','github-actions','2','bbb','governed-deploy.yml','production','2026-01-02T00:00:00.000Z');`])
+
+    const response = await worker.fetch(new Request('https://runtime.test/session', {
+      method: 'POST',
+      headers: { 'X-API-Key': 'test-key', 'content-type': 'application/json' },
+      body: JSON.stringify({ identity_id: 'startup-survivor' })
+    }), env)
+    const payload = await response.json()
+
+    assert.equal(response.status, 200)
+    assert.equal(payload.status, 'SESSION_ACTIVE')
+    assert.equal(runSqlite([dbPath, `SELECT proof_id FROM proof_registry WHERE decision_id='decision-historical' AND validated_object_hash='hash-historical'`]).trim(), 'proof-canonical')
+    assert.equal(runSqlite([dbPath, `SELECT proof_id || ':' || canonical_proof_id || ':' || archive_reason FROM proof_registry_duplicate_archive WHERE decision_id='decision-historical' AND validated_object_hash='hash-historical'`]).trim(), 'proof-duplicate:proof-canonical:duplicate_proof_lineage')
+    assertIndex(dbPath, 'proof_registry', 'idx_proof_registry_decision_hash_unique', ['decision_id', 'validated_object_hash'], true)
+
+    const duplicateInsert = spawnSync('sqlite3', [dbPath, `INSERT INTO proof_registry (proof_id,session_id,execution_id,decision_id,validated_object_hash,created_at) VALUES ('proof-after-cleanup','session-1','execution-3','decision-historical','hash-historical','2026-01-03T00:00:00.000Z');`], { encoding: 'utf8' })
+    assert.notEqual(duplicateInsert.status, 0)
+    assert.match(duplicateInsert.stderr, /UNIQUE constraint failed/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
