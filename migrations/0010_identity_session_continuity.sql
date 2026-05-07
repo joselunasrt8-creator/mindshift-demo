@@ -1,5 +1,6 @@
--- Cloudflare D1 schema for the canonical Worker runtime in src/index.ts.
--- JSON-style canonical objects are stored as TEXT.
+-- Phase 1 identity/session continuity gate.
+-- Existing pre-session runtime records are archived so new execution objects must be
+-- recreated under an ACTIVE session without weakening replay constraints.
 
 CREATE TABLE IF NOT EXISTS session_registry (
   session_id TEXT PRIMARY KEY,
@@ -14,7 +15,11 @@ CREATE TABLE IF NOT EXISTS session_registry (
 CREATE INDEX IF NOT EXISTS idx_session_registry_status_expiry
   ON session_registry (continuity_status, expires_at);
 
-CREATE TABLE IF NOT EXISTS authority_registry (
+DROP INDEX IF EXISTS idx_authority_registry_decision_id;
+DROP INDEX IF EXISTS idx_authority_registry_decision_unique;
+ALTER TABLE authority_registry RENAME TO authority_registry_legacy_pre_session_continuity;
+
+CREATE TABLE authority_registry (
   authority_id TEXT PRIMARY KEY,
   decision_id TEXT NOT NULL UNIQUE,
   session_id TEXT NOT NULL,
@@ -30,23 +35,11 @@ CREATE TABLE IF NOT EXISTS authority_registry (
 CREATE INDEX IF NOT EXISTS idx_authority_registry_decision_id
   ON authority_registry (decision_id);
 
-CREATE TABLE IF NOT EXISTS aeo_registry (
-  aeo_id TEXT PRIMARY KEY,
-  authority_id TEXT NOT NULL,
-  decision_id TEXT NOT NULL,
-  canonical_aeo TEXT NOT NULL,
-  validated_object_hash TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
+DROP INDEX IF EXISTS idx_validation_registry_decision_id;
+DROP INDEX IF EXISTS idx_validation_registry_decision_hash_nonce;
+ALTER TABLE validation_registry RENAME TO validation_registry_legacy_pre_session_continuity;
 
-CREATE INDEX IF NOT EXISTS idx_aeo_registry_decision_id
-  ON aeo_registry (decision_id);
-
-CREATE INDEX IF NOT EXISTS idx_aeo_registry_decision_hash
-  ON aeo_registry (decision_id, validated_object_hash);
-
-CREATE TABLE IF NOT EXISTS validation_registry (
+CREATE TABLE validation_registry (
   validation_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   decision_id TEXT NOT NULL,
@@ -62,7 +55,13 @@ CREATE TABLE IF NOT EXISTS validation_registry (
 CREATE INDEX IF NOT EXISTS idx_validation_registry_decision_hash_nonce
   ON validation_registry (decision_id, validated_object_hash, invocation_nonce);
 
-CREATE TABLE IF NOT EXISTS execution_registry (
+DROP INDEX IF EXISTS idx_execution_registry_decision_id;
+DROP INDEX IF EXISTS idx_execution_replay_guard;
+DROP INDEX IF EXISTS idx_execution_registry_validated_hash_status;
+DROP INDEX IF EXISTS idx_execution_registry_decision_hash;
+ALTER TABLE execution_registry RENAME TO execution_registry_legacy_pre_session_continuity;
+
+CREATE TABLE execution_registry (
   execution_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   decision_id TEXT NOT NULL,
@@ -76,7 +75,12 @@ CREATE TABLE IF NOT EXISTS execution_registry (
 CREATE INDEX IF NOT EXISTS idx_execution_registry_decision_hash
   ON execution_registry (decision_id, validated_object_hash);
 
-CREATE TABLE IF NOT EXISTS proof_registry (
+DROP INDEX IF EXISTS idx_proof_registry_decision_id;
+DROP INDEX IF EXISTS idx_proof_object_hash;
+DROP INDEX IF EXISTS idx_proof_registry_execution_decision_hash;
+ALTER TABLE proof_registry RENAME TO proof_registry_legacy_pre_session_continuity;
+
+CREATE TABLE proof_registry (
   proof_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   execution_id TEXT NOT NULL,
@@ -92,45 +96,3 @@ CREATE TABLE IF NOT EXISTS proof_registry (
 
 CREATE INDEX IF NOT EXISTS idx_proof_registry_execution_decision_hash
   ON proof_registry (execution_id, decision_id, validated_object_hash);
-
-CREATE TABLE IF NOT EXISTS invocation_registry (
-  decision_id TEXT NOT NULL,
-  validated_object_hash TEXT NOT NULL,
-  invocation_nonce TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY(decision_id, validated_object_hash, invocation_nonce)
-);
-
-CREATE TABLE IF NOT EXISTS observability_registry (
-  event_id TEXT PRIMARY KEY,
-  event_type TEXT NOT NULL,
-  decision_id TEXT,
-  authority_id TEXT,
-  execution_id TEXT,
-  proof_id TEXT,
-  severity TEXT NOT NULL,
-  payload TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_observability_decision
-  ON observability_registry (decision_id);
-
-CREATE INDEX IF NOT EXISTS idx_observability_execution
-  ON observability_registry (execution_id);
-
-CREATE INDEX IF NOT EXISTS idx_observability_type
-  ON observability_registry (event_type);
-
-CREATE TABLE IF NOT EXISTS drift_registry (
-  drift_id TEXT PRIMARY KEY,
-  drift_class TEXT NOT NULL,
-  severity TEXT NOT NULL,
-  decision_id TEXT,
-  execution_id TEXT,
-  payload TEXT NOT NULL,
-  detected_by TEXT NOT NULL,
-  resolution_status TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);

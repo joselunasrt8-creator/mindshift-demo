@@ -7,13 +7,14 @@ const migration = readFileSync(new URL('../migrations/0006_enforcement_reboot_v1
 const schema = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8')
 const aeoRebuildMigration = readFileSync(new URL('../migrations/0007_canonical_aeo_registry_rebuild.sql', import.meta.url), 'utf8')
 const registryRebuildMigration = readFileSync(new URL('../migrations/0008_canonical_runtime_registry_rebuild.sql', import.meta.url), 'utf8')
+const sessionContinuityMigration = readFileSync(new URL('../migrations/0010_identity_session_continuity.sql', import.meta.url), 'utf8')
 const governedDeployWorkflow = readFileSync(new URL('../.github/workflows/governed-deploy.yml', import.meta.url), 'utf8')
 
 test('runtime mutation endpoints reject unauthorized requests before body parsing or DB access', async () => {
   const { transformSync } = await import('esbuild')
   const compiled = transformSync(source, { loader: 'ts', format: 'esm' }).code
   const worker = (await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)).default
-  const mutationEndpoints = ['/authority', '/compile', '/validate', '/execute', '/proof']
+  const mutationEndpoints = ['/session', '/authority', '/compile', '/validate', '/execute', '/proof']
 
   for (const endpoint of mutationEndpoints) {
     let dbTouched = false
@@ -34,7 +35,39 @@ test('runtime mutation endpoints reject unauthorized requests before body parsin
   }
 })
 
-test('authorized authority mutation request succeeds', async () => {
+test('authorized session mutation request returns canonical SESSION_ACTIVE response', async () => {
+  const { transformSync } = await import('esbuild')
+  const compiled = transformSync(source, { loader: 'ts', format: 'esm' }).code
+  const worker = (await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)).default
+  let writes = 0
+  const env = {
+    API_KEY: 'test-key',
+    DB: {
+      prepare(sql) {
+        return {
+          bind() { return this },
+          run() { writes += 1; return Promise.resolve({ meta: { changes: 1 } }) },
+          all() { return Promise.resolve({ results: [] }) },
+          first() { return Promise.resolve(null) }
+        }
+      }
+    }
+  }
+
+  const response = await worker.fetch(new Request('https://runtime.test/session', {
+    method: 'POST',
+    headers: { 'X-API-Key': 'test-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ identity_id: 'identity-1' })
+  }), env)
+  const payload = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.status, 'SESSION_ACTIVE')
+  assert.ok(payload.session_id)
+  assert.ok(writes > 0)
+})
+
+test('authorized authority mutation request succeeds with active session', async () => {
   const { transformSync } = await import('esbuild')
   const compiled = transformSync(source, { loader: 'ts', format: 'esm' }).code
   const worker = (await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`)).default
@@ -47,7 +80,7 @@ test('authorized authority mutation request succeeds', async () => {
           bind() { return this },
           run() { writes += 1; return Promise.resolve({ meta: { changes: 1 } }) },
           all() { return Promise.resolve({ results: [] }) },
-          first() { return Promise.resolve(null) }
+          first() { return Promise.resolve({ session_id: 'session-1', continuity_status: 'ACTIVE', expires_at: '2999-01-01T00:00:00.000Z' }) }
         }
       }
     }
@@ -56,7 +89,7 @@ test('authorized authority mutation request succeeds', async () => {
   const response = await worker.fetch(new Request('https://runtime.test/authority', {
     method: 'POST',
     headers: { 'X-API-Key': 'test-key', 'content-type': 'application/json' },
-    body: JSON.stringify({ decision_id: 'decision-1', owner: 'tester' })
+    body: JSON.stringify({ session_id: 'session-1', decision_id: 'decision-1', owner: 'tester' })
   }), env)
   const payload = await response.json()
 
@@ -89,27 +122,36 @@ test('compile is fail-closed and never throws unhandled exception', () => {
   assert.match(source, /reason: "compile_exception"/)
 })
 
-test('validate reserves nonce', () => {
+test('validate reserves nonce and binds validation to authority session', () => {
   assert.match(source, /INSERT OR IGNORE INTO invocation_registry/)
+  assert.match(source, /String\(authority\.session_id \|\| ""\) !== session_id/)
+  assert.match(source, /INSERT INTO validation_registry \(validation_id,session_id,decision_id/)
   assert.match(source, /'RESERVED'/)
 })
 
-test('execute rejects no validation and wrong hash and replay', () => {
+test('execute rejects no validation, invalid session, lineage mismatch, wrong hash, and replay', () => {
   assert.match(source, /reason:"no_validation"/)
+  assert.match(source, /reason:"invalid_session"/)
+  assert.match(source, /reason:"session_lineage_mismatch"/)
   assert.match(source, /reason:"wrong_hash"/)
   assert.match(source, /reason:"replay_detected"/)
 })
 
-test('proof persists and consumes authority', () => {
+test('proof persists session lineage and consumes authority', () => {
   assert.match(source, /missing_validated_object_hash/)
   assert.match(source, /AND status='EXECUTED'/)
-  assert.match(source, /INSERT INTO proof_registry/)
+  assert.match(source, /INSERT INTO proof_registry \(proof_id,session_id,execution_id/)
+  assert.match(source, /proof: \{ proof_id, session_id, execution_id, decision_id, validated_object_hash \}/)
   assert.match(source, /SET status='CONSUMED'/)
   assert.match(source, /status:"PROVEN"/)
   assert.match(source, /proof_id/)
 })
 
-test('governed deploy proof payload carries validated hash and expects PROVEN closure', () => {
+test('governed deploy proof payload carries session and validated hash and expects PROVEN closure', () => {
+  assert.match(governedDeployWorkflow, /\$CLEAN_WORKER_URL\/session/)
+  assert.match(governedDeployWorkflow, /SESSION_STATUS.*SESSION_ACTIVE/)
+  assert.match(governedDeployWorkflow, /--arg session_id "\$SESSION_ID"/)
+  assert.match(governedDeployWorkflow, /session_id: \$session_id/)
   assert.match(governedDeployWorkflow, /--arg validated_object_hash "\$VALIDATED_OBJECT_HASH"/)
   assert.match(governedDeployWorkflow, /validated_object_hash: \$validated_object_hash/)
   assert.match(governedDeployWorkflow, /"\$PROOF_STATUS" != "PROVEN"/)
@@ -153,4 +195,19 @@ test('runtime registry rebuild migration restores canonical replay and proof fie
   assert.match(registryRebuildMigration, /workflow TEXT/)
   assert.match(registryRebuildMigration, /UNIQUE\(decision_id, validated_object_hash\)/)
   assert.match(registryRebuildMigration, /PRIMARY KEY\(decision_id, validated_object_hash, invocation_nonce\)/)
+})
+
+
+test('session continuity schema is present across runtime schema and migration', () => {
+  assert.match(source, /CREATE TABLE IF NOT EXISTS session_registry/)
+  assert.match(source, /continuity_status TEXT NOT NULL/)
+  assert.match(source, /expires_at TEXT NOT NULL/)
+  assert.match(source, /CANONICAL_RUNTIME_ROUTES = \["\/session", "\/authority", "\/compile", "\/validate", "\/execute", "\/proof"\]/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS session_registry/)
+  assert.match(schema, /session_id TEXT NOT NULL,\n  owner TEXT NOT NULL/)
+  assert.match(schema, /proof_id TEXT PRIMARY KEY,\n  session_id TEXT NOT NULL/)
+  assert.match(sessionContinuityMigration, /CREATE TABLE IF NOT EXISTS session_registry/)
+  assert.match(sessionContinuityMigration, /ALTER TABLE authority_registry RENAME TO authority_registry_legacy_pre_session_continuity/)
+  assert.match(sessionContinuityMigration, /UNIQUE\(decision_id, validated_object_hash\)/)
+  assert.match(registryRebuildMigration, /PRIMARY KEY\(decision_id, validated_object_hash, invocation_nonce\)/, 'replay nonce primary key remains unchanged in existing invocation registry migration')
 })
