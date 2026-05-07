@@ -390,6 +390,7 @@ test('compile rejects non-governed workflows before persisting canonical AEOs', 
       headers,
       body: JSON.stringify(payload)
     }), env)
+
     assert.equal(response.status, 200)
     return response.json()
   }
@@ -397,20 +398,67 @@ test('compile rejects non-governed workflows before persisting canonical AEOs', 
   try {
     applyMigrationChain(dbPath)
 
+    const session = await post('/session', {
+      identity_id: 'workflow-rejection-identity'
+    })
+
+    assert.equal(session.status, 'SESSION_ACTIVE')
+
     await post('/authority', {
+      session_id: session.session_id,
       decision_id,
       owner: 'legitimacy-test',
       intent: 'deploy_production',
-      scope: { repo: 'example/repo', branch: 'main' },
-      constraints: { repo: 'example/repo', branch: 'main', workflow: 'ungoverned-deploy.yml' }
+      scope: {
+        repo: 'example/repo',
+        branch: 'main'
+      },
+      constraints: {
+        repo: 'example/repo',
+        branch: 'main',
+        workflow: 'ungoverned-deploy.yml'
+      }
     })
 
     const compiled = await post('/compile', { decision_id })
-    assert.deepEqual(compiled, { status: 'NULL', route: '/compile', reason: 'workflow_mismatch' })
-    assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM aeo_registry WHERE decision_id='${decision_id}'`]).trim(), '0')
-    assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='AEO_COMPILED'`]).trim(), '0')
-    assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='VALIDATION_REJECTED'`]).trim(), '1')
-    assert.match(runSqlite([dbPath, `SELECT payload FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='VALIDATION_REJECTED'`]), /"indicator":"unmanaged_deploy_surface"/)
+
+    assert.deepEqual(compiled, {
+      status: 'NULL',
+      route: '/compile',
+      reason: 'workflow_mismatch'
+    })
+
+    assert.equal(
+      runSqlite([
+        dbPath,
+        `SELECT COUNT(*) FROM aeo_registry WHERE decision_id='${decision_id}'`
+      ]).trim(),
+      '0'
+    )
+
+    assert.equal(
+      runSqlite([
+        dbPath,
+        `SELECT COUNT(*) FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='AEO_COMPILED'`
+      ]).trim(),
+      '0'
+    )
+
+    assert.equal(
+      runSqlite([
+        dbPath,
+        `SELECT COUNT(*) FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='VALIDATION_REJECTED'`
+      ]).trim(),
+      '1'
+    )
+
+    assert.match(
+      runSqlite([
+        dbPath,
+        `SELECT payload FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='VALIDATION_REJECTED'`
+      ]),
+      /"indicator":"unmanaged_deploy_surface"/
+    )
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
