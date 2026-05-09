@@ -1,0 +1,102 @@
+name: merge-governance-check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  merge-governance-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect governed mutation paths
+        run: |
+          set -euo pipefail
+
+          git fetch origin "${{ github.base_ref }}" --depth=1
+
+          CHANGED_FILES="$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)"
+          printf '%s\n' "$CHANGED_FILES" > changed_files.txt
+
+          echo "Changed files:"
+          cat changed_files.txt
+
+          GOVERNED_PATH_DETECTED="false"
+
+          while IFS= read -r file; do
+            case "$file" in
+              governance/*|.github/workflows/*|src/*|schema.sql|migrations/*|wrangler.toml)
+                GOVERNED_PATH_DETECTED="true"
+                ;;
+            esac
+          done < changed_files.txt
+
+          echo "GOVERNED_PATH_DETECTED=$GOVERNED_PATH_DETECTED" >> "$GITHUB_ENV"
+
+      - name: Validate merge governance artifacts
+        run: |
+          set -euo pipefail
+
+          for file in \
+            governance/runtime/PREO_REQUIREMENTS.json \
+            governance/runtime/SCO_REQUIREMENTS.json \
+            governance/runtime/MERGE_GOVERNANCE_RULES.json
+          do
+            if [ ! -f "$file" ]; then
+              echo "NULL — missing merge governance artifact: $file"
+              exit 1
+            fi
+
+            node -e "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))" "$file"
+          done
+
+      - name: Require SCO when governed paths change
+        run: |
+          set -euo pipefail
+
+          if [ "$GOVERNED_PATH_DETECTED" != "true" ]; then
+            echo "No governed mutation path detected."
+            exit 0
+          fi
+
+          echo "Governed mutation path detected. SCO governance applies."
+
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+
+          const sco = JSON.parse(readFileSync('governance/runtime/SCO_REQUIREMENTS.json', 'utf8'));
+          const merge = JSON.parse(readFileSync('governance/runtime/MERGE_GOVERNANCE_RULES.json', 'utf8'));
+
+          assert.ok(Array.isArray(sco.governed_paths), 'SCO governed_paths missing');
+          assert.ok(sco.governed_paths.includes('governance/**'), 'SCO must cover governance/**');
+          assert.ok(sco.governed_paths.includes('.github/workflows/**'), 'SCO must cover .github/workflows/**');
+          assert.ok(sco.governed_paths.includes('src/**'), 'SCO must cover src/**');
+          assert.ok(sco.governed_paths.includes('schema.sql'), 'SCO must cover schema.sql');
+          assert.ok(sco.governed_paths.includes('migrations/**'), 'SCO must cover migrations/**');
+          assert.ok(sco.governed_paths.includes('wrangler.toml'), 'SCO must cover wrangler.toml');
+
+          const mergeRules = merge.rules.join('\n');
+          assert.ok(mergeRules.includes('Governance/runtime mutation -> requires SCO'), 'merge rules must require SCO');
+          assert.ok(mergeRules.includes('No PREO -> no governed merge'), 'merge rules must require PREO');
+          NODE
+
+      - name: Emit merge governance summary
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Merge Governance Check"
+            echo ""
+            echo "governed_path_detected=$GOVERNED_PATH_DETECTED"
+            echo ""
+            echo "This check is read-only. It validates merge-governance artifacts and governed-path classification."
+          } >> "$GITHUB_STEP_SUMMARY"
