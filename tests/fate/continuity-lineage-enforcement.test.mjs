@@ -91,13 +91,13 @@ test('execution and proof preserve continuity lineage', () => {
 
   assert.match(
     source,
-    /INSERT INTO execution_registry[\s\S]*continuity_id[\s\S]*\.bind\(execution_id, authority\.session_id, decision_id, validated_object_hash, invocation_nonce, "COMPLETED", created_at, authority\.continuity_id\)/,
+    /INSERT INTO execution_registry[\s\S]*continuity_id[\s\S]*\.bind\(execution_id, authority\.session_id, decision_id, validated_object_hash, invocation_nonce, new Date\(\)\.toISOString\(\), String\(authority\.continuity_id \|\| ""\)\)/,
     'execution must persist authority continuity_id into execution lineage',
   )
 
   assert.match(
     source,
-    /INSERT INTO proof_registry[\s\S]*continuity_id,continuity_hash,identity_id,authority_lineage,execution_lineage/,
+    /INSERT INTO proof_registry[\s\S]*identity_id,session_id,continuity_id,continuity_hash[\s\S]*authority_lineage,execution_lineage/,
     'proof must persist continuity and lineage fields',
   )
 })
@@ -105,25 +105,25 @@ test('execution and proof preserve continuity lineage', () => {
 test('revocation propagates through continuity, authority, validation, and invocation state', () => {
   assert.match(
     source,
-    /async function cascadeRevocation[\s\S]*UPDATE continuity_registry SET status='REVOKED'/,
+    /async function invalidateContinuityLineage[\s\S]*UPDATE continuity_registry SET status=\?\$\{ids\.length \+ 1\}/,
     'continuity revocation must mark continuity records revoked',
   )
 
   assert.match(
     source,
-    /async function cascadeRevocation[\s\S]*UPDATE authority_registry SET status='REVOKED'/,
+    /async function invalidateContinuityLineage[\s\S]*UPDATE authority_registry SET status='REVOKED'/,
     'continuity revocation must revoke dependent authorities',
   )
 
   assert.match(
     source,
-    /async function cascadeRevocation[\s\S]*UPDATE validation_registry SET status='REVOKED', result='INVALID', reason='continuity_revoked'/,
+    /async function invalidateContinuityLineage[\s\S]*UPDATE validation_registry SET status='REVOKED', result='INVALID', reason=\?\$\{ids\.length \+ 1\}/,
     'continuity revocation must invalidate dependent validations',
   )
 
   assert.match(
     source,
-    /async function cascadeRevocation[\s\S]*UPDATE invocation_registry SET status='REVOKED'/,
+    /async function invalidateContinuityLineage[\s\S]*UPDATE invocation_registry SET status='REVOKED'/,
     'continuity revocation must revoke reserved invocations',
   )
 })
