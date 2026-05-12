@@ -142,4 +142,10 @@ test('continuity creation emits telemetry and invalid continuity fails closed', 
     /drift_class: "authority_drift"/,
     'continuity legitimacy failures must be classified as authority drift',
   )
+
+  assert.match(
+    source,
+    /scope_expansion_detected/,
+    'recursive continuity scope expansion must fail closed',
+  )
 })
