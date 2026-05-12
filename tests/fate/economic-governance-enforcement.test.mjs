@@ -8,7 +8,7 @@ import {
   validateExecutionQuota,
   consumeQuotaOnce,
   economicRejectionPayload,
-} from '../../src/economic-governance.ts'
+} from '../../src/economic-governance.js'
 
 test('quota registry persists economic legitimacy fields', () => {
   assert.match(CREATE_QUOTA_REGISTRY_SQL, /CREATE TABLE IF NOT EXISTS quota_registry/i)
