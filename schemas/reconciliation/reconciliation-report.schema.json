@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.local/schemas/reconciliation/reconciliation-report.schema.json",
+  "title": "MindShift Reconciliation Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reconciliation_id",
+    "reconciliation_timestamp",
+    "status",
+    "lineage_anchor",
+    "traversal_trace",
+    "drift_classifications",
+    "registry_lineage_anchors",
+    "registry_integrity_summary"
+  ],
+  "properties": {
+    "reconciliation_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "reconciliation_timestamp": { "type": "string" },
+    "status": { "enum": ["VALID_RECONCILIATION", "INVALID_RECONCILIATION", "NULL"] },
+    "lineage_anchor": { "type": "string" },
+    "traversal_trace": { "type": "array" },
+    "drift_classifications": { "type": "array" },
+    "registry_lineage_anchors": { "type": "array", "items": { "type": "string" } },
+    "registry_integrity_summary": {
+      "type": "object",
+      "required": ["registries_checked", "drift_count", "bounded_recursion_depth", "canonical_registry_ordering"],
+      "properties": {
+        "registries_checked": { "type": "integer", "minimum": 0 },
+        "drift_count": { "type": "integer", "minimum": 0 },
+        "bounded_recursion_depth": { "type": "integer", "minimum": 0 },
+        "canonical_registry_ordering": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

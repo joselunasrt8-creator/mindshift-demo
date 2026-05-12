@@ -136,3 +136,62 @@ Forbidden assumptions:
 | Drift ambiguity | `reconciliation_failure_drift` | `NULL` |
 | Reconciliation mutation | `telemetry_payload_drift` | `NULL` |
 | Federation trust assumption | `federated_lineage_drift` | `NULL` |
+
+## 11. Deterministic Scheduler Windows
+
+The `/reconcile/schedule` observability route exposes a deterministic, bounded reconciliation window; the base `/reconcile` route remains a non-DB-touching NULL sentinel. It selects persisted proof roots in the canonical scheduler order and returns schedule anchors only; it never reserves replay state, never consumes authority, never mutates registries, and never triggers execution. The window identity is a SHA-256 hash over JCS-normalized anchors, batch limit, and ordering material, so replaying the same registry state yields the same schedule identity.
+
+Scheduler invariants:
+
+- read-only `SELECT` traversal over proof roots;
+- bounded batch size of `25` anchors;
+- stable ordering by `proof_registry.created_at ASC`, `proof_registry.decision_id ASC`, `proof_registry.execution_id ASC`, and `proof_registry.proof_id ASC`;
+- canonical traversal sequencing through the existing recursive reconciliation substrate;
+- fail-closed `NULL` status when no valid object exists.
+
+## 12. Reconciliation Reporting Layer
+
+The `/reconcile/report` route returns a reconciliation summary object, and `/reconcile/drift` returns only deterministic drift classifications for the same exact traversal. Both routes are read-only, non-authoritative, and fail closed. A report includes `reconciliation_id`, `reconciliation_timestamp`, `status`, `lineage_anchor`, `traversal_trace`, `drift_classifications`, `registry_lineage_anchors`, and `registry_integrity_summary`. The timestamp is evidence only and is excluded from deterministic reconciliation ID material.
+
+Reports preserve exact-object discipline by hashing the exact canonical summary payload into a portable envelope. A report can describe lineage continuity or divergence, but it cannot repair lineage, create legitimacy, or stand in for `/validate`, `/execute`, or `/proof`.
+
+## 13. Federation and Portability Semantics
+
+Federated lineage verification treats remote evidence as bounded evidence, never inherited trust. Trust-domain boundaries are explicit: `local_runtime`, `foreign_runtime`, and `portable_proof_bundle`. A foreign lineage claim must include `runtime_id`, `trust_domain`, `lineage_hash`, `parent_lineage_hash`, `decision_id`, `validated_object_hash`, `invocation_nonce`, `proof_id`, and `revocation_state`. Federation recursion is bounded by the same reconciliation maximum depth, and remote replay state is isolated: it is not reserved, consumed, released, or inferred locally.
+
+Portable reconciliation exchange uses JCS canonicalization, a DSSE-compatible payload type, and content-addressed lineage hashes. Portable structures cover reconciliation payloads, lineage evidence, drift reports, reconciliation proofs, and federated reconciliation exchange. A portable object is valid evidence only when its `exact_object_hash` matches the exact canonical payload being exchanged.
+
+Additional reconciliation drift classes:
+
+- `foreign_ancestry_mismatch_drift`
+- `scheduler_ordering_instability_drift`
+- `reconciliation_report_drift`
+- `portable_serialization_mismatch_drift`
+- `federated_replay_discontinuity_drift`
+- `deterministic_traversal_instability_drift`
+- `reconciliation_payload_corruption_drift`
+
+Additional FATE coverage:
+
+| FATE test | Corruption injected | Expected result |
+| --- | --- | --- |
+| `federated_lineage_divergence` | Foreign runtime lineage hash continuity breaks across a trust-domain boundary. | `NULL` |
+| `foreign_ancestry_mismatch` | Foreign ancestry claims a local root or mismatched parent lineage. | `NULL` |
+| `scheduler_ordering_instability` | The same proof window cannot be ordered by canonical scheduler keys. | `NULL` |
+| `reconciliation_report_drift` | Report omits trace, anchors, deterministic ID, timestamp, or drift classification. | `NULL` |
+| `portable_serialization_mismatch` | JCS canonical hash differs from portable envelope `exact_object_hash`. | `NULL` |
+| `federated_replay_discontinuity` | Foreign replay tuple diverges from local decision/object/nonce lineage. | `NULL` |
+| `deterministic_traversal_instability_expanded` | Canonical traversal sequence changes across equivalent inputs. | `NULL` |
+| `reconciliation_payload_corruption` | Portable reconciliation payload hash or drift class is corrupted. | `NULL` |
+
+Expanded failure classifications:
+
+| Condition | Drift class | Result |
+| --- | --- | --- |
+| Foreign ancestry mismatch | `foreign_ancestry_mismatch_drift` | `NULL` |
+| Scheduler ordering instability | `scheduler_ordering_instability_drift` | `NULL` |
+| Reconciliation report drift | `reconciliation_report_drift` | `NULL` |
+| Portable serialization mismatch | `portable_serialization_mismatch_drift` | `NULL` |
+| Federated replay discontinuity | `federated_replay_discontinuity_drift` | `NULL` |
+| Deterministic traversal instability | `deterministic_traversal_instability_drift` | `NULL` |
+| Reconciliation payload corruption | `reconciliation_payload_corruption_drift` | `NULL` |
