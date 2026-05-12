@@ -33,6 +33,14 @@ jobs:
           GOVERNED_PATH_DETECTED="false"
           RISK_CLASS="P1"
 
+          set_risk_class() {
+            case "$1:$RISK_CLASS" in
+              P3:*) RISK_CLASS="P3" ;;
+              P2:P0|P2:P1|P2:P2) RISK_CLASS="P2" ;;
+              P1:P0|P1:P1) RISK_CLASS="P1" ;;
+            esac
+          }
+
           while IFS= read -r file; do
             case "$file" in
               governance/*)
@@ -40,42 +48,42 @@ jobs:
                 echo "governance_mutation" >> mutation_classes.txt
                 echo "governance_runtime" >> target_surfaces.txt
                 GOVERNED_PATH_DETECTED="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
               .github/workflows/*)
                 echo "$file" >> governed_files.txt
                 echo "workflow_mutation" >> mutation_classes.txt
                 echo "source_control_governance" >> target_surfaces.txt
                 GOVERNED_PATH_DETECTED="true"
-                RISK_CLASS="P3"
+                set_risk_class "P3"
                 ;;
               src/*)
                 echo "$file" >> governed_files.txt
                 echo "runtime_mutation" >> mutation_classes.txt
                 echo "runtime_boundary" >> target_surfaces.txt
                 GOVERNED_PATH_DETECTED="true"
-                RISK_CLASS="P3"
+                set_risk_class "P3"
                 ;;
               schema.sql)
                 echo "$file" >> governed_files.txt
                 echo "schema_mutation" >> mutation_classes.txt
                 echo "database_schema" >> target_surfaces.txt
                 GOVERNED_PATH_DETECTED="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
               migrations/*)
                 echo "$file" >> governed_files.txt
                 echo "migration_mutation" >> mutation_classes.txt
                 echo "database_migration" >> target_surfaces.txt
                 GOVERNED_PATH_DETECTED="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
               wrangler.toml)
                 echo "$file" >> governed_files.txt
                 echo "deployment_config_mutation" >> mutation_classes.txt
                 echo "deployment_configuration" >> target_surfaces.txt
                 GOVERNED_PATH_DETECTED="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
             esac
           done < changed_files.txt
@@ -86,6 +94,46 @@ jobs:
 
           echo "GOVERNED_PATH_DETECTED=$GOVERNED_PATH_DETECTED" >> "$GITHUB_ENV"
           echo "RISK_CLASS=$RISK_CLASS" >> "$GITHUB_ENV"
+
+      - name: Collect review and check evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" > reviews.json
+          gh api "repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }}/check-runs" > check_runs.json
+
+          jq -r --arg head_sha "${{ github.event.pull_request.head.sha }}" '
+            [.[] | select(.state == "APPROVED" and .commit_id == $head_sha) | .user.login] | unique | .[]
+          ' reviews.json > approved_reviewers.txt
+
+          REVIEWERS_JSON=$(jq -R . approved_reviewers.txt | jq -s -c .)
+          REVIEWER_COUNT=$(jq 'length' <<< "$REVIEWERS_JSON")
+          REVIEW_HASH=$(jq -cS . reviews.json | sha256sum | awk '{print $1}')
+          EVIDENCE_HASH=$(jq -n             --slurpfile changed_files <(jq -R . changed_files.txt | jq -s .)             --slurpfile reviews reviews.json             --slurpfile check_runs check_runs.json             '{changed_files: $changed_files[0], reviews: $reviews[0], check_runs: $check_runs[0]}'             | jq -cS . | sha256sum | awk '{print $1}')
+
+          FAILED_CHECK_COUNT=$(jq '[.check_runs[]? | select((.name | IN("merge-governance-check", "preo-candidate", "sco-candidate") | not) and .status == "completed" and (.conclusion | IN("success", "neutral", "skipped") | not))] | length' check_runs.json)
+
+          if [ "$REVIEWER_COUNT" -lt 1 ]; then
+            echo "NULL — missing required current-head approval"
+            exit 1
+          fi
+
+          if [ "$FAILED_CHECK_COUNT" -ne 0 ]; then
+            echo "NULL — failing check-run evidence present for current head SHA"
+            jq '.check_runs[]? | select((.name | IN("merge-governance-check", "preo-candidate", "sco-candidate") | not) and .status == "completed" and (.conclusion | IN("success", "neutral", "skipped") | not)) | {name, status, conclusion}' check_runs.json
+            exit 1
+          fi
+
+          {
+            echo "REVIEWERS_JSON=$REVIEWERS_JSON"
+            echo "REVIEW_STATE=APPROVED_CURRENT_HEAD"
+            echo "REVIEW_STATUS=VERIFIED"
+            echo "CHECKS_STATUS=NO_FAILED_CHECKS"
+            echo "REVIEW_HASH=$REVIEW_HASH"
+            echo "EVIDENCE_HASH=$EVIDENCE_HASH"
+          } >> "$GITHUB_ENV"
 
       - name: Generate bound PREO candidate
         run: |
@@ -98,8 +146,16 @@ jobs:
             --arg base_branch "${{ github.base_ref }}" \
             --arg head_branch "${{ github.head_ref }}" \
             --arg head_sha "${{ github.event.pull_request.head.sha }}" \
-            --arg review_status "UNVERIFIED" \
-            --arg checks_status "UNVERIFIED" \
+            --arg base_sha "${{ github.event.pull_request.base.sha }}" \
+            --arg review_status "$REVIEW_STATUS" \
+            --arg review_state "$REVIEW_STATE" \
+            --arg review_hash "$REVIEW_HASH" \
+            --arg checks_status "$CHECKS_STATUS" \
+            --arg evidence_hash "$EVIDENCE_HASH" \
+            --arg issued_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg expires_at "$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson reviewers "$REVIEWERS_JSON" \
+            --argjson required_checks '["FATE","PREO validation","SCO validation","governed merge validation","deploy proof validation"]' \
             --arg risk_class "$RISK_CLASS" \
             --arg governed_path_detected "$GOVERNED_PATH_DETECTED" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -111,10 +167,18 @@ jobs:
               base_branch: $base_branch,
               head_branch: $head_branch,
               head_sha: $head_sha,
+              base_sha: $base_sha,
               changed_files: $changed_files[0],
+              reviewers: $reviewers,
+              review_state: $review_state,
               review_status: $review_status,
+              review_hash: $review_hash,
+              required_checks: $required_checks,
               checks_status: $checks_status,
+              evidence_hash: $evidence_hash,
               risk_class: $risk_class,
+              issued_at: $issued_at,
+              expires_at: $expires_at,
               governed_path_detected: ($governed_path_detected == "true"),
               created_at: $created_at,
               status: "PREO_CANDIDATE"
@@ -133,6 +197,13 @@ jobs:
             --arg head_sha "${{ github.event.pull_request.head.sha }}" \
             --arg requires_sco "$GOVERNED_PATH_DETECTED" \
             --arg risk_class "$RISK_CLASS" \
+            --arg mutation_type "system_change" \
+            --arg surface "github_pr_merge_surface" \
+            --arg required_review_tier "highest_governance_threshold_for_P3" \
+            --arg policy_impact "$GOVERNED_PATH_DETECTED" \
+            --arg runtime_impact "$GOVERNED_PATH_DETECTED" \
+            --arg proof_requirement "merge_proof_with_preo_hash_and_sco_hash" \
+            --arg rollback_requirement "revert_or_forward_fix_requires_new_SCO" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --slurpfile changed_files <(jq -R . changed_files.txt | jq -s .) \
             --slurpfile governed_files <(jq -R . governed_files.txt | jq -s .) \
@@ -145,12 +216,19 @@ jobs:
               base_branch: $base_branch,
               head_branch: $head_branch,
               head_sha: $head_sha,
+              mutation_type: $mutation_type,
+              surface: $surface,
               changed_files: $changed_files[0],
               governed_files: $governed_files[0],
               mutation_classes: $mutation_classes[0],
               target_surfaces: $target_surfaces[0],
               requires_sco: ($requires_sco == "true"),
               risk_class: $risk_class,
+              required_review_tier: $required_review_tier,
+              policy_impact: ($policy_impact == "true"),
+              runtime_impact: ($runtime_impact == "true"),
+              proof_requirement: $proof_requirement,
+              rollback_requirement: $rollback_requirement,
               created_at: $created_at,
               status: "SCO_CANDIDATE"
             }' > SCO_CANDIDATE.json
@@ -172,6 +250,12 @@ jobs:
           assert.equal(preo.status, 'PREO_CANDIDATE');
           assert.equal(sco.status, 'SCO_CANDIDATE');
           assert.equal(preo.head_sha, currentHeadSha, 'PREO head_sha must match current PR head SHA');
+          assert.equal(preo.base_sha, '${{ github.event.pull_request.base.sha }}', 'PREO base_sha must match current PR base SHA');
+          assert.ok(preo.reviewers.length > 0, 'PREO must include at least one current-head reviewer');
+          assert.equal(preo.review_state, 'APPROVED_CURRENT_HEAD', 'PREO review state must be current-head approved');
+          assert.equal(preo.checks_status, 'NO_FAILED_CHECKS', 'PREO must include non-failing check evidence');
+          assert.ok(preo.review_hash.length > 0, 'PREO review hash required');
+          assert.ok(preo.evidence_hash.length > 0, 'PREO evidence hash required');
           assert.equal(sco.head_sha, currentHeadSha, 'SCO head_sha must match current PR head SHA');
           assert.deepEqual([...preo.changed_files].sort(), changedFiles, 'PREO changed_files must match actual changed files');
           assert.deepEqual([...sco.changed_files].sort(), changedFiles, 'SCO changed_files must match actual changed files');

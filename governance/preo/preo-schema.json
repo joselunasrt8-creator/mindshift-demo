@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.local/governance/preo/preo-schema.json",
+  "title": "Canonical PREO Merge Governance Object",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "preo_id",
+    "repo",
+    "pr_number",
+    "head_sha",
+    "base_sha",
+    "reviewers",
+    "review_state",
+    "required_checks",
+    "changed_files",
+    "workflow_results",
+    "evidence_hash",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "preo_id": { "type": "string", "minLength": 1 },
+    "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+    "pr_number": { "type": "integer", "minimum": 1 },
+    "head_sha": { "type": "string", "pattern": "^[a-fA-F0-9]{40}$" },
+    "base_sha": { "type": "string", "pattern": "^[a-fA-F0-9]{40}$" },
+    "reviewers": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "review_state": {
+      "type": "string",
+      "enum": ["APPROVED_CURRENT_HEAD", "MISSING_REVIEW", "STALE_REVIEW", "CHANGES_REQUESTED", "PREO_INVALID"]
+    },
+    "required_checks": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "changed_files": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "workflow_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "conclusion"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "minLength": 1 },
+          "conclusion": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "evidence_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" }
+  }
+}

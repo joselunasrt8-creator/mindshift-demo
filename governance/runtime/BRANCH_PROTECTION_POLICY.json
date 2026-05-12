@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "purpose": "Define required repository branch protection controls before Stage 4 enforcement activation.",
-  "status": "policy_only_non_enforcing",
+  "status": "required_enforcement_policy",
   "target_branch": "main",
   "core_invariant": "No passing governance boundary -> no merge legitimacy",
   "required_controls": {
@@ -11,6 +11,12 @@
     "dismiss_stale_reviews": true,
     "require_status_checks": true,
     "required_status_checks": [
+      "PREO_VALID",
+      "FATE",
+      "PREO validation",
+      "SCO validation",
+      "governed merge validation",
+      "deploy proof validation",
       "merge-governance-check",
       "preo-candidate",
       "sco-candidate"
@@ -19,7 +25,10 @@
     "restrict_direct_push_to_main": true,
     "allow_force_pushes": false,
     "allow_branch_deletion": false,
-    "require_conversation_resolution": true
+    "require_conversation_resolution": true,
+    "block_direct_push": true,
+    "require_linear_history": true,
+    "restrict_admin_bypass": true
   },
   "admin_bypass_policy": {
     "allow_admin_bypass": false,
@@ -27,16 +36,19 @@
     "future_exception_process": "Requires explicit governance policy artifact and audit logging."
   },
   "merge_legitimacy_requirements": [
-    "PREO_CANDIDATE generated",
-    "SCO_CANDIDATE generated when governed paths changed",
-    "merge-governance-check passing",
+    "PREO_VALID branch protection check passing",
+    "validated PREO generated for exact head_sha",
+    "validated SCO generated when governed paths changed",
+    "governed merge validation passing",
     "required status checks passing",
+    "deploy proof validation passing before deploy eligibility",
     "branch synchronized with main"
   ],
   "forbidden_paths": [
     "direct push to main",
     "force push to main",
     "merge without required checks",
+    "admin bypass",
     "governed mutation without SCO visibility",
     "merge legitimacy without PREO visibility"
   ],

@@ -32,6 +32,14 @@ jobs:
           REQUIRES_SCO="false"
           RISK_CLASS="P0"
 
+          set_risk_class() {
+            case "$1:$RISK_CLASS" in
+              P3:*) RISK_CLASS="P3" ;;
+              P2:P0|P2:P1|P2:P2) RISK_CLASS="P2" ;;
+              P1:P0|P1:P1) RISK_CLASS="P1" ;;
+            esac
+          }
+
           while IFS= read -r file; do
             case "$file" in
               governance/*)
@@ -39,42 +47,42 @@ jobs:
                 echo "governance_mutation" >> mutation_classes.txt
                 echo "governance_runtime" >> target_surfaces.txt
                 REQUIRES_SCO="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
               .github/workflows/*)
                 echo "$file" >> governed_files.txt
                 echo "workflow_mutation" >> mutation_classes.txt
                 echo "source_control_governance" >> target_surfaces.txt
                 REQUIRES_SCO="true"
-                RISK_CLASS="P3"
+                set_risk_class "P3"
                 ;;
               src/*)
                 echo "$file" >> governed_files.txt
                 echo "runtime_mutation" >> mutation_classes.txt
                 echo "runtime_boundary" >> target_surfaces.txt
                 REQUIRES_SCO="true"
-                RISK_CLASS="P3"
+                set_risk_class "P3"
                 ;;
               schema.sql)
                 echo "$file" >> governed_files.txt
                 echo "schema_mutation" >> mutation_classes.txt
                 echo "database_schema" >> target_surfaces.txt
                 REQUIRES_SCO="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
               migrations/*)
                 echo "$file" >> governed_files.txt
                 echo "migration_mutation" >> mutation_classes.txt
                 echo "database_migration" >> target_surfaces.txt
                 REQUIRES_SCO="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
               wrangler.toml)
                 echo "$file" >> governed_files.txt
                 echo "deployment_config_mutation" >> mutation_classes.txt
                 echo "deployment_configuration" >> target_surfaces.txt
                 REQUIRES_SCO="true"
-                RISK_CLASS="P2"
+                set_risk_class "P2"
                 ;;
             esac
           done < changed_files.txt
@@ -91,6 +99,13 @@ jobs:
             --arg head_sha "${{ github.event.pull_request.head.sha }}" \
             --arg requires_sco "$REQUIRES_SCO" \
             --arg risk_class "$RISK_CLASS" \
+            --arg mutation_type "system_change" \
+            --arg surface "github_pr_merge_surface" \
+            --arg required_review_tier "highest_governance_threshold_for_P3" \
+            --arg policy_impact "$REQUIRES_SCO" \
+            --arg runtime_impact "$REQUIRES_SCO" \
+            --arg proof_requirement "merge_proof_with_preo_hash_and_sco_hash" \
+            --arg rollback_requirement "revert_or_forward_fix_requires_new_SCO" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --slurpfile changed_files <(jq -R . changed_files.txt | jq -s .) \
             --slurpfile governed_files <(jq -R . governed_files.txt | jq -s .) \
@@ -103,12 +118,19 @@ jobs:
               base_branch: $base_branch,
               head_branch: $head_branch,
               head_sha: $head_sha,
+              mutation_type: $mutation_type,
+              surface: $surface,
               changed_files: $changed_files[0],
               governed_files: $governed_files[0],
               mutation_classes: $mutation_classes[0],
               target_surfaces: $target_surfaces[0],
               requires_sco: ($requires_sco == "true"),
               risk_class: $risk_class,
+              required_review_tier: $required_review_tier,
+              policy_impact: ($policy_impact == "true"),
+              runtime_impact: ($runtime_impact == "true"),
+              proof_requirement: $proof_requirement,
+              rollback_requirement: $rollback_requirement,
               created_at: $created_at,
               status: "SCO_CANDIDATE"
             }' > SCO_CANDIDATE.json

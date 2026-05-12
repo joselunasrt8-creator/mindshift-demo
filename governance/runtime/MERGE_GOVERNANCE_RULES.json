@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "purpose": "Canonical governance rules for source-control mutation and merge legitimacy.",
   "merge_surface": "github_pr_merge_surface",
   "rules": [
@@ -8,13 +8,21 @@
     "PREO must bind exact PR head_sha",
     "SCO must bind exact governed files",
     "Merge proof must persist merge_commit_sha",
+    "Merge proof must persist merge_sha",
     "Protected branch required for governed merges",
-    "Direct push to governed branches is a bypass path"
+    "Direct push to governed branches is a bypass path",
+    "merged_object == reviewed_object",
+    "PREO replay must be blocked",
+    "governed merge authority required before deploy eligibility"
   ],
   "required_proof_fields": [
     "pr_number",
     "head_sha",
     "merge_commit_sha",
+    "merge_sha",
+    "preo_hash",
+    "sco_hash",
+    "validator_hash",
     "review_status",
     "checks_status",
     "merged_by",
@@ -24,8 +32,26 @@
     "direct_push_to_main",
     "merge_without_PREO",
     "merge_without_SCO",
+    "merge_without_governed_merge_authority",
     "admin_bypass",
     "force_push",
-    "branch_protection_disabled"
+    "branch_protection_disabled",
+    "merged_object_differs_from_reviewed_object"
+  ],
+  "status": "canonical_next_phase",
+  "canonical_flow": [
+    "PR",
+    "PREO",
+    "SCO classification",
+    "validation",
+    "governed merge authority",
+    "merge proof",
+    "deploy eligibility"
+  ],
+  "target_invariant": "merged_object == reviewed_object",
+  "required_runtime": [
+    "merge_registry",
+    "merge_proof_registry",
+    "merge_authority_registry"
   ]
 }

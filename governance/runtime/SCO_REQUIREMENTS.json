@@ -1,17 +1,20 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "purpose": "Define System Change Object requirements for governance/runtime mutation.",
   "object": "SCO",
   "required_fields": [
     "sco_id",
-    "change_class",
-    "target_surface",
-    "changed_files",
+    "mutation_type",
+    "surface",
     "risk_class",
-    "authority_scope",
-    "validation_requirements",
-    "rollback_requirements",
-    "proof_requirements",
+    "changed_files",
+    "governed_files",
+    "required_review_tier",
+    "policy_impact",
+    "runtime_impact",
+    "proof_requirement",
+    "rollback_requirement",
+    "head_sha",
     "created_at"
   ],
   "rules": [
@@ -19,15 +22,28 @@
     "workflow mutation requires SCO",
     "schema mutation requires SCO",
     "deployment-boundary mutation requires SCO",
+    "execution boundary mutation requires P3 highest governance threshold",
     "SCO must bind exact changed files",
-    "SCO cannot authorize files outside declared scope"
+    "SCO cannot authorize files outside declared scope",
+    "unclassified mutation == NULL"
   ],
   "governed_paths": [
-    "governance/**",
-    ".github/workflows/**",
     "src/**",
-    "schema.sql",
+    "schemas/**",
     "migrations/**",
+    ".github/workflows/**",
+    "runtime/**",
+    "governance/**",
+    "schema.sql",
     "wrangler.toml"
-  ]
+  ],
+  "status": "enforcing_candidate",
+  "target_invariant": "unclassified mutation == NULL",
+  "critical_rule": "P3 requires highest governance threshold",
+  "mutation_classes": {
+    "P0": "documentation",
+    "P1": "low-risk runtime",
+    "P2": "validator/policy",
+    "P3": "execution boundary mutation"
+  }
 }

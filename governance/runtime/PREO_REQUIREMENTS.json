@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "purpose": "Define Pull Request Review Evidence Object requirements before source-control mutation.",
   "object": "PREO",
   "required_fields": [
@@ -9,17 +9,56 @@
     "base_branch",
     "head_branch",
     "head_sha",
+    "base_sha",
     "changed_files",
+    "reviewers",
+    "review_state",
     "review_status",
+    "review_hash",
+    "required_checks",
     "checks_status",
+    "evidence_hash",
     "risk_class",
-    "created_at"
+    "created_at",
+    "issued_at",
+    "expires_at"
   ],
   "rules": [
     "No PREO -> no governed merge",
     "PREO must bind to exact PR head_sha",
+    "PREO must bind exact base_sha",
     "PREO must enumerate changed files",
     "PREO must classify source-control mutation risk",
-    "PREO cannot be reused for a different PR or head_sha"
+    "PREO must include review_registry evidence hash",
+    "PREO must include current-head reviewer authority evidence",
+    "PREO must expire before stale review reuse",
+    "PREO cannot be reused for a different PR or head_sha",
+    "PREO unused required before governed merge",
+    "Branch protection must be active before PREO can authorize merge"
+  ],
+  "status": "enforcing_candidate",
+  "target_invariant": "mergeable == validated_PREO",
+  "runtime_objects": [
+    "PREO",
+    "review_registry",
+    "merge_authority",
+    "merge_proof"
+  ],
+  "validation_requirements": [
+    "PR SHA immutable",
+    "required reviewers present",
+    "review not stale",
+    "checks passed",
+    "PREO hash valid",
+    "PREO unused",
+    "branch protected"
+  ],
+  "fail_conditions": [
+    "force push after review",
+    "stale approval",
+    "missing reviewer",
+    "missing evidence",
+    "head SHA drift",
+    "direct merge path"
   ]
 }

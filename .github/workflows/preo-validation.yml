@@ -1,0 +1,158 @@
+name: PREO_VALID
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+env:
+  PREO_REGISTRY_DIR: governance/preo/preo-registry
+  REQUIRED_CHECKS_JSON: '["merge-governance-check","preo-candidate","sco-candidate"]'
+
+jobs:
+  PREO_VALID:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Extract canonical PR evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$PREO_REGISTRY_DIR"
+
+          git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            | sort -u \
+            | jq -R . \
+            | jq -s . > changed-files.json
+
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" > "$PREO_REGISTRY_DIR/review-evidence.json"
+          gh api "repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }}/check-runs" > check-runs.json
+          jq '.check_runs // []' check-runs.json > "$PREO_REGISTRY_DIR/workflow-evidence.json"
+
+          BRANCH_PROTECTED=$(gh api "repos/${{ github.repository }}/branches/${{ github.base_ref }}" --jq '.protected' 2>/dev/null || echo false)
+          echo "BRANCH_PROTECTED=$BRANCH_PROTECTED" >> "$GITHUB_ENV"
+
+          jq -r --arg head_sha "${{ github.event.pull_request.head.sha }}" '
+            [.[] | select(.state == "APPROVED" and .commit_id == $head_sha) | .user.login] | unique | .[]
+          ' "$PREO_REGISTRY_DIR/review-evidence.json" \
+            | sort -u \
+            | jq -R . \
+            | jq -s . > reviewers.json
+
+          REVIEW_STATE=$(jq -r --arg head_sha "${{ github.event.pull_request.head.sha }}" '
+            if ([.[] | select(.state == "APPROVED" and .commit_id == $head_sha)] | length) > 0 then
+              "APPROVED_CURRENT_HEAD"
+            elif ([.[] | select(.state == "APPROVED" and .commit_id != $head_sha)] | length) > 0 then
+              "STALE_REVIEW"
+            elif ([.[] | select(.state == "CHANGES_REQUESTED")] | length) > 0 then
+              "CHANGES_REQUESTED"
+            else
+              "MISSING_REVIEW"
+            end
+          ' "$PREO_REGISTRY_DIR/review-evidence.json")
+
+          export REVIEW_STATE
+
+          jq -c '.[] | {name, status, conclusion}' "$PREO_REGISTRY_DIR/workflow-evidence.json" \
+            | jq -s 'sort_by(.name)' > workflow-results.json
+
+          cp governance/preo/preo-validator.ts preo-validator.mjs
+          node --input-type=module <<'NODE'
+          import { writeFileSync, readFileSync } from 'node:fs';
+          import { createPreo, sha256Canonical } from './preo-validator.mjs';
+
+          const changedFiles = JSON.parse(readFileSync('changed-files.json', 'utf8'));
+          const reviewers = JSON.parse(readFileSync('reviewers.json', 'utf8'));
+          const workflowResults = JSON.parse(readFileSync('workflow-results.json', 'utf8'));
+          const requiredChecks = JSON.parse(process.env.REQUIRED_CHECKS_JSON);
+          const issuedAt = new Date().toISOString();
+          const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+          const preo = createPreo({
+            preo_id: `PREO-${process.env.PR_NUMBER}-${process.env.HEAD_SHA}`,
+            repo: process.env.REPO,
+            pr_number: Number(process.env.PR_NUMBER),
+            head_sha: process.env.HEAD_SHA,
+            base_sha: process.env.BASE_SHA,
+            reviewers,
+            review_state: process.env.REVIEW_STATE,
+            required_checks: requiredChecks,
+            changed_files: changedFiles,
+            workflow_results: workflowResults,
+            evidence_hash: 'sha256:placeholder',
+            issued_at: issuedAt,
+            expires_at: expiresAt,
+          });
+
+          writeFileSync(`${process.env.PREO_REGISTRY_DIR}/PREO.json`, `${JSON.stringify(preo, null, 2)}\n`);
+          writeFileSync(`${process.env.PREO_REGISTRY_DIR}/PREO_HASH.txt`, `${sha256Canonical(preo)}\n`);
+          NODE
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+      - name: Validate PREO object
+        id: validate_preo
+        run: |
+          set -euo pipefail
+
+          cp governance/preo/preo-validator.ts preo-validator.mjs
+          set +e
+          BRANCH_PROTECTED="$BRANCH_PROTECTED" \
+          EXPECTED_HEAD_SHA="${{ github.event.pull_request.head.sha }}" \
+          node preo-validator.mjs \
+            "$PREO_REGISTRY_DIR/PREO.json" \
+            "$PREO_REGISTRY_DIR/PREO_VALIDATION_RESULT.json"
+          VALIDATION_EXIT=$?
+          set -e
+
+          echo "validation_exit=$VALIDATION_EXIT" >> "$GITHUB_OUTPUT"
+          cat "$PREO_REGISTRY_DIR/PREO_VALIDATION_RESULT.json"
+
+      - name: Upload PREO registry artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PREO_REGISTRY_${{ github.event.pull_request.number }}_${{ github.event.pull_request.head.sha }}
+          path: |
+            governance/preo/preo-registry/PREO.json
+            governance/preo/preo-registry/PREO_HASH.txt
+            governance/preo/preo-registry/PREO_VALIDATION_RESULT.json
+            governance/preo/preo-registry/review-evidence.json
+            governance/preo/preo-registry/workflow-evidence.json
+
+      - name: Require PREO_VALID for merge eligibility
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.validate_preo.outputs.validation_exit }}" -ne 0 ]; then
+            echo "PREO_INVALID — merge blocked"
+            exit 1
+          fi
+
+          STATUS=$(jq -r '.status' "$PREO_REGISTRY_DIR/PREO_VALIDATION_RESULT.json")
+          if [ "$STATUS" != "PREO_VALID" ]; then
+            echo "PREO_INVALID — no valid PREO artifact"
+            exit 1
+          fi
+
+          echo "PREO_VALID — merge eligibility established for exact PR head SHA"

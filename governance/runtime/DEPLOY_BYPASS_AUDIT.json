@@ -1,0 +1,86 @@
+{
+  "version": "1.0",
+  "purpose": "Deploy bypass audit for the GitHub governed production deploy surface.",
+  "target_invariant": "single canonical deploy boundary",
+  "canonical_boundary": [
+    "PREO",
+    "SCO",
+    "validate",
+    "proof"
+  ],
+  "critical_search_targets": [
+    "wrangler deploy",
+    "curl",
+    "fetch(",
+    "cloudflare deploy",
+    "publish",
+    "workflow_dispatch",
+    "repository_dispatch"
+  ],
+  "surfaces": [
+    {
+      "surface": "GitHub Actions",
+      "deploy_capable": true,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": ".github/workflows/governed-deploy.yml"
+    },
+    {
+      "surface": "Wrangler",
+      "deploy_capable": true,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": ".github/workflows/governed-deploy.yml"
+    },
+    {
+      "surface": "npm scripts",
+      "deploy_capable": true,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": "package.json scripts.deploy blocks direct deploy"
+    },
+    {
+      "surface": "curl",
+      "deploy_capable": false,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": "runtime API calls require authority/compile/validate/execute/proof"
+    },
+    {
+      "surface": "Cloudflare APIs",
+      "deploy_capable": true,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": ".github/workflows/governed-deploy.yml"
+    },
+    {
+      "surface": "branch push deploys",
+      "deploy_capable": false,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": "branch protection policy blocks direct push deploys"
+    },
+    {
+      "surface": "manual maintainer deploys",
+      "deploy_capable": true,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": "governed workflow only"
+    },
+    {
+      "surface": "worker publish flows",
+      "deploy_capable": true,
+      "proof_required": true,
+      "governed": true,
+      "bypassable": false,
+      "canonical_path": ".github/workflows/governed-deploy.yml"
+    }
+  ]
+}

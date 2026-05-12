@@ -45,8 +45,16 @@ jobs:
             --arg base_branch "${{ github.base_ref }}" \
             --arg head_branch "${{ github.head_ref }}" \
             --arg head_sha "${{ github.event.pull_request.head.sha }}" \
+            --arg base_sha "${{ github.event.pull_request.base.sha }}" \
             --arg review_status "UNVERIFIED" \
+            --arg review_state "UNVERIFIED" \
+            --arg review_hash "UNVERIFIED" \
             --arg checks_status "UNVERIFIED" \
+            --arg evidence_hash "UNVERIFIED" \
+            --arg issued_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg expires_at "$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson reviewers '[]' \
+            --argjson required_checks '["FATE","PREO validation","SCO validation","governed merge validation","deploy proof validation"]' \
             --arg risk_class "$RISK_CLASS" \
             --arg governed_path_detected "$GOVERNED_PATH_DETECTED" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -58,10 +66,18 @@ jobs:
               base_branch: $base_branch,
               head_branch: $head_branch,
               head_sha: $head_sha,
+              base_sha: $base_sha,
               changed_files: $changed_files[0],
+              reviewers: $reviewers,
+              review_state: $review_state,
               review_status: $review_status,
+              review_hash: $review_hash,
+              required_checks: $required_checks,
               checks_status: $checks_status,
+              evidence_hash: $evidence_hash,
               risk_class: $risk_class,
+              issued_at: $issued_at,
+              expires_at: $expires_at,
               governed_path_detected: ($governed_path_detected == "true"),
               created_at: $created_at,
               status: "PREO_CANDIDATE"
@@ -98,6 +114,8 @@ jobs:
 
           assert.equal(preo.status, 'PREO_CANDIDATE');
           assert.ok(Array.isArray(preo.changed_files), 'changed_files must be an array');
+          assert.ok(Array.isArray(preo.reviewers), 'reviewers must be an array');
+          assert.ok(Array.isArray(preo.required_checks), 'required_checks must be an array');
           assert.ok(String(preo.head_sha).length > 0, 'head_sha must be non-empty');
           NODE
 
