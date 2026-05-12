@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.local/schemas/reconciliation/federated-lineage-evidence.schema.json",
+  "title": "MindShift Federated Lineage Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runtime_id",
+    "trust_domain",
+    "lineage_hash",
+    "decision_id",
+    "validated_object_hash",
+    "invocation_nonce",
+    "proof_id",
+    "revocation_state"
+  ],
+  "properties": {
+    "runtime_id": { "type": "string", "minLength": 1 },
+    "trust_domain": { "enum": ["local_runtime", "foreign_runtime", "portable_proof_bundle"] },
+    "lineage_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "parent_lineage_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "decision_id": { "type": "string", "minLength": 1 },
+    "validated_object_hash": { "type": "string", "minLength": 1 },
+    "invocation_nonce": { "type": "string", "minLength": 1 },
+    "proof_id": { "type": "string", "minLength": 1 },
+    "revocation_state": { "enum": ["ACTIVE", "REVOKED", "EXPIRED", "UNKNOWN"] }
+  }
+}

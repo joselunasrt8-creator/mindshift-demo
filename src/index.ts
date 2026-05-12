@@ -14,7 +14,7 @@ const SESSION_TTL_MS = 3600_000
 const SYSTEM_MAX_CONTINUITY_DEPTH = 32
 const CANONICAL_RUNTIME_ROUTES = ["/session", "/continuity", "/authority", "/compile", "/validate", "/execute", "/proof"] as const
 const GOVERNANCE_EVIDENCE_ROUTES = ["/preo"] as const
-const NON_EXECUTABLE_OBSERVABILITY_ROUTES = ["/reconcile"] as const
+const NON_EXECUTABLE_OBSERVABILITY_ROUTES = ["/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift"] as const
 const REQUIRE_PREO_LINEAGE = "explicit_governed_deploy_policy" as const
 const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
   "session_registry",
@@ -29,6 +29,7 @@ const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
 ] as const
 const RECONCILIATION_MAX_RECURSION_DEPTH = SYSTEM_MAX_CONTINUITY_DEPTH
 const RECONCILIATION_ROW_LIMIT = 2
+const RECONCILIATION_SCHEDULER_BATCH_LIMIT = 25
 
 
 const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
@@ -69,7 +70,7 @@ function schemaDiagnosticReason(error: unknown): SchemaDiagnosticReason {
 }
 
 type TelemetryEventType = "SESSION_CREATED" | "CONTINUITY_CREATED" | "AUTHORITY_CREATED" | "AEO_COMPILED" | "VALIDATION_GRANTED" | "VALIDATION_REJECTED" | "EXECUTION_STARTED" | "EXECUTION_COMPLETED" | "PROOF_PERSISTED" | "REPLAY_BLOCKED" | "HASH_MISMATCH" | "AUTHORITY_CONSUMED"
-type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "traversal_instability_drift" | "telemetry_payload_drift"
+type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift"
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json" } })
@@ -662,6 +663,196 @@ async function deterministicRecursiveReconciliationTraversal(env: Env, anchor: R
   return reconciliationValid(anchor, trace)
 }
 
+
+type ReconciliationScheduleAnchor = ReconciliationAnchor & {
+  canonical_schedule_position: number
+  scheduled_registry: "proof_registry"
+}
+type ReconciliationScheduleWindow = {
+  status: "SCHEDULED_RECONCILIATION" | "NULL"
+  scheduler_mode: "deterministic_read_only_traversal"
+  window_id: string
+  batch_limit: number
+  ordered_by: readonly string[]
+  read_only: true
+  replay_neutral: true
+  canonical_registry_ordering: readonly ReconciliationRegistry[]
+  anchors: ReconciliationScheduleAnchor[]
+}
+type ReconciliationSummaryObject = {
+  reconciliation_id: string
+  reconciliation_timestamp: string
+  status: ReconciliationStatus
+  lineage_anchor: string
+  traversal_trace: ReconciliationTraceEntry[]
+  drift_classifications: ReconciliationDrift[]
+  registry_lineage_anchors: string[]
+  registry_integrity_summary: {
+    registries_checked: number
+    drift_count: number
+    bounded_recursion_depth: number
+    canonical_registry_ordering: readonly ReconciliationRegistry[]
+  }
+}
+type FederatedLineageEvidence = {
+  runtime_id: string
+  trust_domain: "local_runtime" | "foreign_runtime" | "portable_proof_bundle"
+  lineage_hash: string
+  decision_id: string
+  validated_object_hash: string
+  invocation_nonce: string
+  proof_id: string
+  revocation_state: "ACTIVE" | "REVOKED" | "EXPIRED" | "UNKNOWN"
+  parent_lineage_hash?: string
+}
+type FederatedLineageVerification = {
+  status: "FEDERATED_LINEAGE_OBSERVED" | "NULL"
+  drift_class?: DriftClass
+  local_runtime_id: string
+  remote_runtime_id: string
+  trust_domain_boundary: "foreign_lineage_is_evidence_not_authority"
+  bounded_federation_depth: number
+  replay_isolation: "remote_replay_state_not_consumed"
+  lineage_continuity_hash?: string
+}
+type PortableReconciliationEnvelope = {
+  media_type: "application/vnd.mindshift.reconciliation+jcs"
+  dsse_payload_type: "application/vnd.mindshift.reconciliation.v1+json"
+  canonicalization: "JCS"
+  content_addressed_lineage_hash: string
+  exact_object_hash: string
+  payload: Record<string, unknown>
+}
+
+function reconciliationAnchorFromRequest(url: URL): ReconciliationAnchor {
+  return {
+    session_id: url.searchParams.get("session_id") || undefined,
+    continuity_id: url.searchParams.get("continuity_id") || undefined,
+    decision_id: url.searchParams.get("decision_id") || undefined,
+    execution_id: url.searchParams.get("execution_id") || undefined,
+    proof_id: url.searchParams.get("proof_id") || undefined,
+    validated_object_hash: url.searchParams.get("validated_object_hash") || undefined,
+    invocation_nonce: url.searchParams.get("invocation_nonce") || undefined
+  }
+}
+
+async function deterministicReconciliationId(kind: string, payload: unknown): Promise<string> {
+  return sha256Hex(canonicalize({ kind, payload }))
+}
+
+async function deterministicReconciliationSchedule(env: Env): Promise<ReconciliationScheduleWindow> {
+  const ordered_by = [
+    "proof_registry.created_at ASC",
+    "proof_registry.decision_id ASC",
+    "proof_registry.execution_id ASC",
+    "proof_registry.proof_id ASC"
+  ] as const
+  if (!hasDb(env)) {
+    return {
+      status: "NULL",
+      scheduler_mode: "deterministic_read_only_traversal",
+      window_id: await deterministicReconciliationId("schedule", { anchors: [], ordered_by }),
+      batch_limit: RECONCILIATION_SCHEDULER_BATCH_LIMIT,
+      ordered_by,
+      read_only: true,
+      replay_neutral: true,
+      canonical_registry_ordering: CANONICAL_RECONCILIATION_REGISTRY_ORDER,
+      anchors: []
+    }
+  }
+  const result = await env.DB.prepare(`SELECT session_id,continuity_id,decision_id,execution_id,proof_id,validated_object_hash FROM proof_registry ORDER BY created_at ASC, decision_id ASC, execution_id ASC, proof_id ASC LIMIT ${RECONCILIATION_SCHEDULER_BATCH_LIMIT}`).all<any>()
+  const anchors = (Array.isArray(result?.results) ? result.results : []).map((row, index): ReconciliationScheduleAnchor => ({
+    canonical_schedule_position: index + 1,
+    scheduled_registry: "proof_registry",
+    session_id: String(row.session_id || ""),
+    continuity_id: String(row.continuity_id || ""),
+    decision_id: String(row.decision_id || ""),
+    execution_id: String(row.execution_id || ""),
+    proof_id: String(row.proof_id || ""),
+    validated_object_hash: String(row.validated_object_hash || "")
+  }))
+  const windowCore = { anchors, batch_limit: RECONCILIATION_SCHEDULER_BATCH_LIMIT, ordered_by }
+  return {
+    status: anchors.length ? "SCHEDULED_RECONCILIATION" : "NULL",
+    scheduler_mode: "deterministic_read_only_traversal",
+    window_id: await deterministicReconciliationId("schedule", windowCore),
+    batch_limit: RECONCILIATION_SCHEDULER_BATCH_LIMIT,
+    ordered_by,
+    read_only: true,
+    replay_neutral: true,
+    canonical_registry_ordering: CANONICAL_RECONCILIATION_REGISTRY_ORDER,
+    anchors
+  }
+}
+
+async function reconciliationSummaryObject(result: ReconciliationResult, reconciliation_timestamp: string): Promise<ReconciliationSummaryObject> {
+  const registry_lineage_anchors = result.deterministic_traversal_trace.map((entry) => canonicalize({ registry: entry.registry, lookup_key: entry.lookup_key, lineage_hash: entry.lineage_hash || "" }))
+  const stable = {
+    status: result.status,
+    lineage_anchor: result.lineage_anchor,
+    traversal_trace: result.deterministic_traversal_trace,
+    drift_classifications: result.drift_classifications.map((drift) => drift.drift_class),
+    registry_lineage_anchors
+  }
+  return {
+    reconciliation_id: await deterministicReconciliationId("report", stable),
+    reconciliation_timestamp,
+    status: result.status,
+    lineage_anchor: result.lineage_anchor,
+    traversal_trace: result.deterministic_traversal_trace.map((entry) => ({ ...entry })),
+    drift_classifications: result.drift_classifications.map((drift) => ({ ...drift, deterministic_trace: drift.deterministic_trace.map((entry) => ({ ...entry })) })),
+    registry_lineage_anchors,
+    registry_integrity_summary: {
+      registries_checked: result.deterministic_traversal_trace.length,
+      drift_count: result.drift_classifications.length,
+      bounded_recursion_depth: result.recursion_depth,
+      canonical_registry_ordering: CANONICAL_RECONCILIATION_REGISTRY_ORDER
+    }
+  }
+}
+
+async function portableReconciliationEnvelope(payload: Record<string, unknown>): Promise<PortableReconciliationEnvelope> {
+  const exact_object_hash = await sha256Hex(canonicalize(payload))
+  return {
+    media_type: "application/vnd.mindshift.reconciliation+jcs",
+    dsse_payload_type: "application/vnd.mindshift.reconciliation.v1+json",
+    canonicalization: "JCS",
+    content_addressed_lineage_hash: await sha256Hex(canonicalize({ exact_object_hash, lineage_anchor: String(payload.lineage_anchor || "") })),
+    exact_object_hash,
+    payload: canonicalRecord(payload)
+  }
+}
+
+async function verifyFederatedLineageContinuity(evidence: FederatedLineageEvidence[], local_runtime_id: string): Promise<FederatedLineageVerification> {
+  const bounded_federation_depth = evidence.length
+  if (!local_runtime_id || bounded_federation_depth === 0 || bounded_federation_depth > RECONCILIATION_MAX_RECURSION_DEPTH) {
+    return { status: "NULL", drift_class: "federated_lineage_drift", local_runtime_id, remote_runtime_id: "", trust_domain_boundary: "foreign_lineage_is_evidence_not_authority", bounded_federation_depth, replay_isolation: "remote_replay_state_not_consumed" }
+  }
+  const [head, ...rest] = evidence
+  if (head.trust_domain !== "local_runtime" || head.runtime_id !== local_runtime_id) {
+    return { status: "NULL", drift_class: "foreign_ancestry_mismatch_drift", local_runtime_id, remote_runtime_id: String(head.runtime_id || ""), trust_domain_boundary: "foreign_lineage_is_evidence_not_authority", bounded_federation_depth, replay_isolation: "remote_replay_state_not_consumed" }
+  }
+  let previous = head
+  for (const item of rest) {
+    if (item.trust_domain === "local_runtime" || String(item.parent_lineage_hash || "") !== String(previous.lineage_hash || "")) {
+      return { status: "NULL", drift_class: "federated_lineage_drift", local_runtime_id, remote_runtime_id: String(item.runtime_id || ""), trust_domain_boundary: "foreign_lineage_is_evidence_not_authority", bounded_federation_depth, replay_isolation: "remote_replay_state_not_consumed" }
+    }
+    if (item.decision_id !== previous.decision_id || item.validated_object_hash !== previous.validated_object_hash || item.invocation_nonce !== previous.invocation_nonce) {
+      return { status: "NULL", drift_class: "federated_replay_discontinuity_drift", local_runtime_id, remote_runtime_id: String(item.runtime_id || ""), trust_domain_boundary: "foreign_lineage_is_evidence_not_authority", bounded_federation_depth, replay_isolation: "remote_replay_state_not_consumed" }
+    }
+    previous = item
+  }
+  return {
+    status: "FEDERATED_LINEAGE_OBSERVED",
+    local_runtime_id,
+    remote_runtime_id: String(previous.runtime_id || ""),
+    trust_domain_boundary: "foreign_lineage_is_evidence_not_authority",
+    bounded_federation_depth,
+    replay_isolation: "remote_replay_state_not_consumed",
+    lineage_continuity_hash: await sha256Hex(canonicalize(evidence))
+  }
+}
+
 async function quarantineHistoricalProofDuplicates(env: Env) {
   const archived_at = new Date().toISOString()
   await env.DB.prepare(`INSERT OR IGNORE INTO proof_registry_duplicate_archive (archive_id,proof_id,session_id,execution_id,decision_id,validated_object_hash,surface,run_id,commit_sha,workflow,environment,created_at,archived_at,archive_reason,canonical_proof_id)
@@ -881,6 +1072,36 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname === "/health" && request.method === "GET") return json({ ok: true })
+    if (url.pathname === "/reconcile" && request.method === "GET") return json({ status: "NULL", route: "/reconcile", reason: "observability_only" })
+    if (url.pathname === "/reconcile/schedule" && request.method === "GET") {
+      try {
+        const schedule = await deterministicReconciliationSchedule(env)
+        return json({ ...schedule, route: "/reconcile/schedule", reason: "observability_only" })
+      } catch {
+        return json({ status: "NULL", route: "/reconcile/schedule", reason: "reconciliation_unavailable" })
+      }
+    }
+    if (url.pathname === "/reconcile/report" && request.method === "GET") {
+      try {
+        const anchor = reconciliationAnchorFromRequest(url)
+        const result = await deterministicRecursiveReconciliationTraversal(env, anchor)
+        const summary = await reconciliationSummaryObject(result, new Date().toISOString())
+        const portable = await portableReconciliationEnvelope(summary as unknown as Record<string, unknown>)
+        return json({ status: result.result, route: "/reconcile/report", reason: "observability_only", report: summary, portable })
+      } catch {
+        return json({ status: "NULL", route: "/reconcile/report", reason: "reconciliation_unavailable" })
+      }
+    }
+    if (url.pathname === "/reconcile/drift" && request.method === "GET") {
+      try {
+        const anchor = reconciliationAnchorFromRequest(url)
+        const result = await deterministicRecursiveReconciliationTraversal(env, anchor)
+        const summary = await reconciliationSummaryObject(result, new Date().toISOString())
+        return json({ status: result.result, route: "/reconcile/drift", reason: "observability_only", reconciliation_id: summary.reconciliation_id, drift: result.drift_classifications })
+      } catch {
+        return json({ status: "NULL", route: "/reconcile/drift", reason: "reconciliation_unavailable" })
+      }
+    }
     if (NON_EXECUTABLE_OBSERVABILITY_ROUTES.includes(url.pathname as any)) return json({ status: "NULL", route: url.pathname, reason: "observability_only" }, request.method === "GET" ? 200 : 405)
 
     const canonicalRuntimeRoute = CANONICAL_RUNTIME_ROUTES.includes(url.pathname as any)

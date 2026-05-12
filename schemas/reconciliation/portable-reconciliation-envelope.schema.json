@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.local/schemas/reconciliation/portable-reconciliation-envelope.schema.json",
+  "title": "MindShift Portable Reconciliation Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "media_type",
+    "dsse_payload_type",
+    "canonicalization",
+    "content_addressed_lineage_hash",
+    "exact_object_hash",
+    "payload"
+  ],
+  "properties": {
+    "media_type": { "const": "application/vnd.mindshift.reconciliation+jcs" },
+    "dsse_payload_type": { "const": "application/vnd.mindshift.reconciliation.v1+json" },
+    "canonicalization": { "const": "JCS" },
+    "content_addressed_lineage_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "exact_object_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "payload": {
+      "type": "object",
+      "required": ["lineage_anchor"],
+      "properties": {
+        "lineage_anchor": { "type": "string" },
+        "drift_classifications": { "type": "array" },
+        "traversal_trace": { "type": "array" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
