@@ -122,6 +122,14 @@ test('migration chain reproduces canonical runtime registry schemas', () => {
     assertColumns(dbPath, 'federated_revocation_observability_registry', ['revocation_evidence_id', 'runtime_id', 'remote_runtime_id', 'continuity_id', 'decision_id', 'validated_object_hash', 'revocation_class', 'revocation_reason', 'lineage_hash', 'reconciliation_merkle_root', 'attestation_hash', 'observed_at', 'evidence_hash', 'verification_status', 'drift_class', 'created_at'])
     assertNotNull(dbPath, 'federated_revocation_observability_registry', ['runtime_id', 'remote_runtime_id', 'continuity_id', 'decision_id', 'validated_object_hash', 'revocation_class', 'revocation_reason', 'lineage_hash', 'reconciliation_merkle_root', 'attestation_hash', 'observed_at', 'evidence_hash', 'verification_status', 'created_at'])
     assertIndex(dbPath, 'federated_revocation_observability_registry', 'idx_federated_revocation_observability_lineage', ['runtime_id', 'remote_runtime_id', 'decision_id', 'validated_object_hash'])
+
+    assertColumns(dbPath, 'federated_trust_registry', ['trust_envelope_id', 'federation_origin', 'federation_tier', 'verification_status', 'evidence_only', 'remote_authority_denied', 'continuity_reference', 'lineage_root', 'observed_at', 'canonical_hash', 'created_at'])
+    assertNotNull(dbPath, 'federated_trust_registry', ['federation_origin', 'federation_tier', 'verification_status', 'evidence_only', 'remote_authority_denied', 'continuity_reference', 'lineage_root', 'observed_at', 'canonical_hash', 'created_at'])
+    assertIndex(dbPath, 'federated_trust_registry', 'idx_federated_trust_registry_hash', ['canonical_hash'])
+
+    assertColumns(dbPath, 'revocation_topology_registry', ['topology_id', 'authority_id', 'continuity_id', 'lineage_root', 'topology_hash', 'drift_summary', 'observed_at', 'created_at'])
+    assertNotNull(dbPath, 'revocation_topology_registry', ['lineage_root', 'topology_hash', 'drift_summary', 'observed_at', 'created_at'])
+    assertIndex(dbPath, 'revocation_topology_registry', 'idx_revocation_topology_registry_hash', ['topology_hash'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
