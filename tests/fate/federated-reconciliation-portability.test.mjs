@@ -125,6 +125,13 @@ test('portable revocation evidence uses persisted identifiers without authority 
   assert.match(source, /federated_identifier_resolution_drift/)
 })
 
+test('federated revocation observability declarations remain parser-clean and singular', () => {
+  assert.match(source, /federated_reconciliation_registry: \[[^\n]+\],\n  federated_revocation_observability_registry: \[/)
+  assert.match(source, /idx_federated_reconciliation_runtime_hash[\s\S]*`,\n      `CREATE TABLE IF NOT EXISTS federated_revocation_observability_registry/)
+  assert.equal((source.match(/federated_revocation_observability_registry:/g) || []).length, 1)
+  assert.equal((source.match(/CREATE TABLE IF NOT EXISTS federated_revocation_observability_registry/g) || []).length, 1)
+})
+
 test('portable reconciliation identity hardening preserves portability and exact-object boundaries', () => {
   assert.match(source, /function resolvedPortableIdentifiersFromCanonicalRows/)
   assert.match(source, /lookup_key is traversal-only evidence and MUST NEVER be emitted as canonical portable identity/)

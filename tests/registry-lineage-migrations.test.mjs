@@ -118,6 +118,10 @@ test('migration chain reproduces canonical runtime registry schemas', () => {
 
     assertColumns(dbPath, 'drift_registry', ['drift_id', 'drift_class', 'severity', 'decision_id', 'execution_id', 'payload', 'detected_by', 'resolution_status', 'created_at'])
     assertNotNull(dbPath, 'drift_registry', ['drift_class', 'severity', 'payload', 'detected_by', 'resolution_status', 'created_at'])
+
+    assertColumns(dbPath, 'federated_revocation_observability_registry', ['revocation_evidence_id', 'runtime_id', 'remote_runtime_id', 'continuity_id', 'decision_id', 'validated_object_hash', 'revocation_class', 'revocation_reason', 'lineage_hash', 'reconciliation_merkle_root', 'attestation_hash', 'observed_at', 'evidence_hash', 'verification_status', 'drift_class', 'created_at'])
+    assertNotNull(dbPath, 'federated_revocation_observability_registry', ['runtime_id', 'remote_runtime_id', 'continuity_id', 'decision_id', 'validated_object_hash', 'revocation_class', 'revocation_reason', 'lineage_hash', 'reconciliation_merkle_root', 'attestation_hash', 'observed_at', 'evidence_hash', 'verification_status', 'created_at'])
+    assertIndex(dbPath, 'federated_revocation_observability_registry', 'idx_federated_revocation_observability_lineage', ['runtime_id', 'remote_runtime_id', 'decision_id', 'validated_object_hash'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
