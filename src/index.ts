@@ -29,6 +29,9 @@ const RUNTIME_ID = "mindshift-worker-runtime" as const
 const RUNTIME_VERSION = "runtime-sovereignty-v1" as const
 const RUNTIME_SOVEREIGNTY_ROUTE = "/runtime/sovereignty" as const
 const EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE = "/runtime/sovereignty/external-authority" as const
+const BOOTSTRAP_VERIFY_ROUTE = "/runtime/bootstrap/verify" as const
+const BOOTSTRAP_TOPOLOGY_ROUTE = "/runtime/bootstrap/topology" as const
+const BOOTSTRAP_CHECKPOINT_ROUTE = "/runtime/bootstrap/checkpoint" as const
 const BOOTSTRAP_READY_DATABASES = new WeakSet<D1Database>()
 const RUNTIME_SOVEREIGNTY_FREEZES = new WeakMap<D1Database, RuntimeSovereigntyManifest>()
 const PROVENANCE_PAYLOAD_TYPE = "application/vnd.mindshift.cryptographic-provenance.v1+json"
@@ -41,7 +44,7 @@ const RECURSIVE_GOVERNANCE_ADMISSION_ROUTE = "/governance/recursive/admit" as co
 const RECURSIVE_GOVERNANCE_SELF_INTEGRITY_ROUTE = "/governance/recursive/self-integrity" as const
 const RUNTIME_EVOLUTION_CONSENSUS_ROUTE = "/governance/evolution/consensus" as const
 const RUNTIME_EVOLUTION_CONSENSUS_REGISTRY = "runtime_evolution_consensus_registry" as const
-const NON_EXECUTABLE_OBSERVABILITY_ROUTES = [RUNTIME_SOVEREIGNTY_ROUTE, RUNTIME_EVOLUTION_CONSENSUS_ROUTE, "/governance/recursive/verify", "/governance/recursive/self-integrity", "/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/reconcile/distributed", "/federation/reconcile/compression", "/federation/interoperability/checkpoint", "/federation/conformance", "/federation/sovereignty/checkpoint", EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE] as const
+const NON_EXECUTABLE_OBSERVABILITY_ROUTES = [RUNTIME_SOVEREIGNTY_ROUTE, RUNTIME_EVOLUTION_CONSENSUS_ROUTE, "/governance/recursive/verify", "/governance/recursive/self-integrity", "/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/reconcile/distributed", "/federation/reconcile/compression", "/federation/interoperability/checkpoint", "/federation/conformance", "/federation/sovereignty/checkpoint", EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE] as const
 const REQUIRE_PREO_LINEAGE = "explicit_governed_deploy_policy" as const
 const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
   "session_registry",
@@ -66,6 +69,7 @@ const DISTRIBUTED_LEGITIMACY_REGISTRY = "distributed_legitimacy_registry" as con
 const FEDERATED_CHECKPOINT_REGISTRY = "federated_checkpoint_registry" as const
 const FEDERATION_CONFORMANCE_REGISTRY = "federation_conformance_registry" as const
 const FEDERATED_SOVEREIGNTY_REGISTRY = "federated_sovereignty_registry" as const
+const BOOTSTRAP_SOVEREIGNTY_REGISTRY = "bootstrap_sovereignty_registry" as const
 
 
 const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
@@ -95,6 +99,7 @@ const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
   recursive_governance_registry: ["governance_id", "mutation_class", "mutation_scope", "target_surface", "mutation_hash", "sco_hash", "preo_hash", "governance_decision", "drift_classes", "exact_object_verified", "replay_neutral", "mutation_authorized", "proof_required", "canonical_path_preserved", "generated_at", "created_at"],
   runtime_sovereignty_registry: ["sovereignty_id", "sovereignty_hash", "runtime_surface_hash", "governance_surface_hash", "replay_surface_hash", "proof_surface_hash", "validator_surface_hash", "schema_hash", "migration_chain_hash", "generated_at"],
   external_authority_registry: ["sovereignty_dependency_id", "external_authority_surface", "authority_origin", "infrastructure_scope", "bootstrap_trust_hash", "sovereignty_classification", "containment_state", "observability_only", "replay_neutral", "evidence_hash", "drift_classes", "created_at"],
+  bootstrap_sovereignty_registry: ["checkpoint_id", "manifest_hash", "lineage_checkpoint_hash", "deployment_lineage_root", "bootstrap_trust_root_hash", "initialization_order_hash", "startup_dependency_graph_hash", "startup_topology_hash", "replay_neutrality_hash", "conformance_status", "drift_classes", "evidence_only", "replay_neutral", "mutation_capable", "remote_authority_denied", "read_only", "generated_at", "created_at"],
   runtime_governance_lock_registry: ["lock_id", "mutation_hash", "governance_id", "lock_state", "activation_allowed", "canonical_hash", "created_at"],
   recursive_governance_replay_registry: ["replay_id", "mutation_hash", "sco_hash", "preo_hash", "governance_id", "activation_lock_id", "consumed_at"],
   runtime_evolution_consensus_registry: ["consensus_id", "mutation_hash", "canonical_hash", "governance_scope", "quorum_threshold", "approval_count", "approval_hash", "consensus_status", "replay_neutral", "evidence_only", "generated_at", "created_at"]
@@ -206,6 +211,72 @@ type RuntimeSovereigntyManifest = {
   generated_at: string
 }
 
+type BootstrapSovereigntyDriftClass =
+  | "bootstrap_order_divergence"
+  | "undeclared_bootstrap_dependency"
+  | "bootstrap_authority_inheritance"
+  | "initialization_surface_expansion"
+  | "startup_topology_instability"
+  | "deployment_root_divergence"
+  | "runtime_bootstrap_corruption"
+  | "recursive_bootstrap_instability"
+  | "bootstrap_replay_instability"
+  | "initialization_lineage_fragmentation"
+
+type BootstrapDependencyNode = {
+  dependency_id: string
+  dependency_class: "runtime" | "registry" | "governance" | "infrastructure"
+  declared_surface: string
+  authority_granted: false
+  execution_capable: false
+  mutation_capable: false
+  replay_neutral: true
+}
+
+type BootstrapSovereigntyManifest = {
+  manifest_type: "deterministic_runtime_initialization_manifest"
+  runtime_id: string
+  runtime_version: string
+  initialization_order: readonly string[]
+  startup_dependencies: readonly BootstrapDependencyNode[]
+  deployment_lineage_root: string
+  bootstrap_trust_root_hash: string
+  initialization_order_hash: string
+  runtime_initialization_ordering_proof: string
+  startup_dependency_graph_hash: string
+  startup_topology_hash: string
+  replay_neutrality_hash: string
+  recursive_bootstrap_hash: string
+  manifest_hash: string
+  evidence_only: true
+  replay_neutral: true
+  mutation_capable: false
+  remote_authority_denied: true
+  read_only: true
+}
+
+type BootstrapLineageCheckpoint = {
+  checkpoint_id: string
+  checkpoint_type: "bootstrap_lineage_checkpoint"
+  manifest_hash: string
+  lineage_checkpoint_hash: string
+  deployment_lineage_root: string
+  bootstrap_trust_root_hash: string
+  initialization_order_hash: string
+  startup_dependency_graph_hash: string
+  startup_topology_hash: string
+  replay_neutrality_hash: string
+  recursive_bootstrap_hash: string
+  conformance_status: "BOOTSTRAP_CONFORMANT" | "NULL"
+  drift_classes: BootstrapSovereigntyDriftClass[]
+  generated_at: string
+  evidence_only: true
+  replay_neutral: true
+  mutation_capable: false
+  remote_authority_denied: true
+  read_only: true
+}
+
 type RuntimeSovereigntyDriftClass =
   | "external_authority_drift"
   | "sovereignty_boundary_fragmentation"
@@ -213,7 +284,7 @@ type RuntimeSovereigntyDriftClass =
   | "bootstrap_trust_divergence"
   | "undeclared_execution_surface"
   | "infrastructure_authority_expansion"
-  | "hidden_mutation_surface"
+  | "hidden_mutation_surface" | BootstrapSovereigntyDriftClass
   | "route_mutation"
   | "validator_mutation"
   | "schema_mutation"
@@ -339,7 +410,7 @@ type RuntimeEvolutionConsensusEnvelope = {
   remote_authority_inherited: false
 }
 
-type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift" | "attestation_drift" | "signature_drift" | "signer_identity_drift" | "payload_drift" | "transparency_drift" | "federated_checkpoint_drift" | "federated_merkle_drift" | "federated_bundle_drift" | "federated_attestation_drift" | "federated_reconciliation_drift" | "federated_runtime_divergence_drift" | "federated_replay_drift" | "federated_preo_drift" | "federated_continuity_drift" | "federated_exact_object_drift" | "federated_identifier_resolution_drift" | "federated_revocation_projection_drift" | "federated_revocation_divergence_drift" | "federated_revocation_exact_object_drift" | "federated_revocation_replay_drift" | "federated_revocation_anchor_drift" | "federated_checkpoint_revocation_drift" | "federated_expiration_visibility_drift" | "orphaned_execution" | "revoked_authority_execution" | "federated_lineage_divergence" | "replay_resurrection_attempt" | "distributed_lineage_divergence" | "checkpoint_hash_instability" | "federated_projection_corruption" | "remote_authority_claim" | "interoperability_replay_attempt" | "checkpoint_divergence" | "federated_replay_collision" | "authority_conflict" | "lineage_instability" | "topology_divergence" | "projection_corruption" | "cross_runtime_hash_mismatch" | "compression_divergence" | "reconciliation_instability" | "federated_summary_mismatch" | "topology_compression_corruption" | "replay_summary_divergence" | "semantic_conformance_drift" | "checkpoint_semantic_mismatch" | "federation_policy_divergence" | "compression_semantic_instability" | "runtime_fingerprint_mismatch" | "quorum_divergence" | "maintainer_set_drift" | "governance_replay_attempt" | "approval_hash_mismatch" | "reviewed_commit_drift" | "mutation_scope_expansion" | "runtime_evolution_bypass" | "consensus_instability" | "non_deterministic_approval_order" | "federation_authority_inheritance_attempt" | "external_authority_drift" | "sovereignty_boundary_fragmentation" | "deploy_authority_escape" | "bootstrap_trust_divergence" | "undeclared_execution_surface" | "infrastructure_authority_expansion" | "hidden_mutation_surface"
+type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift" | "attestation_drift" | "signature_drift" | "signer_identity_drift" | "payload_drift" | "transparency_drift" | "federated_checkpoint_drift" | "federated_merkle_drift" | "federated_bundle_drift" | "federated_attestation_drift" | "federated_reconciliation_drift" | "federated_runtime_divergence_drift" | "federated_replay_drift" | "federated_preo_drift" | "federated_continuity_drift" | "federated_exact_object_drift" | "federated_identifier_resolution_drift" | "federated_revocation_projection_drift" | "federated_revocation_divergence_drift" | "federated_revocation_exact_object_drift" | "federated_revocation_replay_drift" | "federated_revocation_anchor_drift" | "federated_checkpoint_revocation_drift" | "federated_expiration_visibility_drift" | "orphaned_execution" | "revoked_authority_execution" | "federated_lineage_divergence" | "replay_resurrection_attempt" | "distributed_lineage_divergence" | "checkpoint_hash_instability" | "federated_projection_corruption" | "remote_authority_claim" | "interoperability_replay_attempt" | "checkpoint_divergence" | "federated_replay_collision" | "authority_conflict" | "lineage_instability" | "topology_divergence" | "projection_corruption" | "cross_runtime_hash_mismatch" | "compression_divergence" | "reconciliation_instability" | "federated_summary_mismatch" | "topology_compression_corruption" | "replay_summary_divergence" | "semantic_conformance_drift" | "checkpoint_semantic_mismatch" | "federation_policy_divergence" | "compression_semantic_instability" | "runtime_fingerprint_mismatch" | "quorum_divergence" | "maintainer_set_drift" | "governance_replay_attempt" | "approval_hash_mismatch" | "reviewed_commit_drift" | "mutation_scope_expansion" | "runtime_evolution_bypass" | "consensus_instability" | "non_deterministic_approval_order" | "federation_authority_inheritance_attempt" | "external_authority_drift" | "sovereignty_boundary_fragmentation" | "deploy_authority_escape" | "bootstrap_trust_divergence" | "undeclared_execution_surface" | "infrastructure_authority_expansion" | "hidden_mutation_surface" | BootstrapSovereigntyDriftClass
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json" } })
@@ -681,6 +752,9 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE TABLE IF NOT EXISTS external_authority_registry (sovereignty_dependency_id TEXT PRIMARY KEY, external_authority_surface TEXT NOT NULL, authority_origin TEXT NOT NULL, infrastructure_scope TEXT NOT NULL, bootstrap_trust_hash TEXT NOT NULL, sovereignty_classification TEXT NOT NULL, containment_state TEXT NOT NULL, observability_only TEXT NOT NULL CHECK (observability_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), evidence_hash TEXT NOT NULL UNIQUE, drift_classes TEXT NOT NULL, created_at TEXT NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_external_authority_registry_surface ON external_authority_registry(external_authority_surface, authority_origin, containment_state)`,
       `CREATE INDEX IF NOT EXISTS idx_external_authority_registry_bootstrap ON external_authority_registry(bootstrap_trust_hash, sovereignty_classification)`,
+      `CREATE TABLE IF NOT EXISTS bootstrap_sovereignty_registry (checkpoint_id TEXT PRIMARY KEY, manifest_hash TEXT NOT NULL, lineage_checkpoint_hash TEXT NOT NULL, deployment_lineage_root TEXT NOT NULL, bootstrap_trust_root_hash TEXT NOT NULL, initialization_order_hash TEXT NOT NULL, startup_dependency_graph_hash TEXT NOT NULL, startup_topology_hash TEXT NOT NULL, replay_neutrality_hash TEXT NOT NULL, conformance_status TEXT NOT NULL CHECK (conformance_status IN ('BOOTSTRAP_CONFORMANT','NULL')), drift_classes TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), remote_authority_denied TEXT NOT NULL CHECK (remote_authority_denied='true'), read_only TEXT NOT NULL CHECK (read_only='true'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_bootstrap_sovereignty_registry_manifest ON bootstrap_sovereignty_registry(manifest_hash, lineage_checkpoint_hash, conformance_status)`,
+      `CREATE INDEX IF NOT EXISTS idx_bootstrap_sovereignty_registry_topology ON bootstrap_sovereignty_registry(deployment_lineage_root, bootstrap_trust_root_hash, startup_topology_hash)`,
       `CREATE INDEX IF NOT EXISTS idx_runtime_evolution_consensus_registry_mutation ON runtime_evolution_consensus_registry(mutation_hash, canonical_hash, governance_scope)`,
       `CREATE INDEX IF NOT EXISTS idx_runtime_evolution_consensus_registry_approval ON runtime_evolution_consensus_registry(approval_hash, consensus_status)`,
       `CREATE TRIGGER IF NOT EXISTS trg_distributed_legitimacy_registry_no_update BEFORE UPDATE ON distributed_legitimacy_registry BEGIN SELECT RAISE(ABORT, 'distributed_legitimacy_registry is append-only'); END`,
@@ -701,6 +775,8 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE TRIGGER IF NOT EXISTS trg_runtime_evolution_consensus_registry_no_delete BEFORE DELETE ON runtime_evolution_consensus_registry BEGIN SELECT RAISE(ABORT, 'runtime_evolution_consensus_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_external_authority_registry_no_update BEFORE UPDATE ON external_authority_registry BEGIN SELECT RAISE(ABORT, 'external_authority_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_external_authority_registry_no_delete BEFORE DELETE ON external_authority_registry BEGIN SELECT RAISE(ABORT, 'external_authority_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_update BEFORE UPDATE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_delete BEFORE DELETE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_federated_reconciliation_registry_no_update BEFORE UPDATE ON federated_reconciliation_registry BEGIN SELECT RAISE(ABORT, 'federated_reconciliation_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_federated_reconciliation_registry_no_delete BEFORE DELETE ON federated_reconciliation_registry BEGIN SELECT RAISE(ABORT, 'federated_reconciliation_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_governance_compression_registry_no_update BEFORE UPDATE ON governance_compression_registry BEGIN SELECT RAISE(ABORT, 'governance_compression_registry is append-only'); END`,
@@ -736,6 +812,9 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
     await emitBootstrapDiagnostic(env, "BOOTSTRAP_RUNTIME_SOVEREIGNTY_FROZEN")
     await appendRuntimeSovereigntyCheckpoint(env, sovereigntyManifest)
     await emitBootstrapDiagnostic(env, "BOOTSTRAP_SOVEREIGNTY_CHECKPOINT_GENERATED")
+    const bootstrapManifest = await buildBootstrapSovereigntyManifest()
+    const bootstrapCheckpoint = await buildBootstrapLineageCheckpoint(bootstrapManifest, [], new Date().toISOString())
+    await appendBootstrapSovereigntyCheckpoint(env, bootstrapCheckpoint)
     await activateAppendOnlyRegistryEnforcement(env)
     await emitBootstrapDiagnostic(env, "BOOTSTRAP_APPEND_ONLY_TRIGGERS_ACTIVATED")
     BOOTSTRAP_READY_DATABASES.add(env.DB)
@@ -764,7 +843,9 @@ async function activateAppendOnlyRegistryEnforcement(env: Env) {
     `CREATE TRIGGER IF NOT EXISTS trg_runtime_sovereignty_registry_no_update BEFORE UPDATE ON runtime_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'runtime_sovereignty_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_runtime_sovereignty_registry_no_delete BEFORE DELETE ON runtime_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'runtime_sovereignty_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_runtime_evolution_consensus_registry_no_update BEFORE UPDATE ON runtime_evolution_consensus_registry BEGIN SELECT RAISE(ABORT, 'runtime_evolution_consensus_registry is append-only'); END`,
-    `CREATE TRIGGER IF NOT EXISTS trg_runtime_evolution_consensus_registry_no_delete BEFORE DELETE ON runtime_evolution_consensus_registry BEGIN SELECT RAISE(ABORT, 'runtime_evolution_consensus_registry is append-only'); END`
+    `CREATE TRIGGER IF NOT EXISTS trg_runtime_evolution_consensus_registry_no_delete BEFORE DELETE ON runtime_evolution_consensus_registry BEGIN SELECT RAISE(ABORT, 'runtime_evolution_consensus_registry is append-only'); END`,
+    `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_update BEFORE UPDATE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`,
+    `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_delete BEFORE DELETE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`
   ]
   for (const trigger of triggers) await env.DB.prepare(trigger).run()
 }
@@ -3347,10 +3428,10 @@ async function runtimeSelfIntegrityCheckpoint(expectedRuntimeSurfaceHash = ""): 
 const RUNTIME_VALIDATOR_SURFACE = Object.freeze(["activeContinuity", "activeSession", "authorized", "deploymentPreoLineage", "enforceRecursiveGovernanceBoundary", "validateDsseProvenanceEnvelope", "validateExecutionProvenance", "verifyRecursiveGovernanceIntegrity"].sort())
 const RUNTIME_REPLAY_TOPOLOGY = Object.freeze(["authority_registry.status", "execution_registry.unique_decision_object", "external_authority_registry.replay_neutral", "invocation_registry.nonce", "proof_registry.unique_decision_object", "proof_registry.unique_workflow_run", "recursive_governance_replay_registry"].sort())
 const RUNTIME_PROOF_TOPOLOGY = Object.freeze(["attestation_registry", "proof_quarantine_registry", "proof_registry", "proof_registry_duplicate_archive"].sort())
-const RUNTIME_GOVERNANCE_TOPOLOGY = Object.freeze(["external_authority_registry", "recursive_governance_registry", "runtime_governance_lock_registry", "runtime_sovereignty_registry", REQUIRE_PREO_LINEAGE, RECURSIVE_GOVERNANCE_ADMISSION_ROUTE, RECURSIVE_GOVERNANCE_ROUTE].sort())
+const RUNTIME_GOVERNANCE_TOPOLOGY = Object.freeze(["bootstrap_sovereignty_registry", "external_authority_registry", "recursive_governance_registry", "runtime_governance_lock_registry", "runtime_sovereignty_registry", REQUIRE_PREO_LINEAGE, RECURSIVE_GOVERNANCE_ADMISSION_ROUTE, RECURSIVE_GOVERNANCE_ROUTE].sort())
 const CANONICAL_EXECUTION_AUTHORITY_SURFACE = Object.freeze(["authority:create", "compile:aeo", "validate:exact-object", "execute:governed-deploy", "proof:persist-consume"].sort())
 const CANONICAL_MIGRATION_CHAIN = Object.freeze([
-  "0001_init.sql", "0002_governed_deploy_schema.sql", "0003_authority_registry_schema_fix.sql", "0004_enforcement_lock.sql", "0004_execution_replay_protection.sql", "0005_invocation_registry.sql", "0006_enforcement_reboot_v1.sql", "0007_canonical_aeo_registry_rebuild.sql", "0008_canonical_runtime_registry_rebuild.sql", "0009_runtime_observability_and_drift_registry.sql", "0010_identity_session_continuity.sql", "0011_proof_atomicity_unique_guard.sql", "0012_continuity_registry.sql", "0013_preo_registry.sql", "0014_deployment_provenance_lineage.sql", "0015_cryptographic_provenance_attestations.sql", "0016_federated_revocation_observability.sql", "0017_federated_trust_topology_observability.sql", "0018_distributed_legitimacy_interoperability.sql", "0019_distributed_reconciliation_governance.sql", "0020_governance_compression.sql", "0021_federation_conformance.sql", "0022_proof_quarantine_registry.sql", "0022_recursive_governance_registry.sql", "0023_recursive_governance_enforcement_boundary.sql", "0024_runtime_sovereignty_registry.sql", "0026_external_authority_registry.sql"
+  "0001_init.sql", "0002_governed_deploy_schema.sql", "0003_authority_registry_schema_fix.sql", "0004_enforcement_lock.sql", "0004_execution_replay_protection.sql", "0005_invocation_registry.sql", "0006_enforcement_reboot_v1.sql", "0007_canonical_aeo_registry_rebuild.sql", "0008_canonical_runtime_registry_rebuild.sql", "0009_runtime_observability_and_drift_registry.sql", "0010_identity_session_continuity.sql", "0011_proof_atomicity_unique_guard.sql", "0012_continuity_registry.sql", "0013_preo_registry.sql", "0014_deployment_provenance_lineage.sql", "0015_cryptographic_provenance_attestations.sql", "0016_federated_revocation_observability.sql", "0017_federated_trust_topology_observability.sql", "0018_distributed_legitimacy_interoperability.sql", "0019_distributed_reconciliation_governance.sql", "0020_governance_compression.sql", "0021_federation_conformance.sql", "0022_proof_quarantine_registry.sql", "0022_recursive_governance_registry.sql", "0023_recursive_governance_enforcement_boundary.sql", "0024_runtime_sovereignty_registry.sql", "0026_external_authority_registry.sql", "0027_bootstrap_sovereignty_registry.sql"
 ].sort())
 
 function canonicalSovereigntyRoutes(): { canonical_routes: readonly string[], observability_routes: readonly string[], governance_routes: readonly string[] } {
@@ -3499,6 +3580,90 @@ async function buildExternalAuthorityDependency(base: typeof EXTERNAL_AUTHORITY_
 
 async function canonicalExternalAuthorityRegistry(): Promise<ExternalAuthoritySovereigntyDependency[]> {
   return Promise.all(EXTERNAL_AUTHORITY_BASELINES.map(buildExternalAuthorityDependency))
+}
+
+
+const BOOTSTRAP_INITIALIZATION_ORDER = Object.freeze([
+  "schema:create-registries",
+  "schema:verify-required-columns",
+  "proof:stabilize-duplicates",
+  "proof:enforce-uniqueness",
+  "governance:verify-recursive-boundary",
+  "evolution:verify-consensus-registry",
+  "sovereignty:freeze-runtime-surface",
+  "sovereignty:append-checkpoint",
+  "bootstrap:verify-initialization-lineage",
+  "append-only:activate-triggers",
+  "runtime:ready"
+].sort())
+
+function bootstrapDependencyNode(dependency_id: string, dependency_class: BootstrapDependencyNode["dependency_class"], declared_surface: string): BootstrapDependencyNode {
+  return Object.freeze({ dependency_id, dependency_class, declared_surface, authority_granted: false, execution_capable: false, mutation_capable: false, replay_neutral: true })
+}
+
+function canonicalBootstrapDependencies(): readonly BootstrapDependencyNode[] {
+  return Object.freeze([
+    bootstrapDependencyNode("canonical_runtime_routes", "runtime", canonicalize(CANONICAL_RUNTIME_ROUTES)),
+    bootstrapDependencyNode("recursive_governance_boundary", "governance", RECURSIVE_GOVERNANCE_ROUTE),
+    bootstrapDependencyNode("runtime_evolution_consensus", "governance", RUNTIME_EVOLUTION_CONSENSUS_REGISTRY),
+    bootstrapDependencyNode("runtime_sovereignty_registry", "registry", "runtime_sovereignty_registry"),
+    bootstrapDependencyNode("bootstrap_sovereignty_registry", "registry", BOOTSTRAP_SOVEREIGNTY_REGISTRY),
+    bootstrapDependencyNode("external_authority_registry", "registry", "external_authority_registry"),
+    bootstrapDependencyNode("proof_replay_guards", "registry", "proof_registry.unique_decision_object+workflow_run"),
+    bootstrapDependencyNode("cloudflare_worker_runtime", "infrastructure", "host:runtime_http;observe:request_boundary"),
+    bootstrapDependencyNode("cloudflare_d1_registry", "infrastructure", "host:append_only_registries;observe:proof_persistence"),
+    bootstrapDependencyNode("github_actions_governed_deploy", "infrastructure", GOVERNED_WORKFLOW)
+  ].sort((a, b) => a.dependency_id.localeCompare(b.dependency_id)))
+}
+
+async function buildBootstrapSovereigntyManifest(): Promise<BootstrapSovereigntyManifest> {
+  const startup_dependencies = canonicalBootstrapDependencies()
+  const externalTrust = await canonicalExternalAuthorityRegistry()
+  const deployment_lineage_root = await sha256Hex(canonicalize({ governed_workflow: GOVERNED_WORKFLOW, canonical_path: CANONICAL_RUNTIME_ROUTES, migration_chain: CANONICAL_MIGRATION_CHAIN, no_direct_deploy: true }))
+  const bootstrap_trust_root_hash = await sha256Hex(canonicalize({ external_trust_roots: externalTrust.map((item) => ({ surface: item.external_authority_surface, origin: item.authority_origin, scope: item.infrastructure_scope, bootstrap_trust_hash: item.bootstrap_trust_hash })), remote_authority_denied: true }))
+  const initialization_order_hash = await sha256Hex(canonicalize(BOOTSTRAP_INITIALIZATION_ORDER))
+  const runtime_initialization_ordering_proof = await sha256Hex(canonicalize({ initialization_order_hash, happens_before: BOOTSTRAP_INITIALIZATION_ORDER.map((step, index) => ({ step, index })) }))
+  const startup_dependency_graph_hash = await sha256Hex(canonicalize({ nodes: startup_dependencies, edges: startup_dependencies.map((node) => ({ from: node.dependency_id, to: "runtime:ready", authority_granted: false })) }))
+  const startup_topology_hash = await sha256Hex(canonicalize({ initialization_order_hash, startup_dependency_graph_hash, routes: canonicalSovereigntyRoutes(), observability_routes: [BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE] }))
+  const replay_neutrality_hash = await sha256Hex(canonicalize({ replay_neutral: true, replay_state_consumed: false, mutation_capable: false, execution_authority_created: false, evidence_only: true }))
+  const recursive_bootstrap_hash = await sha256Hex(canonicalize({ recursive_governance_route: RECURSIVE_GOVERNANCE_ROUTE, self_integrity_route: RECURSIVE_GOVERNANCE_SELF_INTEGRITY_ROUTE, runtime_evolution_consensus: RUNTIME_EVOLUTION_CONSENSUS_ROUTE, bootstrap_registry: BOOTSTRAP_SOVEREIGNTY_REGISTRY }))
+  const identity = { manifest_type: "deterministic_runtime_initialization_manifest" as const, runtime_id: RUNTIME_ID, runtime_version: RUNTIME_VERSION, initialization_order: BOOTSTRAP_INITIALIZATION_ORDER, startup_dependencies, deployment_lineage_root, bootstrap_trust_root_hash, initialization_order_hash, runtime_initialization_ordering_proof, startup_dependency_graph_hash, startup_topology_hash, replay_neutrality_hash, recursive_bootstrap_hash, evidence_only: true as const, replay_neutral: true as const, mutation_capable: false as const, remote_authority_denied: true as const, read_only: true as const }
+  const manifest_hash = await sha256Hex(canonicalize(identity))
+  return Object.freeze({ ...identity, manifest_hash })
+}
+
+function bootstrapSovereigntyFlags() {
+  return { evidence_only: true as const, replay_neutral: true as const, mutation_capable: false as const, remote_authority_denied: true as const, read_only: true as const }
+}
+
+async function classifyBootstrapSovereigntyDrift(url: URL, manifest: BootstrapSovereigntyManifest): Promise<BootstrapSovereigntyDriftClass[]> {
+  const drift = new Set<BootstrapSovereigntyDriftClass>()
+  const order = url.searchParams.get("initialization_order") || url.searchParams.get("startup_order")
+  if (order && canonicalize(order.split(",").map((item) => item.trim()).filter(Boolean)) !== canonicalize(manifest.initialization_order)) drift.add("bootstrap_order_divergence")
+  const dependency = url.searchParams.get("dependency") || url.searchParams.get("startup_dependency")
+  if (dependency && !manifest.startup_dependencies.some((node) => node.dependency_id === dependency)) drift.add("undeclared_bootstrap_dependency")
+  if (url.searchParams.get("inherit_bootstrap_authority") === "true" || url.searchParams.get("remote_authority_inherited") === "true" || url.searchParams.get("authority_granted") === "true") drift.add("bootstrap_authority_inheritance")
+  if (url.searchParams.get("initialization_surface") || url.searchParams.get("hidden_surface") === "true" || url.searchParams.get("mutation_capable") === "true") drift.add("initialization_surface_expansion")
+  if (url.searchParams.get("startup_topology_hash") && url.searchParams.get("startup_topology_hash") !== manifest.startup_topology_hash) drift.add("startup_topology_instability")
+  if (url.searchParams.get("deployment_lineage_root") && url.searchParams.get("deployment_lineage_root") !== manifest.deployment_lineage_root) drift.add("deployment_root_divergence")
+  if (url.searchParams.get("manifest_hash") && url.searchParams.get("manifest_hash") !== manifest.manifest_hash) drift.add("runtime_bootstrap_corruption")
+  if (url.searchParams.get("recursive_bootstrap_hash") && url.searchParams.get("recursive_bootstrap_hash") !== manifest.recursive_bootstrap_hash) drift.add("recursive_bootstrap_instability")
+  if (url.searchParams.get("replay_attempt") === "true" || url.searchParams.get("replay_neutral") === "false" || url.searchParams.get("replay_state_consumed") === "true") drift.add("bootstrap_replay_instability")
+  if (url.searchParams.get("lineage_fragment") === "true" || url.searchParams.get("lineage_checkpoint_hash") === "fragmented") drift.add("initialization_lineage_fragmentation")
+  return Array.from(drift).sort()
+}
+
+async function buildBootstrapLineageCheckpoint(manifest: BootstrapSovereigntyManifest, drift_classes: BootstrapSovereigntyDriftClass[], generated_at = new Date().toISOString()): Promise<BootstrapLineageCheckpoint> {
+  const conformance_status = drift_classes.length === 0 ? "BOOTSTRAP_CONFORMANT" as const : "NULL" as const
+  const lineage_checkpoint_hash = await sha256Hex(canonicalize({ manifest_hash: manifest.manifest_hash, deployment_lineage_root: manifest.deployment_lineage_root, bootstrap_trust_root_hash: manifest.bootstrap_trust_root_hash, initialization_order_hash: manifest.initialization_order_hash, startup_dependency_graph_hash: manifest.startup_dependency_graph_hash, startup_topology_hash: manifest.startup_topology_hash, replay_neutrality_hash: manifest.replay_neutrality_hash, recursive_bootstrap_hash: manifest.recursive_bootstrap_hash, drift_classes, conformance_status }))
+  const checkpoint_id = await sha256Hex(canonicalize({ checkpoint_type: "bootstrap_lineage_checkpoint", lineage_checkpoint_hash, generated_at }))
+  return Object.freeze({ checkpoint_id, checkpoint_type: "bootstrap_lineage_checkpoint", manifest_hash: manifest.manifest_hash, lineage_checkpoint_hash, deployment_lineage_root: manifest.deployment_lineage_root, bootstrap_trust_root_hash: manifest.bootstrap_trust_root_hash, initialization_order_hash: manifest.initialization_order_hash, startup_dependency_graph_hash: manifest.startup_dependency_graph_hash, startup_topology_hash: manifest.startup_topology_hash, replay_neutrality_hash: manifest.replay_neutrality_hash, recursive_bootstrap_hash: manifest.recursive_bootstrap_hash, conformance_status, drift_classes, generated_at, ...bootstrapSovereigntyFlags() })
+}
+
+async function appendBootstrapSovereigntyCheckpoint(env: Env, checkpoint: BootstrapLineageCheckpoint) {
+  await env.DB.prepare(`INSERT OR IGNORE INTO bootstrap_sovereignty_registry (checkpoint_id,manifest_hash,lineage_checkpoint_hash,deployment_lineage_root,bootstrap_trust_root_hash,initialization_order_hash,startup_dependency_graph_hash,startup_topology_hash,replay_neutrality_hash,conformance_status,drift_classes,evidence_only,replay_neutral,mutation_capable,remote_authority_denied,read_only,generated_at,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'true','true','false','true','true',?12,?13)`)
+    .bind(checkpoint.checkpoint_id, checkpoint.manifest_hash, checkpoint.lineage_checkpoint_hash, checkpoint.deployment_lineage_root, checkpoint.bootstrap_trust_root_hash, checkpoint.initialization_order_hash, checkpoint.startup_dependency_graph_hash, checkpoint.startup_topology_hash, checkpoint.replay_neutrality_hash, checkpoint.conformance_status, canonicalize(checkpoint.drift_classes), checkpoint.generated_at, checkpoint.generated_at)
+    .run()
 }
 
 async function classifyExternalAuthorityDrift(dependency: any, expected?: ExternalAuthoritySovereigntyDependency): Promise<RuntimeSovereigntyDriftClass[]> {
@@ -4082,8 +4247,9 @@ export default {
       }
     }
     if (url.pathname === EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE && request.method !== "GET") return json({ status: "NULL", route: EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, reason: "get_only", evidence_only: true, read_only: true, mutation_capable: false, replay_neutral: true, authoritative: false }, 405)
+    if ([BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE].includes(url.pathname as any) && request.method !== "GET") return json({ status: "NULL", route: url.pathname, reason: "get_only", evidence_only: true, replay_neutral: true, mutation_capable: false, remote_authority_denied: true, read_only: true }, 405)
 
-    if (NON_EXECUTABLE_OBSERVABILITY_ROUTES.includes(url.pathname as any) && url.pathname !== RUNTIME_SOVEREIGNTY_ROUTE && url.pathname !== EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE) return json({ status: "NULL", route: url.pathname, reason: "observability_only" }, request.method === "GET" ? 200 : 405)
+    if (NON_EXECUTABLE_OBSERVABILITY_ROUTES.includes(url.pathname as any) && url.pathname !== RUNTIME_SOVEREIGNTY_ROUTE && url.pathname !== EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE && ![BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE].includes(url.pathname as any)) return json({ status: "NULL", route: url.pathname, reason: "observability_only" }, request.method === "GET" ? 200 : 405)
 
     const canonicalRuntimeRoute = CANONICAL_RUNTIME_ROUTES.includes(url.pathname as any)
     const governanceEvidenceRoute = GOVERNANCE_EVIDENCE_ROUTES.includes(url.pathname as any)
@@ -4120,6 +4286,17 @@ export default {
       const evidence_hash = await appendExternalAuthorityObservation(env, dependency, drift_classes)
       const status = drift_classes.length > 0 ? "EXTERNAL_AUTHORITY_DRIFT" : "EXTERNAL_AUTHORITY_CONTAINED"
       return json({ status, route: EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, external_authority_registry: registry, dependency, drift_classes, evidence_hash, fail_closed: drift_classes.length > 0, evidence_only: true, read_only: true, mutation_capable: false, replay_neutral: true, authoritative: false, creates_authority: false, bypass_governance: false, append_only: true })
+    }
+
+    if ([BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE].includes(url.pathname as any) && request.method === "GET") {
+      const manifest = await buildBootstrapSovereigntyManifest()
+      const drift_classes = await classifyBootstrapSovereigntyDrift(url, manifest)
+      const checkpoint = await buildBootstrapLineageCheckpoint(manifest, drift_classes)
+      await appendBootstrapSovereigntyCheckpoint(env, checkpoint)
+      const status = drift_classes.length > 0 ? "NULL" : "BOOTSTRAP_CONFORMANT"
+      if (url.pathname === BOOTSTRAP_TOPOLOGY_ROUTE) return json({ status, route: BOOTSTRAP_TOPOLOGY_ROUTE, reason: "observability_only", topology: { startup_dependencies: manifest.startup_dependencies, initialization_order: manifest.initialization_order, startup_dependency_graph_hash: manifest.startup_dependency_graph_hash, startup_topology_hash: manifest.startup_topology_hash, deterministic_startup_topology_evidence: true }, checkpoint, drift_classes, append_only: true, ...bootstrapSovereigntyFlags() })
+      if (url.pathname === BOOTSTRAP_CHECKPOINT_ROUTE) return json({ status, route: BOOTSTRAP_CHECKPOINT_ROUTE, reason: "observability_only", checkpoint, drift_classes, append_only: true, ...bootstrapSovereigntyFlags() })
+      return json({ status, route: BOOTSTRAP_VERIFY_ROUTE, reason: "observability_only", manifest, checkpoint, drift_classes, deployment_lineage_root_verified: !drift_classes.includes("deployment_root_divergence"), initialization_replay_neutrality_verified: !drift_classes.includes("bootstrap_replay_instability"), runtime_initialization_conformant: drift_classes.length === 0, append_only: true, ...bootstrapSovereigntyFlags() })
     }
 
     try {
