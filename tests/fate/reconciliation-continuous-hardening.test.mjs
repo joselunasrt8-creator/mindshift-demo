@@ -43,6 +43,8 @@ const requiredDriftClasses = [
   'traversal_instability_drift',
   'telemetry_payload_drift',
   'federated_identifier_resolution_drift',
+  'federated_revocation_exact_object_drift',
+  'federated_revocation_anchor_drift',
 ]
 
 const fateIds = [
@@ -120,6 +122,20 @@ test('recursive, replay, and revocation rules forbid inference and mutation', ()
   assert.match(doc, /Reconciliation must never create legitimacy\./)
 })
 
+test('continuous reconciliation exposes federated revocation observability without mutation semantics', () => {
+  assert.match(source, /federated_revocation_observability_registry/)
+  assert.match(source, /url\.pathname === "\/federation\/reconcile\/revocation" && request\.method === "GET"/)
+  assert.match(source, /remote_authority_inherited: false/)
+  assert.match(source, /remote_execution_legitimacy: false/)
+  assert.match(source, /replay_state_consumed: false/)
+  assert.match(source, /replay_neutral: true/)
+  assert.doesNotMatch(source, /remote.*revoke.*local.*authority/)
+  assert.equal(spec.federated_revocation_observability.remote_authority_inherited, false)
+  assert.equal(spec.federated_revocation_observability.remote_execution_legitimacy, false)
+  assert.equal(spec.federated_revocation_observability.replay_state_consumed, false)
+  assert.equal(spec.federated_revocation_observability.created_at_identity_material, false)
+  assert.match(source, /normalized_federation_response: true/)
+  assert.match(source, /federated_revocation_projection_drift/)
 
 test('continuous reconciliation records portable identity and checkpoint invariants', () => {
   assert.equal(spec.portability_layer.portable_identifier_policy, 'portable identifiers must resolve from canonical persisted registry row fields only; lookup_key and composite traversal anchors are not portable identity material')

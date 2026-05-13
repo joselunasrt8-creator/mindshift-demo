@@ -15,7 +15,7 @@ const SESSION_TTL_MS = 3600_000
 const SYSTEM_MAX_CONTINUITY_DEPTH = 32
 const CANONICAL_RUNTIME_ROUTES = ["/session", "/continuity", "/authority", "/compile", "/validate", "/execute", "/proof"] as const
 const GOVERNANCE_EVIDENCE_ROUTES = ["/preo"] as const
-const NON_EXECUTABLE_OBSERVABILITY_ROUTES = ["/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint"] as const
+const NON_EXECUTABLE_OBSERVABILITY_ROUTES = ["/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation"] as const
 const REQUIRE_PREO_LINEAGE = "explicit_governed_deploy_policy" as const
 const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
   "session_registry",
@@ -33,6 +33,7 @@ const RECONCILIATION_ROW_LIMIT = 2
 const RECONCILIATION_SCHEDULER_BATCH_LIMIT = 25
 const FEDERATED_RECONCILIATION_PAYLOAD_TYPE = "application/vnd.mindshift.federated-reconciliation.v1+json"
 const LOCAL_FEDERATION_RUNTIME_ID = "mindshift-local-runtime"
+const FEDERATED_REVOCATION_OBSERVABILITY_REGISTRY = "federated_revocation_observability_registry" as const
 
 
 const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
@@ -49,7 +50,8 @@ const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
   attestation_registry: ["attestation_id", "envelope_hash", "payload_hash", "payload_type", "signer_identity", "decision_id", "validated_object_hash", "workflow_run_id", "workflow_sha", "canonical_aeo_hash", "transparency_log_id", "transparency_integrated_time", "status", "created_at"],
   observability_registry: ["event_id", "event_type", "decision_id", "authority_id", "execution_id", "proof_id", "severity", "payload", "created_at"],
   drift_registry: ["drift_id", "drift_class", "severity", "decision_id", "execution_id", "payload", "detected_by", "resolution_status", "created_at"],
-  federated_reconciliation_registry: ["reconciliation_id", "runtime_id", "remote_runtime_id", "classification", "validated_object_hash", "reconciliation_merkle_root", "bundle_hash", "verification_status", "drift_class", "created_at"]
+  federated_reconciliation_registry: ["reconciliation_id", "runtime_id", "remote_runtime_id", "classification", "validated_object_hash", "reconciliation_merkle_root", "bundle_hash", "verification_status", "drift_class", "created_at"],
+  federated_revocation_observability_registry: ["revocation_evidence_id", "runtime_id", "remote_runtime_id", "continuity_id", "decision_id", "validated_object_hash", "revocation_class", "revocation_reason", "lineage_hash", "reconciliation_merkle_root", "attestation_hash", "observed_at", "evidence_hash", "verification_status", "drift_class", "created_at"]
 }
 
 type SchemaDiagnosticReason = "missing_required_table" | "missing_required_column" | "migration_required" | "database_unavailable" | "schema_initialization_failed"
@@ -373,7 +375,9 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE INDEX IF NOT EXISTS idx_observability_type ON observability_registry(event_type)`,
       `CREATE TABLE IF NOT EXISTS drift_registry (drift_id TEXT PRIMARY KEY, drift_class TEXT NOT NULL, severity TEXT NOT NULL, decision_id TEXT, execution_id TEXT, payload TEXT NOT NULL, detected_by TEXT NOT NULL, resolution_status TEXT NOT NULL, created_at TEXT NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS federated_reconciliation_registry (reconciliation_id TEXT PRIMARY KEY, runtime_id TEXT NOT NULL, remote_runtime_id TEXT NOT NULL, classification TEXT NOT NULL, validated_object_hash TEXT NOT NULL, reconciliation_merkle_root TEXT NOT NULL, bundle_hash TEXT NOT NULL, verification_status TEXT NOT NULL, drift_class TEXT, created_at TEXT NOT NULL)`,
-      `CREATE INDEX IF NOT EXISTS idx_federated_reconciliation_runtime_hash ON federated_reconciliation_registry(runtime_id, remote_runtime_id, validated_object_hash)`
+      `CREATE INDEX IF NOT EXISTS idx_federated_reconciliation_runtime_hash ON federated_reconciliation_registry(runtime_id, remote_runtime_id, validated_object_hash)`,
+      `CREATE TABLE IF NOT EXISTS federated_revocation_observability_registry (revocation_evidence_id TEXT PRIMARY KEY, runtime_id TEXT NOT NULL, remote_runtime_id TEXT NOT NULL, continuity_id TEXT NOT NULL, decision_id TEXT NOT NULL, validated_object_hash TEXT NOT NULL, revocation_class TEXT NOT NULL, revocation_reason TEXT NOT NULL, lineage_hash TEXT NOT NULL, reconciliation_merkle_root TEXT NOT NULL, attestation_hash TEXT NOT NULL, observed_at TEXT NOT NULL, evidence_hash TEXT NOT NULL, verification_status TEXT NOT NULL, drift_class TEXT, created_at TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_federated_revocation_observability_lineage ON federated_revocation_observability_registry(runtime_id, remote_runtime_id, decision_id, validated_object_hash)`
     ]
     for (const s of stmts) await env.DB.prepare(s).run()
     await ensureRequiredSchemaColumns(env)
@@ -950,6 +954,50 @@ type FederatedLineageVerification = {
   replay_isolation: "remote_replay_state_not_consumed"
   lineage_continuity_hash?: string
 }
+type FederatedRevocationEvidence = {
+  runtime_id: string
+  remote_runtime_id: string
+  continuity_id: string
+  decision_id: string
+  validated_object_hash: string
+  revocation_class: string
+  revocation_reason: string
+  lineage_hash: string
+  reconciliation_merkle_root: string
+  attestation_hash: string
+  observed_at: string
+}
+type FederatedRevocationEvidenceEnvelope = {
+  evidence_type: "FederatedRevocationEvidence"
+  evidence_hash: string
+  envelope_hash: string
+  evidence: FederatedRevocationEvidence
+  replay_neutral: true
+  read_only: true
+  mutation_capable: false
+  federation_boundary: "portable_evidence_not_portable_authority"
+  deterministic_serialization: true
+  exact_object_bound: true
+  canonical_hash_locked: true
+  remote_authority_inherited: false
+  remote_execution_legitimacy: false
+  replay_state_consumed: false
+}
+type FederatedRevocationVerification = {
+  status: "FEDERATED_REVOCATION_OBSERVED" | "NULL"
+  result: "FEDERATED_REVOCATION_OBSERVED" | "NULL"
+  drift_class?: DriftClass
+  fate?: "federated_revocation_identity_mismatch" | "federated_revocation_replay_collision" | "federated_revocation_without_lineage" | "federated_remote_revocation_authority_inference" | "federated_checkpoint_revocation_divergence" | "federated_expired_lineage_visibility_corruption" | "federated_revocation_envelope_hash_mismatch" | "federated_revocation_exact_object_flag_drift" | "federated_revocation_anchor_mismatch" | "federated_revocation_reconciliation_hash_as_validated_hash" | "federated_revocation_stale_envelope_replay"
+  evidence_hash?: string
+  envelope_hash?: string
+  envelope?: FederatedRevocationEvidenceEnvelope
+  observability_only: true
+  local_validation_required: true
+  remote_authority_inherited: false
+  remote_execution_legitimacy: false
+  replay_state_consumed: false
+  replay_neutral: true
+}
 type PortableReconciliationEnvelope = {
   media_type: "application/vnd.mindshift.reconciliation+jcs"
   dsse_payload_type: "application/vnd.mindshift.reconciliation.v1+json"
@@ -1058,6 +1106,108 @@ async function portableReconciliationEnvelope(payload: Record<string, unknown>):
   }
 }
 
+
+function canonicalFederatedRevocationEvidence(input: any): FederatedRevocationEvidence | null {
+  const evidence = {
+    runtime_id: String(input?.runtime_id || ""),
+    remote_runtime_id: String(input?.remote_runtime_id || ""),
+    continuity_id: String(input?.continuity_id || ""),
+    decision_id: String(input?.decision_id || ""),
+    validated_object_hash: String(input?.validated_object_hash || ""),
+    revocation_class: String(input?.revocation_class || ""),
+    revocation_reason: String(input?.revocation_reason || ""),
+    lineage_hash: String(input?.lineage_hash || ""),
+    reconciliation_merkle_root: String(input?.reconciliation_merkle_root || ""),
+    attestation_hash: String(input?.attestation_hash || ""),
+    observed_at: String(input?.observed_at || "")
+  }
+  if (Object.values(evidence).some((value) => !value)) return null
+  if (evidence.runtime_id === evidence.remote_runtime_id) return null
+  if (![evidence.validated_object_hash, evidence.lineage_hash, evidence.reconciliation_merkle_root, evidence.attestation_hash].every((value) => /^[a-f0-9]{64}$/.test(value))) return null
+  return Object.freeze(evidence)
+}
+
+async function deterministicFederatedRevocationEvidenceHash(evidence: FederatedRevocationEvidence): Promise<string> {
+  return sha256Hex(canonicalize({ evidence_type: "FederatedRevocationEvidence", deterministic_serialization: true, exact_object_bound: true, canonical_hash_locked: true, evidence }))
+}
+
+function federatedRevocationEnvelopeCore(evidence: FederatedRevocationEvidence, evidence_hash: string): Omit<FederatedRevocationEvidenceEnvelope, "envelope_hash"> {
+  return {
+    evidence_type: "FederatedRevocationEvidence",
+    evidence_hash,
+    evidence,
+    replay_neutral: true,
+    read_only: true,
+    mutation_capable: false,
+    federation_boundary: "portable_evidence_not_portable_authority",
+    deterministic_serialization: true,
+    exact_object_bound: true,
+    canonical_hash_locked: true,
+    remote_authority_inherited: false,
+    remote_execution_legitimacy: false,
+    replay_state_consumed: false
+  }
+}
+
+async function deterministicFederatedRevocationEnvelopeHash(evidence: FederatedRevocationEvidence, evidence_hash: string): Promise<string> {
+  return sha256Hex(canonicalize(federatedRevocationEnvelopeCore(evidence, evidence_hash)))
+}
+
+async function replayNeutralFederatedRevocationEvidenceEnvelope(evidence: FederatedRevocationEvidence): Promise<FederatedRevocationEvidenceEnvelope> {
+  const evidence_hash = await deterministicFederatedRevocationEvidenceHash(evidence)
+  const envelope_hash = await deterministicFederatedRevocationEnvelopeHash(evidence, evidence_hash)
+  return Object.freeze({ ...federatedRevocationEnvelopeCore(evidence, evidence_hash), envelope_hash })
+}
+
+async function classifyFederatedRevocationEvidence(input: any, expected: ReconciliationAnchor, checkpoint?: ReconciliationCheckpoint | null, local_runtime_id = LOCAL_FEDERATION_RUNTIME_ID): Promise<FederatedRevocationVerification> {
+  const payload = isPlainRecord(input?.evidence) ? input.evidence : input
+  const evidence = canonicalFederatedRevocationEvidence(payload)
+  const nullResult = (drift_class: DriftClass, fate: NonNullable<FederatedRevocationVerification["fate"]>): FederatedRevocationVerification => ({ status: "NULL", result: "NULL", drift_class, fate, observability_only: true, local_validation_required: true, remote_authority_inherited: false, remote_execution_legitimacy: false, replay_state_consumed: false, replay_neutral: true })
+  if (isPlainRecord(input) && ((input as any).remote_authority_inherited === true || (input as any).remote_execution_legitimacy === true || (input as any).local_revocation_authority === true || (input as any).mutation_capable === true)) return nullResult("federated_revocation_projection_drift", "federated_remote_revocation_authority_inference")
+  if (!evidence) return nullResult("federated_revocation_divergence_drift", "federated_revocation_identity_mismatch")
+  const recomputed_evidence_hash = await deterministicFederatedRevocationEvidenceHash(evidence)
+  const supplied_evidence_hash = isPlainRecord(input) ? String(input.evidence_hash || "") : ""
+  if (isPlainRecord(input) && input.evidence) {
+    if ((input as any).exact_object_bound !== true || (input as any).canonical_hash_locked !== true) return nullResult("federated_revocation_exact_object_drift", "federated_revocation_exact_object_flag_drift")
+    if (supplied_evidence_hash !== recomputed_evidence_hash) return nullResult("federated_revocation_exact_object_drift", "federated_revocation_envelope_hash_mismatch")
+    const deterministic_envelope_hash = await deterministicFederatedRevocationEnvelopeHash(evidence, recomputed_evidence_hash)
+    const canonical_envelope_hash = String(input.envelope_hash || "")
+    if (canonical_envelope_hash !== deterministic_envelope_hash) return nullResult("federated_revocation_exact_object_drift", "federated_revocation_stale_envelope_replay")
+  }
+  if (evidence.runtime_id !== local_runtime_id) return nullResult("federated_revocation_divergence_drift", "federated_revocation_identity_mismatch")
+  if (!evidence.lineage_hash) return nullResult("federated_revocation_divergence_drift", "federated_revocation_without_lineage")
+  if (expected.decision_id && evidence.decision_id !== expected.decision_id) return nullResult("federated_revocation_replay_drift", "federated_revocation_replay_collision")
+  if (expected.validated_object_hash && evidence.validated_object_hash !== expected.validated_object_hash) return nullResult("federated_revocation_anchor_drift", "federated_revocation_anchor_mismatch")
+  if (checkpoint && evidence.validated_object_hash === checkpoint.reconciliation_merkle_root) return nullResult("federated_revocation_anchor_drift", "federated_revocation_reconciliation_hash_as_validated_hash")
+  if (expected.continuity_id && evidence.continuity_id !== expected.continuity_id) return nullResult("federated_revocation_divergence_drift", "federated_revocation_identity_mismatch")
+  if (checkpoint && evidence.reconciliation_merkle_root !== checkpoint.reconciliation_merkle_root) return nullResult("federated_checkpoint_revocation_drift", "federated_checkpoint_revocation_divergence")
+  if (evidence.revocation_class === "EXPIRED" && !/^\d{4}-\d{2}-\d{2}T/.test(evidence.observed_at)) return nullResult("federated_expiration_visibility_drift", "federated_expired_lineage_visibility_corruption")
+  const envelope = await replayNeutralFederatedRevocationEvidenceEnvelope(evidence)
+  return { status: "FEDERATED_REVOCATION_OBSERVED", result: "FEDERATED_REVOCATION_OBSERVED", evidence_hash: envelope.evidence_hash, envelope_hash: envelope.envelope_hash, envelope, observability_only: true, local_validation_required: true, remote_authority_inherited: false, remote_execution_legitimacy: false, replay_state_consumed: false, replay_neutral: true }
+}
+
+async function federatedRevocationEvidenceFromResult(result: ReconciliationResult, state: ReconciliationCheckpoint, observed_at: string, remote_runtime_id = "mindshift-federated://observed-runtime"): Promise<FederatedRevocationEvidenceEnvelope | null> {
+  const canonical = resolveCanonicalPortableIdentifiers(result)
+  if (!canonical) return null
+  const state_id = state.checkpoint_id
+  const object_hash = canonical.validated_object_hash
+  const drift_reason = result.drift_classifications.find((drift) => String(drift.drift_class).includes("revocation"))?.drift_class || "observed_remote_revocation_state"
+  const evidence = canonicalFederatedRevocationEvidence({
+    runtime_id: LOCAL_FEDERATION_RUNTIME_ID,
+    remote_runtime_id,
+    continuity_id: canonical.continuity_id,
+    decision_id: canonical.decision_id,
+    revocation_class: result.drift_classifications.some((drift) => drift.drift_class === "revocation_propagation_drift") ? "REVOKED" : "OBSERVED",
+    revocation_reason: String(drift_reason),
+    lineage_hash: await sha256Hex(canonicalize({ canonical_registry_ordering: result.canonical_registry_ordering, deterministic_traversal_trace: result.deterministic_traversal_trace })),
+    reconciliation_merkle_root: state.reconciliation_merkle_root,
+    validated_object_hash: object_hash,
+    attestation_hash: await sha256Hex(canonicalize({ attestation: "federated_revocation_observability", state_id })),
+    observed_at
+  })
+  return evidence ? replayNeutralFederatedRevocationEvidenceEnvelope(evidence) : null
+}
+
 async function verifyFederatedLineageContinuity(evidence: FederatedLineageEvidence[], local_runtime_id: string): Promise<FederatedLineageVerification> {
   const bounded_federation_depth = evidence.length
   if (!local_runtime_id || bounded_federation_depth === 0 || bounded_federation_depth > RECONCILIATION_MAX_RECURSION_DEPTH) {
@@ -1125,6 +1275,7 @@ type ReconciliationCheckpoint = {
   lineage_count: number
   replay_snapshot_hash: string
   drift_snapshot_hash: string
+  revocation_snapshot_hash: string
   created_at: string
 }
 type ReconciliationWitnessEnvelope = {
@@ -1219,7 +1370,8 @@ async function deterministicReconciliationCheckpoint(result: ReconciliationResul
   const snapshot = await deterministicReconciliationSnapshot(result)
   const replay_snapshot_hash = await sha256Hex(canonicalize({ replay_neutral: true, trace: result.deterministic_traversal_trace.filter((entry) => entry.registry === "invocation_registry") }))
   const drift_snapshot_hash = await sha256Hex(canonicalize(result.drift_classifications.map((drift) => drift.drift_class).sort()))
-  const deterministic_hash = await sha256Hex(canonicalize({ runtime_id, snapshot, replay_snapshot_hash, drift_snapshot_hash }))
+  const revocation_snapshot_hash = await sha256Hex(canonicalize({ replay_neutral: true, revocation_classes: result.drift_classifications.filter((drift) => String(drift.drift_class).includes("revocation") || String(drift.drift_class).includes("expiration")).map((drift) => drift.drift_class).sort() }))
+  const deterministic_hash = await sha256Hex(canonicalize({ runtime_id, snapshot, replay_snapshot_hash, drift_snapshot_hash, revocation_snapshot_hash }))
   const reconciliation_merkle_root = String(snapshot.reconciliation_merkle_root || "")
   const traversal_position = result.deterministic_traversal_trace.length
   const lineage_count = result.deterministic_traversal_trace.length
@@ -1235,6 +1387,7 @@ async function deterministicReconciliationCheckpoint(result: ReconciliationResul
     lineage_count,
     replay_snapshot_hash,
     drift_snapshot_hash,
+    revocation_snapshot_hash,
     created_at
   }
 }
@@ -1271,6 +1424,8 @@ function resolvedPortableIdentifiersFromCanonicalRows(byRegistry: Map<Reconcilia
 
 async function portableLegitimacyBundleFromResult(result: ReconciliationResult, emitted_at: string, runtime_id = LOCAL_FEDERATION_RUNTIME_ID): Promise<PortableLegitimacyBundle | null> {
   const merkle = await reconciliationMerkleEvidence(result)
+  const canonical = resolveCanonicalPortableIdentifiers(result)
+  if (!canonical) return null
   const byRegistry = new Map(result.deterministic_traversal_trace.map((entry) => [entry.registry, entry]))
   const identifiers = resolvedPortableIdentifiersFromCanonicalRows(byRegistry)
   if (!identifiers) return null
@@ -1655,6 +1810,23 @@ export default {
         return json({ status: result.result, route: "/federation/reconcile/drift", reason: "observability_only", drift: result.drift_classifications, federated_drift_taxonomy, repairs: false, legitimacy_inference: false })
       } catch {
         return json({ status: "NULL", route: "/federation/reconcile/drift", reason: "reconciliation_unavailable" })
+      }
+    }
+    if (url.pathname === "/federation/reconcile/revocation" && request.method === "GET") {
+      try {
+        const anchor = reconciliationAnchorFromRequest(url)
+        const result = await deterministicRecursiveReconciliationTraversal(env, anchor)
+        const observed_at = new Date().toISOString()
+        const checkpoint = await deterministicReconciliationCheckpoint(result, observed_at)
+        const supplied = url.searchParams.get("evidence")
+        const evidenceInput = supplied ? JSON.parse(new TextDecoder().decode(base64ToBytes(String(supplied)) || utf8Bytes("{}"))) : null
+        const generated = await federatedRevocationEvidenceFromResult(result, checkpoint, observed_at)
+        if (!generated) return json({ status: "NULL", route: "/federation/reconcile/revocation", reason: "observability_only", drift_class: "federated_revocation_projection_drift", federation_boundary: "portable_evidence_not_portable_authority", remote_authority_inherited: false, remote_execution_legitimacy: false, replay_state_consumed: false, replay_neutral: true, read_only: true, mutation_capable: false, normalized_federation_response: true })
+        const verification = evidenceInput ? await classifyFederatedRevocationEvidence(evidenceInput, resolveCanonicalPortableIdentifiers(result) || anchor, checkpoint) : null
+        const drift = verification?.drift_class ? [...result.drift_classifications.map((entry) => entry.drift_class), verification.drift_class] : result.drift_classifications.map((entry) => entry.drift_class)
+        return json({ status: verification?.result === "NULL" ? "NULL" : result.result, route: "/federation/reconcile/revocation", reason: "observability_only", federation_boundary: "portable_evidence_not_portable_authority", remote_authority_inherited: false, remote_execution_legitimacy: false, replay_state_consumed: false, replay_neutral: true, read_only: true, mutation_capable: false, revocation_evidence: generated, verification, drift, normalized_federation_response: true })
+      } catch {
+        return json({ status: "NULL", route: "/federation/reconcile/revocation", reason: "reconciliation_unavailable" })
       }
     }
     if (url.pathname === "/federation/reconcile/checkpoint" && request.method === "GET") {
