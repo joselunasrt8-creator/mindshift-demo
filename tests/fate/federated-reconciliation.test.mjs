@@ -34,7 +34,8 @@ const driftClasses = [
   'federated_replay_drift',
   'federated_preo_drift',
   'federated_continuity_drift',
-  'federated_exact_object_drift'
+  'federated_exact_object_drift',
+  'federated_identifier_resolution_drift'
 ]
 
 test('federation routes are observability-only and outside execution authority', () => {
@@ -112,7 +113,9 @@ const revocationDriftClasses = [
   'federated_revocation_projection_drift',
   'federated_revocation_replay_drift',
   'federated_checkpoint_revocation_drift',
-  'federated_expiration_visibility_drift'
+  'federated_expiration_visibility_drift',
+  'federated_revocation_exact_object_drift',
+  'federated_revocation_anchor_drift'
 ]
 
 const revocationFateCases = [
@@ -121,7 +124,12 @@ const revocationFateCases = [
   'federated_revocation_without_lineage',
   'federated_remote_revocation_authority_inference',
   'federated_checkpoint_revocation_divergence',
-  'federated_expired_lineage_visibility_corruption'
+  'federated_expired_lineage_visibility_corruption',
+  'federated_revocation_envelope_hash_mismatch',
+  'federated_revocation_exact_object_flag_drift',
+  'federated_revocation_anchor_mismatch',
+  'federated_revocation_reconciliation_hash_as_validated_hash',
+  'federated_revocation_stale_envelope_replay'
 ]
 
 test('federated revocation evidence remains observability-only and non-authoritative', () => {
@@ -142,6 +150,7 @@ test('federated revocation evidence remains observability-only and non-authorita
   assert.equal(spec.federated_revocation_evidence.replay_neutral, true)
   assert.equal(spec.federated_revocation_evidence.read_only, true)
   assert.equal(spec.federated_revocation_evidence.mutation_capable, false)
+  assert.equal(spec.federated_revocation_evidence.canonical_hash_locked, true)
 })
 
 test('federated revocation drift taxonomy and FATE cases fail closed to NULL', () => {
@@ -155,4 +164,33 @@ test('federated revocation drift taxonomy and FATE cases fail closed to NULL', (
     assert.equal(fateById.get(fate), 'NULL', `${fate} must fail closed`)
     assert.ok(doc.includes('`' + fate + '`'), `doc missing ${fate}`)
   }
+})
+
+
+test('federated revocation exact-object envelopes and checkpoint identity are deterministic', () => {
+  const revocationSource = source.slice(source.indexOf('type FederatedRevocationEvidence'), source.indexOf('async function verifyFederatedLineageContinuity'))
+  const checkpointSource = source.slice(source.indexOf('async function deterministicReconciliationCheckpoint'), source.indexOf('async function portableLegitimacyBundleFromResult'))
+  assert.match(revocationSource, /const supplied_evidence_hash/)
+  assert.match(revocationSource, /const recomputed_evidence_hash/)
+  assert.match(revocationSource, /supplied_evidence_hash !== recomputed_evidence_hash/)
+  assert.match(revocationSource, /const canonical_envelope_hash/)
+  assert.match(revocationSource, /const deterministic_envelope_hash/)
+  assert.match(revocationSource, /canonical_envelope_hash !== deterministic_envelope_hash/)
+  assert.match(revocationSource, /exact_object_bound !== true/)
+  assert.match(revocationSource, /canonical_hash_locked !== true/)
+  const checkpointIdentityLine = checkpointSource.split('\n').find((line) => line.includes('checkpoint_id:')) || ''
+  assert.doesNotMatch(checkpointIdentityLine, /created_at/)
+  assert.match(checkpointSource, /revocation_snapshot_hash/)
+})
+
+test('federated revocation anchors use canonical persisted identifiers only', () => {
+  const portabilitySource = source.slice(source.indexOf('function resolveCanonicalPortableIdentifiers'), source.indexOf('async function deterministicRecursiveReconciliationTraversal'))
+  const revocationGeneration = source.slice(source.indexOf('async function federatedRevocationEvidenceFromResult'), source.indexOf('async function verifyFederatedLineageContinuity'))
+  const persistedIdentifierSource = source.slice(source.indexOf('function canonicalPersistedIdentifierMap'), source.indexOf('function resolveCanonicalPortableIdentifiers'))
+  assert.match(persistedIdentifierSource, /canonical_persisted_identifiers/)
+  assert.match(portabilitySource, /proof\.validated_object_hash \|\| validation\.validated_object_hash \|\| aeo\.validated_object_hash/)
+  assert.match(revocationGeneration, /validated_object_hash: object_hash/)
+  assert.doesNotMatch(revocationGeneration, /validated_object_hash:[\s\S]*lookup_key/)
+  assert.doesNotMatch(revocationGeneration, /validated_object_hash:[\s\S]*checkpoint/i)
+  assert.doesNotMatch(revocationGeneration, /validated_object_hash:[\s\S]*reconciliation/i)
 })

@@ -66,11 +66,15 @@ test('proofless external execution paths are flagged', () => {
 
 test('federated revocation observability does not collapse sovereignty boundaries', () => {
   const source = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf8')
+  const revocationSurface = source.slice(source.indexOf('if (url.pathname === "/federation/reconcile/revocation"'), source.indexOf('if (url.pathname === "/federation/reconcile/checkpoint"'))
   assert.match(source, /portable_evidence_not_portable_authority/)
   assert.match(source, /remote_authority_inherited: false/)
   assert.match(source, /remote_execution_legitimacy: false/)
   assert.match(source, /replay_state_consumed: false/)
   assert.match(source, /replay_neutral: true/)
   assert.match(source, /mutation_capable: false/)
-  assert.doesNotMatch(source, /remote.*revoke.*local.*authority/)
+  assert.doesNotMatch(source, /remote.*revoke.*local.*authority/i)
+  assert.doesNotMatch(revocationSurface, /UPDATE authority_registry[\s\S]*federation/i)
+  assert.doesNotMatch(revocationSurface, /UPDATE continuity_registry[\s\S]*federation/i)
+  assert.doesNotMatch(revocationSurface, /UPDATE invocation_registry[\s\S]*federation/i)
 })

@@ -72,7 +72,7 @@ Each node is canonically serialized and hashed with its traversal position and p
 
 ## Deterministic checkpoints
 
-`ReconciliationCheckpoint` contains `checkpoint_id`, `runtime_id`, `reconciliation_merkle_root`, `traversal_position`, `deterministic_hash`, `lineage_count`, `replay_snapshot_hash`, `drift_snapshot_hash`, and `created_at`.
+`ReconciliationCheckpoint` contains `checkpoint_id`, `runtime_id`, `reconciliation_merkle_root`, `traversal_position`, `deterministic_hash`, `lineage_count`, `replay_snapshot_hash`, `drift_snapshot_hash`, `revocation_snapshot_hash`, and `created_at`.
 
 Checkpoints are deterministic, append-only evidence. They are not rollback overwrites and they do not mutate legitimacy.
 
@@ -146,3 +146,25 @@ Federated revocation FATE additions all fail closed to `NULL`:
 - `federated_expired_lineage_visibility_corruption`
 
 Revocation checkpoints include `revocation_snapshot_hash` in deterministic checkpoint material, preserving deterministic checkpoint identity while remaining append-only and replay-neutral.
+
+### Revocation exact-object repair notes
+
+Revocation evidence envelopes are exact-object-bound: supplied `evidence_hash` must equal deterministic recomputation of the canonical `FederatedRevocationEvidence`, supplied `envelope_hash` must equal deterministic recomputation of the replay-neutral envelope, `exact_object_bound` must be true, and `canonical_hash_locked` must be true. Mismatch resolves to `NULL` with `federated_revocation_exact_object_drift`.
+
+`validated_object_hash` is anchored only to canonical persisted legitimacy lineage from `validation_registry`, `aeo_registry`, or `proof_registry`. It is not derived from traversal hashes, checkpoint hashes, observability lineage, or the reconciliation Merkle root. Anchor mismatch resolves to `NULL` with `federated_revocation_anchor_drift`.
+
+Checkpoint identity excludes `created_at`; `created_at` is metadata only. The checkpoint identity material is `runtime_id`, `reconciliation_merkle_root`, `deterministic_hash`, `traversal_position`, and `lineage_count`.
+
+Additional exact-object and anchor drift classes:
+
+- `federated_revocation_exact_object_drift`
+- `federated_revocation_anchor_drift`
+- `federated_identifier_resolution_drift`
+
+Additional exact-object and anchor FATE cases all fail closed to `NULL`:
+
+- `federated_revocation_envelope_hash_mismatch`
+- `federated_revocation_exact_object_flag_drift`
+- `federated_revocation_anchor_mismatch`
+- `federated_revocation_reconciliation_hash_as_validated_hash`
+- `federated_revocation_stale_envelope_replay`

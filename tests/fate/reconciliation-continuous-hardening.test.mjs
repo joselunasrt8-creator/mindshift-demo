@@ -42,6 +42,9 @@ const requiredDriftClasses = [
   'federated_lineage_drift',
   'traversal_instability_drift',
   'telemetry_payload_drift',
+  'federated_identifier_resolution_drift',
+  'federated_revocation_exact_object_drift',
+  'federated_revocation_anchor_drift',
 ]
 
 const fateIds = [
@@ -125,4 +128,7 @@ test('continuous reconciliation exposes federated revocation observability witho
   assert.equal(spec.federated_revocation_observability.remote_authority_inherited, false)
   assert.equal(spec.federated_revocation_observability.remote_execution_legitimacy, false)
   assert.equal(spec.federated_revocation_observability.replay_state_consumed, false)
+  assert.equal(spec.federated_revocation_observability.created_at_identity_material, false)
+  assert.match(source, /normalized_federation_response: true/)
+  assert.match(source, /federated_revocation_projection_drift/)
 })

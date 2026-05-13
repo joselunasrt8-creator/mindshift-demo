@@ -91,13 +91,14 @@ test('recursive integrity verification covers ancestry, replay, proof, PREO, rev
 
 test('recursive revocation lineage observability is deterministic and replay-neutral', () => {
   assert.match(traversalSource, /federatedRevocationEvidenceFromResult/)
-  assert.match(traversalSource, /lineage_hash: await sha256Hex\(canonicalize\(result\.deterministic_traversal_trace\)\)/)
+  assert.match(traversalSource, /resolveCanonicalPortableIdentifiers\(result\)/)
+  assert.match(traversalSource, /validated_object_hash: object_hash/)
   assert.match(traversalSource, /revocation_snapshot_hash/)
   assert.match(traversalSource, /replay_neutral: true/)
   assert.match(traversalSource, /remote_authority_inherited: false/)
   assert.match(traversalSource, /replay_state_consumed: false/)
   assert.doesNotMatch(source, /remote.*revoke.*local.*authority/)
-  for (const drift of ['federated_revocation_divergence_drift', 'federated_revocation_replay_drift', 'federated_expiration_visibility_drift']) {
+  for (const drift of ['federated_revocation_divergence_drift', 'federated_revocation_replay_drift', 'federated_expiration_visibility_drift', 'federated_revocation_exact_object_drift', 'federated_revocation_anchor_drift']) {
     assert.match(traversalSource, new RegExp(`"${drift}"`), `traversal source missing ${drift}`)
     assert.ok(doc.includes('`' + drift + '`'), `doc missing ${drift}`)
   }

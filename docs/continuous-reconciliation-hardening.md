@@ -207,3 +207,7 @@ Revocation evidence is `replay_neutral`, `read_only`, `mutation_capable: false`,
 New drift classes are `federated_revocation_divergence_drift`, `federated_revocation_projection_drift`, `federated_revocation_replay_drift`, `federated_checkpoint_revocation_drift`, and `federated_expiration_visibility_drift`.
 
 New FATE cases all produce `NULL`: `federated_revocation_identity_mismatch`, `federated_revocation_replay_collision`, `federated_revocation_without_lineage`, `federated_remote_revocation_authority_inference`, `federated_checkpoint_revocation_divergence`, and `federated_expired_lineage_visibility_corruption`.
+
+Revocation envelope verification is exact-object-bound. The runtime recomputes `evidence_hash` and `envelope_hash`, requires `exact_object_bound` and `canonical_hash_locked`, and fails closed with `federated_revocation_exact_object_drift` on mismatch. Revocation evidence uses canonical persisted identifiers only; `lookup_key` remains traversal-only evidence and must not be projected into portable identity.
+
+Additional revocation drift classes are `federated_revocation_exact_object_drift`, `federated_revocation_anchor_drift`, and `federated_identifier_resolution_drift`. Additional FATE cases producing `NULL` are `federated_revocation_envelope_hash_mismatch`, `federated_revocation_exact_object_flag_drift`, `federated_revocation_anchor_mismatch`, `federated_revocation_reconciliation_hash_as_validated_hash`, and `federated_revocation_stale_envelope_replay`.

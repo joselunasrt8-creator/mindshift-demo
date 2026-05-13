@@ -115,7 +115,9 @@
     "append_only": true,
     "deterministic": true,
     "mutation_capable": false,
-    "rollback_overwrite": false
+    "rollback_overwrite": false,
+    "checkpoint_identity": "sha256(JCS({runtime_id,reconciliation_merkle_root,deterministic_hash,traversal_position,lineage_count}))",
+    "created_at_identity_material": false
   },
   "federated_drift_taxonomy": [
     "federated_checkpoint_drift",
@@ -132,7 +134,10 @@
     "federated_revocation_projection_drift",
     "federated_revocation_replay_drift",
     "federated_checkpoint_revocation_drift",
-    "federated_expiration_visibility_drift"
+    "federated_expiration_visibility_drift",
+    "federated_identifier_resolution_drift",
+    "federated_revocation_exact_object_drift",
+    "federated_revocation_anchor_drift"
   ],
   "fate_matrix": [
     {
@@ -206,6 +211,26 @@
     {
       "test_id": "federated_expired_lineage_visibility_corruption",
       "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_envelope_hash_mismatch",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_exact_object_flag_drift",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_anchor_mismatch",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_reconciliation_hash_as_validated_hash",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_stale_envelope_replay",
+      "expected_result": "NULL"
     }
   ],
   "canonical_runtime_position": {
@@ -254,6 +279,7 @@
       "attestation_hash",
       "observed_at",
       "evidence_hash",
+      "verification_status",
       "created_at"
     ]
   },
@@ -280,6 +306,9 @@
     "exact_object_bound": true,
     "remote_authority_inherited": false,
     "remote_execution_legitimacy": false,
-    "replay_state_consumed": false
+    "replay_state_consumed": false,
+    "canonical_hash_locked": true,
+    "envelope_hash_validation": "supplied evidence_hash and envelope_hash must equal deterministic recomputation or resolve NULL with federated_revocation_exact_object_drift",
+    "validated_object_hash_anchor": "canonical persisted validation_registry, aeo_registry, or proof_registry legitimacy lineage only; never traversal, checkpoint, or Merkle material"
   }
 }
