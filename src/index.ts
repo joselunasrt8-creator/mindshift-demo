@@ -32,6 +32,10 @@ const EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE = "/runtime/sovereignty/external-au
 const BOOTSTRAP_VERIFY_ROUTE = "/runtime/bootstrap/verify" as const
 const BOOTSTRAP_TOPOLOGY_ROUTE = "/runtime/bootstrap/topology" as const
 const BOOTSTRAP_CHECKPOINT_ROUTE = "/runtime/bootstrap/checkpoint" as const
+const GRAPH_VERIFY_ROUTE = "/registry/graph/verify" as const
+const GRAPH_TOPOLOGY_ROUTE = "/registry/graph/topology" as const
+const GRAPH_CHECKPOINT_ROUTE = "/registry/graph/checkpoint" as const
+const GRAPH_ORPHANS_ROUTE = "/registry/graph/orphans" as const
 const BOOTSTRAP_READY_DATABASES = new WeakSet<D1Database>()
 const RUNTIME_SOVEREIGNTY_FREEZES = new WeakMap<D1Database, RuntimeSovereigntyManifest>()
 const PROVENANCE_PAYLOAD_TYPE = "application/vnd.mindshift.cryptographic-provenance.v1+json"
@@ -44,7 +48,7 @@ const RECURSIVE_GOVERNANCE_ADMISSION_ROUTE = "/governance/recursive/admit" as co
 const RECURSIVE_GOVERNANCE_SELF_INTEGRITY_ROUTE = "/governance/recursive/self-integrity" as const
 const RUNTIME_EVOLUTION_CONSENSUS_ROUTE = "/governance/evolution/consensus" as const
 const RUNTIME_EVOLUTION_CONSENSUS_REGISTRY = "runtime_evolution_consensus_registry" as const
-const NON_EXECUTABLE_OBSERVABILITY_ROUTES = [RUNTIME_SOVEREIGNTY_ROUTE, RUNTIME_EVOLUTION_CONSENSUS_ROUTE, "/governance/recursive/verify", "/governance/recursive/self-integrity", "/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/reconcile/distributed", "/federation/reconcile/compression", "/federation/interoperability/checkpoint", "/federation/conformance", "/federation/sovereignty/checkpoint", EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE] as const
+const NON_EXECUTABLE_OBSERVABILITY_ROUTES = [RUNTIME_SOVEREIGNTY_ROUTE, RUNTIME_EVOLUTION_CONSENSUS_ROUTE, GRAPH_VERIFY_ROUTE, GRAPH_TOPOLOGY_ROUTE, GRAPH_CHECKPOINT_ROUTE, GRAPH_ORPHANS_ROUTE, "/governance/recursive/verify", "/governance/recursive/self-integrity", "/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/reconcile/distributed", "/federation/reconcile/compression", "/federation/interoperability/checkpoint", "/federation/conformance", "/federation/sovereignty/checkpoint", EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE] as const
 const REQUIRE_PREO_LINEAGE = "explicit_governed_deploy_policy" as const
 const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
   "session_registry",
@@ -102,7 +106,8 @@ const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
   bootstrap_sovereignty_registry: ["checkpoint_id", "manifest_hash", "lineage_checkpoint_hash", "deployment_lineage_root", "bootstrap_trust_root_hash", "initialization_order_hash", "startup_dependency_graph_hash", "startup_topology_hash", "replay_neutrality_hash", "conformance_status", "drift_classes", "evidence_only", "replay_neutral", "mutation_capable", "remote_authority_denied", "read_only", "generated_at", "created_at"],
   runtime_governance_lock_registry: ["lock_id", "mutation_hash", "governance_id", "lock_state", "activation_allowed", "canonical_hash", "created_at"],
   recursive_governance_replay_registry: ["replay_id", "mutation_hash", "sco_hash", "preo_hash", "governance_id", "activation_lock_id", "consumed_at"],
-  runtime_evolution_consensus_registry: ["consensus_id", "mutation_hash", "canonical_hash", "governance_scope", "quorum_threshold", "approval_count", "approval_hash", "consensus_status", "replay_neutral", "evidence_only", "generated_at", "created_at"]
+  runtime_evolution_consensus_registry: ["consensus_id", "mutation_hash", "canonical_hash", "governance_scope", "quorum_threshold", "approval_count", "approval_hash", "consensus_status", "replay_neutral", "evidence_only", "generated_at", "created_at"],
+  legitimacy_graph_registry: ["graph_checkpoint_id", "graph_checkpoint_hash", "graph_coherence_hash", "node_count", "edge_count", "orphan_count", "drift_classes", "checkpoint_object_hash", "cross_registry_replay_continuity", "evidence_only", "replay_neutral", "mutation_capable", "remote_authority_denied", "read_only", "creates_authority", "execution_started", "generated_at", "created_at"]
 }
 
 type SchemaDiagnosticReason = "missing_required_table" | "missing_required_column" | "migration_required" | "database_unavailable" | "schema_initialization_failed"
@@ -284,7 +289,7 @@ type RuntimeSovereigntyDriftClass =
   | "bootstrap_trust_divergence"
   | "undeclared_execution_surface"
   | "infrastructure_authority_expansion"
-  | "hidden_mutation_surface" | BootstrapSovereigntyDriftClass
+  | "hidden_mutation_surface" | BootstrapSovereigntyDriftClass | LegitimacyGraphDriftClass
   | "route_mutation"
   | "validator_mutation"
   | "schema_mutation"
@@ -410,7 +415,7 @@ type RuntimeEvolutionConsensusEnvelope = {
   remote_authority_inherited: false
 }
 
-type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift" | "attestation_drift" | "signature_drift" | "signer_identity_drift" | "payload_drift" | "transparency_drift" | "federated_checkpoint_drift" | "federated_merkle_drift" | "federated_bundle_drift" | "federated_attestation_drift" | "federated_reconciliation_drift" | "federated_runtime_divergence_drift" | "federated_replay_drift" | "federated_preo_drift" | "federated_continuity_drift" | "federated_exact_object_drift" | "federated_identifier_resolution_drift" | "federated_revocation_projection_drift" | "federated_revocation_divergence_drift" | "federated_revocation_exact_object_drift" | "federated_revocation_replay_drift" | "federated_revocation_anchor_drift" | "federated_checkpoint_revocation_drift" | "federated_expiration_visibility_drift" | "orphaned_execution" | "revoked_authority_execution" | "federated_lineage_divergence" | "replay_resurrection_attempt" | "distributed_lineage_divergence" | "checkpoint_hash_instability" | "federated_projection_corruption" | "remote_authority_claim" | "interoperability_replay_attempt" | "checkpoint_divergence" | "federated_replay_collision" | "authority_conflict" | "lineage_instability" | "topology_divergence" | "projection_corruption" | "cross_runtime_hash_mismatch" | "compression_divergence" | "reconciliation_instability" | "federated_summary_mismatch" | "topology_compression_corruption" | "replay_summary_divergence" | "semantic_conformance_drift" | "checkpoint_semantic_mismatch" | "federation_policy_divergence" | "compression_semantic_instability" | "runtime_fingerprint_mismatch" | "quorum_divergence" | "maintainer_set_drift" | "governance_replay_attempt" | "approval_hash_mismatch" | "reviewed_commit_drift" | "mutation_scope_expansion" | "runtime_evolution_bypass" | "consensus_instability" | "non_deterministic_approval_order" | "federation_authority_inheritance_attempt" | "external_authority_drift" | "sovereignty_boundary_fragmentation" | "deploy_authority_escape" | "bootstrap_trust_divergence" | "undeclared_execution_surface" | "infrastructure_authority_expansion" | "hidden_mutation_surface" | BootstrapSovereigntyDriftClass
+type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift" | "attestation_drift" | "signature_drift" | "signer_identity_drift" | "payload_drift" | "transparency_drift" | "federated_checkpoint_drift" | "federated_merkle_drift" | "federated_bundle_drift" | "federated_attestation_drift" | "federated_reconciliation_drift" | "federated_runtime_divergence_drift" | "federated_replay_drift" | "federated_preo_drift" | "federated_continuity_drift" | "federated_exact_object_drift" | "federated_identifier_resolution_drift" | "federated_revocation_projection_drift" | "federated_revocation_divergence_drift" | "federated_revocation_exact_object_drift" | "federated_revocation_replay_drift" | "federated_revocation_anchor_drift" | "federated_checkpoint_revocation_drift" | "federated_expiration_visibility_drift" | "orphaned_execution" | "revoked_authority_execution" | "federated_lineage_divergence" | "replay_resurrection_attempt" | "distributed_lineage_divergence" | "checkpoint_hash_instability" | "federated_projection_corruption" | "remote_authority_claim" | "interoperability_replay_attempt" | "checkpoint_divergence" | "federated_replay_collision" | "authority_conflict" | "lineage_instability" | "topology_divergence" | "projection_corruption" | "cross_runtime_hash_mismatch" | "compression_divergence" | "reconciliation_instability" | "federated_summary_mismatch" | "topology_compression_corruption" | "replay_summary_divergence" | "semantic_conformance_drift" | "checkpoint_semantic_mismatch" | "federation_policy_divergence" | "compression_semantic_instability" | "runtime_fingerprint_mismatch" | "quorum_divergence" | "maintainer_set_drift" | "governance_replay_attempt" | "approval_hash_mismatch" | "reviewed_commit_drift" | "mutation_scope_expansion" | "runtime_evolution_bypass" | "consensus_instability" | "non_deterministic_approval_order" | "federation_authority_inheritance_attempt" | "external_authority_drift" | "sovereignty_boundary_fragmentation" | "deploy_authority_escape" | "bootstrap_trust_divergence" | "undeclared_execution_surface" | "infrastructure_authority_expansion" | "hidden_mutation_surface" | BootstrapSovereigntyDriftClass | LegitimacyGraphDriftClass
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json" } })
@@ -755,6 +760,8 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE TABLE IF NOT EXISTS bootstrap_sovereignty_registry (checkpoint_id TEXT PRIMARY KEY, manifest_hash TEXT NOT NULL, lineage_checkpoint_hash TEXT NOT NULL, deployment_lineage_root TEXT NOT NULL, bootstrap_trust_root_hash TEXT NOT NULL, initialization_order_hash TEXT NOT NULL, startup_dependency_graph_hash TEXT NOT NULL, startup_topology_hash TEXT NOT NULL, replay_neutrality_hash TEXT NOT NULL, conformance_status TEXT NOT NULL CHECK (conformance_status IN ('BOOTSTRAP_CONFORMANT','NULL')), drift_classes TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), remote_authority_denied TEXT NOT NULL CHECK (remote_authority_denied='true'), read_only TEXT NOT NULL CHECK (read_only='true'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_bootstrap_sovereignty_registry_manifest ON bootstrap_sovereignty_registry(manifest_hash, lineage_checkpoint_hash, conformance_status)`,
       `CREATE INDEX IF NOT EXISTS idx_bootstrap_sovereignty_registry_topology ON bootstrap_sovereignty_registry(deployment_lineage_root, bootstrap_trust_root_hash, startup_topology_hash)`,
+      `CREATE TABLE IF NOT EXISTS legitimacy_graph_registry (graph_checkpoint_id TEXT PRIMARY KEY, graph_checkpoint_hash TEXT NOT NULL, graph_coherence_hash TEXT NOT NULL, node_count TEXT NOT NULL, edge_count TEXT NOT NULL, orphan_count TEXT NOT NULL, drift_classes TEXT NOT NULL, checkpoint_object_hash TEXT NOT NULL, cross_registry_replay_continuity TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), remote_authority_denied TEXT NOT NULL CHECK (remote_authority_denied='true'), read_only TEXT NOT NULL CHECK (read_only='true'), creates_authority TEXT NOT NULL CHECK (creates_authority='false'), execution_started TEXT NOT NULL CHECK (execution_started='false'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_legitimacy_graph_registry_checkpoint ON legitimacy_graph_registry(graph_checkpoint_hash, graph_coherence_hash, cross_registry_replay_continuity)`,
       `CREATE INDEX IF NOT EXISTS idx_runtime_evolution_consensus_registry_mutation ON runtime_evolution_consensus_registry(mutation_hash, canonical_hash, governance_scope)`,
       `CREATE INDEX IF NOT EXISTS idx_runtime_evolution_consensus_registry_approval ON runtime_evolution_consensus_registry(approval_hash, consensus_status)`,
       `CREATE TRIGGER IF NOT EXISTS trg_distributed_legitimacy_registry_no_update BEFORE UPDATE ON distributed_legitimacy_registry BEGIN SELECT RAISE(ABORT, 'distributed_legitimacy_registry is append-only'); END`,
@@ -807,6 +814,7 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
     await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_attestation_registry_decision_object_unique ON attestation_registry(decision_id, validated_object_hash)`).run()
     await emitBootstrapDiagnostic(env, "BOOTSTRAP_RECURSIVE_GOVERNANCE_VERIFIED")
     await validateRuntimeEvolutionConsensusRegistry(env)
+    await validateLegitimacyGraphRegistry(env)
     await emitBootstrapDiagnostic(env, "BOOTSTRAP_RUNTIME_EVOLUTION_CONSENSUS_REGISTRY_VALIDATED")
     const sovereigntyManifest = await freezeRuntimeSovereignty(env)
     await emitBootstrapDiagnostic(env, "BOOTSTRAP_RUNTIME_SOVEREIGNTY_FROZEN")
@@ -845,7 +853,9 @@ async function activateAppendOnlyRegistryEnforcement(env: Env) {
     `CREATE TRIGGER IF NOT EXISTS trg_runtime_evolution_consensus_registry_no_update BEFORE UPDATE ON runtime_evolution_consensus_registry BEGIN SELECT RAISE(ABORT, 'runtime_evolution_consensus_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_runtime_evolution_consensus_registry_no_delete BEFORE DELETE ON runtime_evolution_consensus_registry BEGIN SELECT RAISE(ABORT, 'runtime_evolution_consensus_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_update BEFORE UPDATE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`,
-    `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_delete BEFORE DELETE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`
+    `CREATE TRIGGER IF NOT EXISTS trg_bootstrap_sovereignty_registry_no_delete BEFORE DELETE ON bootstrap_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'bootstrap_sovereignty_registry is append-only'); END`,
+    `CREATE TRIGGER IF NOT EXISTS trg_legitimacy_graph_registry_no_update BEFORE UPDATE ON legitimacy_graph_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_graph_registry is append-only'); END`,
+    `CREATE TRIGGER IF NOT EXISTS trg_legitimacy_graph_registry_no_delete BEFORE DELETE ON legitimacy_graph_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_graph_registry is append-only'); END`
   ]
   for (const trigger of triggers) await env.DB.prepare(trigger).run()
 }
@@ -1094,6 +1104,275 @@ function runtimeEvolutionConsensusInputFromUrl(url: URL): Record<string, unknown
     quorum_threshold: url.searchParams.get("quorum_threshold") || "0",
     maintainer_set: url.searchParams.get("maintainer_set") || "",
     approvals: url.searchParams.get("approvals") || ""
+  }
+}
+
+
+type LegitimacyGraphDriftClass = "legitimacy_graph_orphan" | "graph_lineage_fragmentation" | "registry_edge_missing" | "registry_parent_missing" | "registry_child_inconsistency" | "graph_checkpoint_instability" | "cross_registry_hash_divergence" | "replay_lineage_fragmentation" | "proof_graph_discontinuity" | "authority_graph_discontinuity" | "governance_graph_discontinuity" | "federation_graph_discontinuity" | "bootstrap_graph_discontinuity" | "external_authority_graph_discontinuity" | "graph_traversal_depth_exceeded"
+
+type LegitimacyGraphNode = {
+  registry: string
+  node_id: string
+  lineage_root: string
+  object_hash: string
+  exact_object_hash: string
+  canonical_object: Record<string, unknown>
+}
+
+type LegitimacyGraphEdge = {
+  edge_id: string
+  from_registry: string
+  from_node_id: string
+  to_registry: string
+  to_node_id: string
+  relation: string
+  parent_hash: string
+  child_hash: string
+}
+
+type LegitimacyGraphCheckpoint = {
+  checkpoint_id: string
+  graph_checkpoint_hash: string
+  graph_coherence_hash: string
+  nodes: LegitimacyGraphNode[]
+  edges: LegitimacyGraphEdge[]
+  orphans: LegitimacyGraphNode[]
+  drift_classes: LegitimacyGraphDriftClass[]
+  cross_registry_replay_continuity: "CONTINUOUS" | "FRAGMENTED"
+  traversal_depth_limit: number
+  evidence_only: true
+  replay_neutral: true
+  mutation_capable: false
+  remote_authority_denied: true
+  read_only: true
+  creates_authority: false
+  execution_started: false
+  generated_at: string
+}
+
+const LEGITIMACY_GRAPH_REGISTRY = "legitimacy_graph_registry" as const
+const LEGITIMACY_GRAPH_MAX_TRAVERSAL_DEPTH = SYSTEM_MAX_CONTINUITY_DEPTH
+const LEGITIMACY_GRAPH_REGISTRIES = [
+  "session_registry",
+  "continuity_registry",
+  "authority_registry",
+  "aeo_registry",
+  "validation_registry",
+  "execution_registry",
+  "proof_registry",
+  "invocation_registry",
+  "proof_quarantine_registry",
+  "attestation_registry",
+  "preo_registry",
+  "recursive_governance_registry",
+  "runtime_governance_lock_registry",
+  "runtime_sovereignty_registry",
+  "bootstrap_sovereignty_registry",
+  "external_authority_registry",
+  "federation_conformance_registry",
+  "federated_sovereignty_registry",
+  "federated_checkpoint_registry",
+  "federated_reconciliation_registry",
+  "governance_compression_registry",
+  "distributed_legitimacy_registry",
+  "runtime_evolution_consensus_registry"
+] as const
+
+type LegitimacyGraphRegistry = typeof LEGITIMACY_GRAPH_REGISTRIES[number]
+
+const LEGITIMACY_GRAPH_PRIMARY_KEYS: Record<LegitimacyGraphRegistry, string[]> = {
+  session_registry: ["session_id"],
+  continuity_registry: ["continuity_id"],
+  authority_registry: ["authority_id"],
+  aeo_registry: ["aeo_id"],
+  validation_registry: ["validation_id", "decision_id", "validated_object_hash"],
+  execution_registry: ["execution_id"],
+  proof_registry: ["proof_id"],
+  invocation_registry: ["decision_id", "invocation_nonce"],
+  proof_quarantine_registry: ["quarantine_id"],
+  attestation_registry: ["attestation_id", "envelope_hash"],
+  preo_registry: ["preo_id"],
+  recursive_governance_registry: ["governance_id"],
+  runtime_governance_lock_registry: ["lock_id"],
+  runtime_sovereignty_registry: ["sovereignty_id"],
+  bootstrap_sovereignty_registry: ["checkpoint_id"],
+  external_authority_registry: ["sovereignty_dependency_id"],
+  federation_conformance_registry: ["conformance_id"],
+  federated_sovereignty_registry: ["federation_id"],
+  federated_checkpoint_registry: ["checkpoint_envelope_id", "checkpoint_id"],
+  federated_reconciliation_registry: ["reconciliation_id"],
+  governance_compression_registry: ["compression_id"],
+  distributed_legitimacy_registry: ["envelope_id"],
+  runtime_evolution_consensus_registry: ["consensus_id"]
+}
+
+function legitimacyGraphStatusFlags(): { evidence_only: true, replay_neutral: true, mutation_capable: false, remote_authority_denied: true, read_only: true, creates_authority: false, execution_started: false } {
+  return { evidence_only: true, replay_neutral: true, mutation_capable: false, remote_authority_denied: true, read_only: true, creates_authority: false, execution_started: false }
+}
+
+function registryDiscontinuityDrift(registry: string): LegitimacyGraphDriftClass {
+  if (/proof|attestation/.test(registry)) return "proof_graph_discontinuity"
+  if (/authority|aeo|validation|execution|invocation|session|continuity/.test(registry)) return "authority_graph_discontinuity"
+  if (/governance|consensus|lock/.test(registry)) return "governance_graph_discontinuity"
+  if (/federat|distributed|compression/.test(registry)) return "federation_graph_discontinuity"
+  if (/bootstrap|runtime_sovereignty/.test(registry)) return "bootstrap_graph_discontinuity"
+  if (/external_authority/.test(registry)) return "external_authority_graph_discontinuity"
+  return "graph_lineage_fragmentation"
+}
+
+function canonicalRegistryNodeModel(registry: LegitimacyGraphRegistry, row: Record<string, unknown>, object_hash: string): LegitimacyGraphNode {
+  const keys = LEGITIMACY_GRAPH_PRIMARY_KEYS[registry]
+  const values = keys.map((key) => String(row[key] || "")).filter(Boolean)
+  const node_id = values.length > 0 ? values.join(":") : object_hash
+  const lineage_root = String(row.lineage_root || row.deployment_lineage_root || row.continuity_root || row.continuity_id || row.session_id || node_id || object_hash)
+  return Object.freeze({ registry, node_id, lineage_root, object_hash, exact_object_hash: object_hash, canonical_object: canonicalRecord(row) })
+}
+
+async function exactObjectCheckpointHash(node: LegitimacyGraphNode): Promise<string> {
+  return sha256Hex(canonicalize({ registry: node.registry, node_id: node.node_id, exact_object_hash: node.exact_object_hash, canonical_object: node.canonical_object }))
+}
+
+function legitimacyGraphSecondaryIndexes(node: LegitimacyGraphNode): string[] {
+  const row = node.canonical_object
+  const keys = ["session_id", "continuity_id", "authority_id", "aeo_id", "validation_id", "execution_id", "proof_id", "decision_id", "governance_id", "checkpoint_id", "envelope_id", "canonical_hash", "lineage_root"]
+  const indexes = [`${node.registry}:${node.node_id}`]
+  for (const key of keys) {
+    const value = String(row[key] || "")
+    if (value) indexes.push(`${node.registry}:${key}:${value}`)
+  }
+  const decision = String(row.decision_id || "")
+  const objectHash = String(row.validated_object_hash || "")
+  if (decision && objectHash) indexes.push(`${node.registry}:decision_object:${decision}:${objectHash}`)
+  return indexes
+}
+
+function legitimacyParentReferences(node: LegitimacyGraphNode): Array<{ registry: LegitimacyGraphRegistry, key: string, value: string, relation: string, required: boolean }> {
+  const row = node.canonical_object
+  const refs: Array<{ registry: LegitimacyGraphRegistry, key: string, value: string, relation: string, required: boolean }> = []
+  const add = (registry: LegitimacyGraphRegistry, key: string, value: unknown, relation: string, required = true) => { if (String(value || "")) refs.push({ registry, key, value: String(value), relation, required }) }
+  if (node.registry === "continuity_registry") { add("session_registry", "session_id", row.session_id, "session_continuity"); add("continuity_registry", "continuity_id", row.parent_continuity_id, "recursive_continuity", false) }
+  if (node.registry === "authority_registry") { add("session_registry", "session_id", row.session_id, "authority_session"); add("continuity_registry", "continuity_id", row.continuity_id, "authority_continuity") }
+  if (node.registry === "aeo_registry") { add("authority_registry", "authority_id", row.authority_id, "aeo_authority"); add("continuity_registry", "continuity_id", row.continuity_id, "aeo_continuity") }
+  if (node.registry === "validation_registry") { add("session_registry", "session_id", row.session_id, "validation_session"); add("continuity_registry", "continuity_id", row.continuity_id, "validation_continuity") }
+  if (node.registry === "execution_registry") { add("validation_registry", "decision_object", `${String(row.decision_id || "")}:${String(row.validated_object_hash || "")}`, "execution_validation"); add("continuity_registry", "continuity_id", row.continuity_id, "execution_continuity") }
+  if (node.registry === "proof_registry") { add("execution_registry", "execution_id", row.execution_id, "proof_execution"); add("validation_registry", "decision_object", `${String(row.decision_id || "")}:${String(row.validated_object_hash || "")}`, "proof_validation"); add("continuity_registry", "continuity_id", row.continuity_id, "proof_continuity") }
+  if (node.registry === "invocation_registry") add("continuity_registry", "continuity_id", row.continuity_id, "invocation_continuity")
+  if (node.registry === "proof_quarantine_registry") add("proof_registry", "proof_id", row.proof_id, "quarantine_proof")
+  if (node.registry === "attestation_registry") add("validation_registry", "decision_object", `${String(row.decision_id || "")}:${String(row.validated_object_hash || "")}`, "attestation_validation")
+  if (node.registry === "preo_registry") { add("authority_registry", "authority_id", row.authority_id, "preo_authority"); add("continuity_registry", "continuity_id", row.continuity_id, "preo_continuity") }
+  if (node.registry === "runtime_governance_lock_registry") add("recursive_governance_registry", "governance_id", row.governance_id, "lock_governance")
+  if (["federation_conformance_registry", "federated_sovereignty_registry", "federated_checkpoint_registry", "federated_reconciliation_registry", "governance_compression_registry", "distributed_legitimacy_registry"].includes(node.registry)) add("continuity_registry", "continuity_id", row.continuity_id, "federated_continuity", false)
+  return refs
+}
+
+function lineageRootResolver(node: LegitimacyGraphNode, edgeMap: Map<string, LegitimacyGraphEdge[]>, nodeMap: Map<string, LegitimacyGraphNode>, depthLimit = LEGITIMACY_GRAPH_MAX_TRAVERSAL_DEPTH): { root: string, depth_exceeded: boolean } {
+  let root = node.lineage_root || node.node_id
+  let depthExceeded = false
+  const visit = (current: LegitimacyGraphNode, depth: number, seen: Set<string>) => {
+    if (depth > depthLimit) { depthExceeded = true; return }
+    const key = `${current.registry}:${current.node_id}`
+    if (seen.has(key)) return
+    seen.add(key)
+    const parents = edgeMap.get(key) || []
+    if (parents.length === 0) { root = current.node_id; return }
+    for (const edge of parents) {
+      const parent = nodeMap.get(`${edge.to_registry}:${edge.to_node_id}`)
+      if (parent) visit(parent, depth + 1, seen)
+    }
+  }
+  visit(node, 0, new Set())
+  return { root, depth_exceeded: depthExceeded }
+}
+
+async function deterministicGraphTraversalEngine(env: Env): Promise<LegitimacyGraphCheckpoint> {
+  const nodes: LegitimacyGraphNode[] = []
+  for (const registry of LEGITIMACY_GRAPH_REGISTRIES) {
+    const columns = await tableColumns(env, registry)
+    if (columns.size === 0) continue
+    const orderBy = Array.from(columns).sort().map((column) => `${column} ASC`).join(", ")
+    const rowsResult = await env.DB.prepare(`SELECT * FROM ${registry} ORDER BY ${orderBy}`).all<any>()
+    const rows = Array.isArray(rowsResult?.results) ? rowsResult.results : []
+    for (const row of rows) {
+      const canonical_object = canonicalRecord(row)
+      nodes.push(canonicalRegistryNodeModel(registry, canonical_object, await sha256Hex(canonicalize(canonical_object))))
+    }
+  }
+  nodes.sort((a, b) => `${a.registry}:${a.node_id}:${a.object_hash}`.localeCompare(`${b.registry}:${b.node_id}:${b.object_hash}`))
+
+  const nodeMap = new Map<string, LegitimacyGraphNode>()
+  const indexMap = new Map<string, LegitimacyGraphNode>()
+  for (const node of nodes) {
+    nodeMap.set(`${node.registry}:${node.node_id}`, node)
+    for (const index of legitimacyGraphSecondaryIndexes(node)) if (!indexMap.has(index)) indexMap.set(index, node)
+  }
+
+  const edges: LegitimacyGraphEdge[] = []
+  const orphans: LegitimacyGraphNode[] = []
+  const drift = new Set<LegitimacyGraphDriftClass>()
+  for (const node of nodes) {
+    const refs = legitimacyParentReferences(node)
+    let missingRequiredParent = false
+    for (const ref of refs) {
+      const parent = indexMap.get(`${ref.registry}:${ref.key}:${ref.value}`)
+      if (!parent) {
+        if (ref.required) {
+          missingRequiredParent = true
+          drift.add("registry_parent_missing")
+          drift.add("registry_edge_missing")
+          drift.add(registryDiscontinuityDrift(node.registry))
+          if (["execution_registry", "proof_registry", "invocation_registry"].includes(node.registry)) drift.add("replay_lineage_fragmentation")
+        }
+        continue
+      }
+      const edgeMaterial = { child: `${node.registry}:${node.node_id}`, parent: `${parent.registry}:${parent.node_id}`, relation: ref.relation, child_hash: node.object_hash, parent_hash: parent.object_hash }
+      edges.push(Object.freeze({ edge_id: await sha256Hex(canonicalize(edgeMaterial)), from_registry: node.registry, from_node_id: node.node_id, to_registry: parent.registry, to_node_id: parent.node_id, relation: ref.relation, parent_hash: parent.object_hash, child_hash: node.object_hash }))
+    }
+    if (missingRequiredParent || (refs.length > 0 && refs.every((ref) => !indexMap.get(`${ref.registry}:${ref.key}:${ref.value}`)))) {
+      orphans.push(node)
+      drift.add("legitimacy_graph_orphan")
+      drift.add("graph_lineage_fragmentation")
+    }
+  }
+  edges.sort((a, b) => `${a.from_registry}:${a.from_node_id}:${a.relation}:${a.to_registry}:${a.to_node_id}:${a.edge_id}`.localeCompare(`${b.from_registry}:${b.from_node_id}:${b.relation}:${b.to_registry}:${b.to_node_id}:${b.edge_id}`))
+  orphans.sort((a, b) => `${a.registry}:${a.node_id}:${a.object_hash}`.localeCompare(`${b.registry}:${b.node_id}:${b.object_hash}`))
+
+  const edgeMap = new Map<string, LegitimacyGraphEdge[]>()
+  for (const edge of edges) {
+    const key = `${edge.from_registry}:${edge.from_node_id}`
+    edgeMap.set(key, [...(edgeMap.get(key) || []), edge])
+  }
+  for (const node of nodes) {
+    const resolved = lineageRootResolver(node, edgeMap, nodeMap)
+    if (resolved.depth_exceeded) {
+      drift.add("graph_traversal_depth_exceeded")
+      drift.add("graph_lineage_fragmentation")
+    }
+  }
+  const checkpoint_object_hash = await sha256Hex(canonicalize(await Promise.all(nodes.map(exactObjectCheckpointHash))))
+  const graph_coherence_hash = await sha256Hex(canonicalize({ nodes: nodes.map((node) => ({ registry: node.registry, node_id: node.node_id, object_hash: node.object_hash })), edges }))
+  const drift_classes = Array.from(drift).sort()
+  const graph_checkpoint_hash = await sha256Hex(canonicalize({ graph_coherence_hash, checkpoint_object_hash, drift_classes, orphan_count: orphans.length, node_count: nodes.length, edge_count: edges.length }))
+  return Object.freeze({ checkpoint_id: `legitimacy-graph:${graph_checkpoint_hash}`, graph_checkpoint_hash, graph_coherence_hash, nodes, edges, orphans, drift_classes, cross_registry_replay_continuity: drift.has("replay_lineage_fragmentation") ? "FRAGMENTED" : "CONTINUOUS", traversal_depth_limit: LEGITIMACY_GRAPH_MAX_TRAVERSAL_DEPTH, ...legitimacyGraphStatusFlags(), generated_at: new Date().toISOString() })
+}
+
+async function appendGraphClosureCheckpoint(env: Env, checkpoint: LegitimacyGraphCheckpoint) {
+  await env.DB.prepare(`INSERT OR IGNORE INTO legitimacy_graph_registry (graph_checkpoint_id,graph_checkpoint_hash,graph_coherence_hash,node_count,edge_count,orphan_count,drift_classes,checkpoint_object_hash,cross_registry_replay_continuity,evidence_only,replay_neutral,mutation_capable,remote_authority_denied,read_only,creates_authority,execution_started,generated_at,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'true','true','false','true','true','false','false',?10,?11)`)
+    .bind(checkpoint.checkpoint_id, checkpoint.graph_checkpoint_hash, checkpoint.graph_coherence_hash, String(checkpoint.nodes.length), String(checkpoint.edges.length), String(checkpoint.orphans.length), canonicalize(checkpoint.drift_classes), await sha256Hex(canonicalize(checkpoint.nodes.map((node) => node.exact_object_hash))), checkpoint.cross_registry_replay_continuity, checkpoint.generated_at, checkpoint.generated_at)
+    .run()
+}
+
+async function ensureLegitimacyGraphRegistry(env: Env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS legitimacy_graph_registry (graph_checkpoint_id TEXT PRIMARY KEY, graph_checkpoint_hash TEXT NOT NULL, graph_coherence_hash TEXT NOT NULL, node_count TEXT NOT NULL, edge_count TEXT NOT NULL, orphan_count TEXT NOT NULL, drift_classes TEXT NOT NULL, checkpoint_object_hash TEXT NOT NULL, cross_registry_replay_continuity TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), remote_authority_denied TEXT NOT NULL CHECK (remote_authority_denied='true'), read_only TEXT NOT NULL CHECK (read_only='true'), creates_authority TEXT NOT NULL CHECK (creates_authority='false'), execution_started TEXT NOT NULL CHECK (execution_started='false'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`).run()
+  await validateLegitimacyGraphRegistry(env)
+  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_legitimacy_graph_registry_no_update BEFORE UPDATE ON legitimacy_graph_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_graph_registry is append-only'); END`).run()
+  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_legitimacy_graph_registry_no_delete BEFORE DELETE ON legitimacy_graph_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_graph_registry is append-only'); END`).run()
+}
+
+async function validateLegitimacyGraphRegistry(env: Env) {
+  const columns = await tableColumns(env, LEGITIMACY_GRAPH_REGISTRY)
+  if (columns.size === 0) return
+  for (const column of REQUIRED_SCHEMA_COLUMNS.legitimacy_graph_registry) {
+    if (!columns.has(column)) throw new SchemaInitializationError("missing_required_column")
   }
 }
 
@@ -4233,6 +4512,24 @@ export default {
         return json({ status: "NULL", route: "/federation/interoperability/checkpoint", reason: "reconciliation_unavailable", evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true })
       }
     }
+    if ([GRAPH_VERIFY_ROUTE, GRAPH_TOPOLOGY_ROUTE, GRAPH_CHECKPOINT_ROUTE, GRAPH_ORPHANS_ROUTE].includes(url.pathname as any) && request.method !== "GET") return json({ status: "NULL", route: url.pathname, reason: "get_only", ...legitimacyGraphStatusFlags() }, 405)
+
+    if ([GRAPH_VERIFY_ROUTE, GRAPH_TOPOLOGY_ROUTE, GRAPH_CHECKPOINT_ROUTE, GRAPH_ORPHANS_ROUTE].includes(url.pathname as any) && request.method === "GET") {
+      try {
+        if (!hasDb(env)) return json({ status: "NULL", route: url.pathname, reason: "database_unavailable", ...legitimacyGraphStatusFlags() })
+        await ensureLegitimacyGraphRegistry(env)
+        const checkpoint = await deterministicGraphTraversalEngine(env)
+        await appendGraphClosureCheckpoint(env, checkpoint)
+        const graphStatus = checkpoint.drift_classes.length > 0 ? "GRAPH_CLOSURE_DRIFT" : "GRAPH_CLOSURE_VERIFIED"
+        if (url.pathname === GRAPH_TOPOLOGY_ROUTE) return json({ status: graphStatus, route: GRAPH_TOPOLOGY_ROUTE, reason: "observability_only", topology: { nodes: checkpoint.nodes, edges: checkpoint.edges, node_count: checkpoint.nodes.length, edge_count: checkpoint.edges.length }, graph_checkpoint_hash: checkpoint.graph_checkpoint_hash, graph_coherence_hash: checkpoint.graph_coherence_hash, drift_classes: checkpoint.drift_classes, ...legitimacyGraphStatusFlags(), append_only: true })
+        if (url.pathname === GRAPH_CHECKPOINT_ROUTE) return json({ status: graphStatus, route: GRAPH_CHECKPOINT_ROUTE, reason: "observability_only", checkpoint: { checkpoint_id: checkpoint.checkpoint_id, graph_checkpoint_hash: checkpoint.graph_checkpoint_hash, graph_coherence_hash: checkpoint.graph_coherence_hash, node_count: checkpoint.nodes.length, edge_count: checkpoint.edges.length, orphan_count: checkpoint.orphans.length, cross_registry_replay_continuity: checkpoint.cross_registry_replay_continuity, traversal_depth_limit: checkpoint.traversal_depth_limit, generated_at: checkpoint.generated_at }, drift_classes: checkpoint.drift_classes, ...legitimacyGraphStatusFlags(), append_only: true })
+        if (url.pathname === GRAPH_ORPHANS_ROUTE) return json({ status: checkpoint.orphans.length > 0 ? "GRAPH_ORPHANS_DETECTED" : "GRAPH_ORPHANS_CLEAR", route: GRAPH_ORPHANS_ROUTE, reason: "observability_only", orphans: checkpoint.orphans, orphan_count: checkpoint.orphans.length, graph_checkpoint_hash: checkpoint.graph_checkpoint_hash, drift_classes: checkpoint.drift_classes, ...legitimacyGraphStatusFlags(), append_only: true })
+        return json({ status: graphStatus, route: GRAPH_VERIFY_ROUTE, reason: "observability_only", checkpoint, graph_checkpoint_hash: checkpoint.graph_checkpoint_hash, graph_coherence_hash: checkpoint.graph_coherence_hash, drift_classes: checkpoint.drift_classes, orphan_count: checkpoint.orphans.length, cross_registry_replay_continuity: checkpoint.cross_registry_replay_continuity, ...legitimacyGraphStatusFlags(), append_only: true })
+      } catch {
+        return json({ status: "NULL", route: url.pathname, reason: "graph_verification_unavailable", ...legitimacyGraphStatusFlags() })
+      }
+    }
+
     if (url.pathname === RUNTIME_EVOLUTION_CONSENSUS_ROUTE && request.method !== "GET") return json({ status: "NULL", route: RUNTIME_EVOLUTION_CONSENSUS_ROUTE, reason: "get_only", evidence_only: true, read_only: true, mutation_capable: false, replay_neutral: true }, 405)
 
     if (url.pathname === RUNTIME_EVOLUTION_CONSENSUS_ROUTE && request.method === "GET") {
