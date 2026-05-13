@@ -130,6 +130,19 @@ test('migration chain reproduces canonical runtime registry schemas', () => {
     assertColumns(dbPath, 'revocation_topology_registry', ['topology_id', 'authority_id', 'continuity_id', 'lineage_root', 'topology_hash', 'drift_summary', 'observed_at', 'created_at'])
     assertNotNull(dbPath, 'revocation_topology_registry', ['lineage_root', 'topology_hash', 'drift_summary', 'observed_at', 'created_at'])
     assertIndex(dbPath, 'revocation_topology_registry', 'idx_revocation_topology_registry_hash', ['topology_hash'])
+
+    assertColumns(dbPath, 'distributed_legitimacy_registry', ['envelope_id', 'canonical_hash', 'lineage_root', 'continuity_id', 'reconciliation_id', 'federation_classification', 'replay_indicators', 'drift_indicators', 'evidence_only', 'remote_authority_denied', 'read_only', 'mutation_capable', 'replay_neutral', 'generated_at', 'created_at'])
+    assertNotNull(dbPath, 'distributed_legitimacy_registry', ['canonical_hash', 'lineage_root', 'continuity_id', 'reconciliation_id', 'federation_classification', 'replay_indicators', 'drift_indicators', 'evidence_only', 'remote_authority_denied', 'read_only', 'mutation_capable', 'replay_neutral', 'generated_at', 'created_at'])
+    assertIndex(dbPath, 'distributed_legitimacy_registry', 'idx_distributed_legitimacy_registry_hash_unique', ['canonical_hash'], true)
+    assertIndex(dbPath, 'distributed_legitimacy_registry', 'idx_distributed_legitimacy_registry_lineage', ['lineage_root', 'continuity_id', 'reconciliation_id'])
+
+    assertColumns(dbPath, 'federated_checkpoint_registry', ['checkpoint_envelope_id', 'checkpoint_id', 'canonical_hash', 'lineage_root', 'continuity_id', 'reconciliation_id', 'reconciliation_merkle_root', 'federation_classification', 'replay_indicators', 'drift_indicators', 'evidence_only', 'remote_authority_denied', 'read_only', 'mutation_capable', 'replay_neutral', 'generated_at', 'created_at'])
+    assertNotNull(dbPath, 'federated_checkpoint_registry', ['checkpoint_id', 'canonical_hash', 'lineage_root', 'continuity_id', 'reconciliation_id', 'reconciliation_merkle_root', 'federation_classification', 'replay_indicators', 'drift_indicators', 'evidence_only', 'remote_authority_denied', 'read_only', 'mutation_capable', 'replay_neutral', 'generated_at', 'created_at'])
+    assertIndex(dbPath, 'federated_checkpoint_registry', 'idx_federated_checkpoint_registry_hash_unique', ['canonical_hash'], true)
+    assertIndex(dbPath, 'federated_checkpoint_registry', 'idx_federated_checkpoint_registry_lineage', ['lineage_root', 'continuity_id', 'reconciliation_id'])
+
+    assert.throws(() => runSqlite([dbPath, "INSERT INTO distributed_legitimacy_registry (envelope_id,canonical_hash,lineage_root,continuity_id,reconciliation_id,federation_classification,replay_indicators,drift_indicators,evidence_only,remote_authority_denied,read_only,mutation_capable,replay_neutral,generated_at,created_at) VALUES ('e1','hash1','root','cont','rec','{}','[]','[]','true','true','true','false','true','deterministic','created'); UPDATE distributed_legitimacy_registry SET canonical_hash='changed' WHERE envelope_id='e1';"]), /append-only/)
+    assert.throws(() => runSqlite([dbPath, "INSERT INTO federated_checkpoint_registry (checkpoint_envelope_id,checkpoint_id,canonical_hash,lineage_root,continuity_id,reconciliation_id,reconciliation_merkle_root,federation_classification,replay_indicators,drift_indicators,evidence_only,remote_authority_denied,read_only,mutation_capable,replay_neutral,generated_at,created_at) VALUES ('c1','checkpoint','hash2','root','cont','rec','merkle','{}','[]','[]','true','true','true','false','true','deterministic','created'); DELETE FROM federated_checkpoint_registry WHERE checkpoint_envelope_id='c1';"]), /append-only/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

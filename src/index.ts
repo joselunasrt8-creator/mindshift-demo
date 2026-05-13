@@ -15,7 +15,7 @@ const SESSION_TTL_MS = 3600_000
 const SYSTEM_MAX_CONTINUITY_DEPTH = 32
 const CANONICAL_RUNTIME_ROUTES = ["/session", "/continuity", "/authority", "/compile", "/validate", "/execute", "/proof"] as const
 const GOVERNANCE_EVIDENCE_ROUTES = ["/preo"] as const
-const NON_EXECUTABLE_OBSERVABILITY_ROUTES = ["/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology"] as const
+const NON_EXECUTABLE_OBSERVABILITY_ROUTES = ["/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/interoperability/checkpoint"] as const
 const REQUIRE_PREO_LINEAGE = "explicit_governed_deploy_policy" as const
 const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
   "session_registry",
@@ -36,6 +36,8 @@ const LOCAL_FEDERATION_RUNTIME_ID = "mindshift-local-runtime"
 const FEDERATED_REVOCATION_OBSERVABILITY_REGISTRY = "federated_revocation_observability_registry" as const
 const FEDERATED_TRUST_REGISTRY = "federated_trust_registry" as const
 const REVOCATION_TOPOLOGY_REGISTRY = "revocation_topology_registry" as const
+const DISTRIBUTED_LEGITIMACY_REGISTRY = "distributed_legitimacy_registry" as const
+const FEDERATED_CHECKPOINT_REGISTRY = "federated_checkpoint_registry" as const
 
 
 const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
@@ -55,7 +57,9 @@ const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
   federated_reconciliation_registry: ["reconciliation_id", "runtime_id", "remote_runtime_id", "classification", "validated_object_hash", "reconciliation_merkle_root", "bundle_hash", "verification_status", "drift_class", "created_at"],
   federated_revocation_observability_registry: ["revocation_evidence_id", "runtime_id", "remote_runtime_id", "continuity_id", "decision_id", "validated_object_hash", "revocation_class", "revocation_reason", "lineage_hash", "reconciliation_merkle_root", "attestation_hash", "observed_at", "evidence_hash", "verification_status", "drift_class", "created_at"],
   federated_trust_registry: ["trust_envelope_id", "federation_origin", "federation_tier", "verification_status", "evidence_only", "remote_authority_denied", "continuity_reference", "lineage_root", "observed_at", "canonical_hash", "created_at"],
-  revocation_topology_registry: ["topology_id", "authority_id", "continuity_id", "lineage_root", "topology_hash", "drift_summary", "observed_at", "created_at"]
+  revocation_topology_registry: ["topology_id", "authority_id", "continuity_id", "lineage_root", "topology_hash", "drift_summary", "observed_at", "created_at"],
+  distributed_legitimacy_registry: ["envelope_id", "canonical_hash", "lineage_root", "continuity_id", "reconciliation_id", "federation_classification", "replay_indicators", "drift_indicators", "evidence_only", "remote_authority_denied", "read_only", "mutation_capable", "replay_neutral", "generated_at", "created_at"],
+  federated_checkpoint_registry: ["checkpoint_envelope_id", "checkpoint_id", "canonical_hash", "lineage_root", "continuity_id", "reconciliation_id", "reconciliation_merkle_root", "federation_classification", "replay_indicators", "drift_indicators", "evidence_only", "remote_authority_denied", "read_only", "mutation_capable", "replay_neutral", "generated_at", "created_at"]
 }
 
 type SchemaDiagnosticReason = "missing_required_table" | "missing_required_column" | "migration_required" | "database_unavailable" | "schema_initialization_failed"
@@ -81,7 +85,7 @@ function schemaDiagnosticReason(error: unknown): SchemaDiagnosticReason {
 }
 
 type TelemetryEventType = "SESSION_CREATED" | "CONTINUITY_CREATED" | "AUTHORITY_CREATED" | "AEO_COMPILED" | "VALIDATION_GRANTED" | "VALIDATION_REJECTED" | "EXECUTION_STARTED" | "EXECUTION_COMPLETED" | "PROOF_PERSISTED" | "REPLAY_BLOCKED" | "HASH_MISMATCH" | "AUTHORITY_CONSUMED"
-type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift" | "attestation_drift" | "signature_drift" | "signer_identity_drift" | "payload_drift" | "transparency_drift" | "federated_checkpoint_drift" | "federated_merkle_drift" | "federated_bundle_drift" | "federated_attestation_drift" | "federated_reconciliation_drift" | "federated_runtime_divergence_drift" | "federated_replay_drift" | "federated_preo_drift" | "federated_continuity_drift" | "federated_exact_object_drift" | "federated_identifier_resolution_drift" | "federated_revocation_projection_drift" | "federated_revocation_divergence_drift" | "federated_revocation_exact_object_drift" | "federated_revocation_replay_drift" | "federated_revocation_anchor_drift" | "federated_checkpoint_revocation_drift" | "federated_expiration_visibility_drift" | "orphaned_execution" | "revoked_authority_execution" | "federated_lineage_divergence" | "replay_resurrection_attempt"
+type DriftClass = "authority_drift" | "hash_drift" | "execution_drift" | "proof_drift" | "replay_drift" | "registry_drift" | "provenance_drift" | "branch_lineage_drift" | "workflow_source_drift" | "reconciliation_failure_drift" | "recursive_ancestry_drift" | "replay_chain_drift" | "proof_lineage_drift" | "preo_ancestry_drift" | "revocation_propagation_drift" | "duplicate_lineage_hash_drift" | "orphan_legitimacy_object_drift" | "federated_lineage_drift" | "foreign_ancestry_mismatch_drift" | "scheduler_ordering_instability_drift" | "reconciliation_report_drift" | "portable_serialization_mismatch_drift" | "federated_replay_discontinuity_drift" | "deterministic_traversal_instability_drift" | "reconciliation_payload_corruption_drift" | "traversal_instability_drift" | "telemetry_payload_drift" | "attestation_drift" | "signature_drift" | "signer_identity_drift" | "payload_drift" | "transparency_drift" | "federated_checkpoint_drift" | "federated_merkle_drift" | "federated_bundle_drift" | "federated_attestation_drift" | "federated_reconciliation_drift" | "federated_runtime_divergence_drift" | "federated_replay_drift" | "federated_preo_drift" | "federated_continuity_drift" | "federated_exact_object_drift" | "federated_identifier_resolution_drift" | "federated_revocation_projection_drift" | "federated_revocation_divergence_drift" | "federated_revocation_exact_object_drift" | "federated_revocation_replay_drift" | "federated_revocation_anchor_drift" | "federated_checkpoint_revocation_drift" | "federated_expiration_visibility_drift" | "orphaned_execution" | "revoked_authority_execution" | "federated_lineage_divergence" | "replay_resurrection_attempt" | "distributed_lineage_divergence" | "checkpoint_hash_instability" | "federated_projection_corruption" | "remote_authority_claim" | "interoperability_replay_attempt"
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json" } })
@@ -385,7 +389,17 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE TABLE IF NOT EXISTS federated_trust_registry (trust_envelope_id TEXT PRIMARY KEY, federation_origin TEXT NOT NULL, federation_tier TEXT NOT NULL, verification_status TEXT NOT NULL, evidence_only TEXT NOT NULL, remote_authority_denied TEXT NOT NULL, continuity_reference TEXT NOT NULL, lineage_root TEXT NOT NULL, observed_at TEXT NOT NULL, canonical_hash TEXT NOT NULL, created_at TEXT NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_federated_trust_registry_hash ON federated_trust_registry(canonical_hash)`,
       `CREATE TABLE IF NOT EXISTS revocation_topology_registry (topology_id TEXT PRIMARY KEY, authority_id TEXT, continuity_id TEXT, lineage_root TEXT NOT NULL, topology_hash TEXT NOT NULL, drift_summary TEXT NOT NULL, observed_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
-      `CREATE INDEX IF NOT EXISTS idx_revocation_topology_registry_hash ON revocation_topology_registry(topology_hash)`
+      `CREATE INDEX IF NOT EXISTS idx_revocation_topology_registry_hash ON revocation_topology_registry(topology_hash)`,
+      `CREATE TABLE IF NOT EXISTS distributed_legitimacy_registry (envelope_id TEXT PRIMARY KEY, canonical_hash TEXT NOT NULL, lineage_root TEXT NOT NULL, continuity_id TEXT NOT NULL, reconciliation_id TEXT NOT NULL, federation_classification TEXT NOT NULL, replay_indicators TEXT NOT NULL, drift_indicators TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), remote_authority_denied TEXT NOT NULL CHECK (remote_authority_denied='true'), read_only TEXT NOT NULL CHECK (read_only='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_distributed_legitimacy_registry_hash_unique ON distributed_legitimacy_registry(canonical_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_distributed_legitimacy_registry_lineage ON distributed_legitimacy_registry(lineage_root, continuity_id, reconciliation_id)`,
+      `CREATE TABLE IF NOT EXISTS federated_checkpoint_registry (checkpoint_envelope_id TEXT PRIMARY KEY, checkpoint_id TEXT NOT NULL, canonical_hash TEXT NOT NULL, lineage_root TEXT NOT NULL, continuity_id TEXT NOT NULL, reconciliation_id TEXT NOT NULL, reconciliation_merkle_root TEXT NOT NULL, federation_classification TEXT NOT NULL, replay_indicators TEXT NOT NULL, drift_indicators TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), remote_authority_denied TEXT NOT NULL CHECK (remote_authority_denied='true'), read_only TEXT NOT NULL CHECK (read_only='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_federated_checkpoint_registry_hash_unique ON federated_checkpoint_registry(canonical_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_federated_checkpoint_registry_lineage ON federated_checkpoint_registry(lineage_root, continuity_id, reconciliation_id)`,
+      `CREATE TRIGGER IF NOT EXISTS trg_distributed_legitimacy_registry_no_update BEFORE UPDATE ON distributed_legitimacy_registry BEGIN SELECT RAISE(ABORT, 'distributed_legitimacy_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_distributed_legitimacy_registry_no_delete BEFORE DELETE ON distributed_legitimacy_registry BEGIN SELECT RAISE(ABORT, 'distributed_legitimacy_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_federated_checkpoint_registry_no_update BEFORE UPDATE ON federated_checkpoint_registry BEGIN SELECT RAISE(ABORT, 'federated_checkpoint_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_federated_checkpoint_registry_no_delete BEFORE DELETE ON federated_checkpoint_registry BEGIN SELECT RAISE(ABORT, 'federated_checkpoint_registry is append-only'); END`
     ]
     for (const s of stmts) await env.DB.prepare(s).run()
     await ensureRequiredSchemaColumns(env)
@@ -1396,6 +1410,77 @@ type FederatedBundleVerification = {
   bundle_hash?: string
 }
 
+type InteroperabilityDriftClassification = "distributed_lineage_divergence" | "checkpoint_hash_instability" | "federated_projection_corruption" | "remote_authority_claim" | "interoperability_replay_attempt"
+type InteroperabilityStatus = "INTEROPERABILITY_EVIDENCE_OBSERVED" | "INTEROPERABILITY_QUARANTINED" | "NULL"
+type PortableLegitimacyProjection = {
+  projection_type: "PortableLegitimacyProjection"
+  canonical_hash: string
+  lineage_root: string
+  continuity_id: string
+  reconciliation_id: string
+  generated_at: string
+  replay_indicators: string[]
+  federation_classification: FederationClassification
+  evidence_only: true
+  remote_authority_denied: true
+  read_only: true
+  mutation_capable: false
+  replay_neutral: true
+  exact_object_hash: string
+  local_execution_authority: false
+  remote_execution_legitimacy: false
+}
+type DistributedLegitimacyEnvelope = {
+  envelope_type: "DistributedLegitimacyEnvelope"
+  canonical_hash: string
+  envelope_id: string
+  lineage_root: string
+  continuity_id: string
+  reconciliation_id: string
+  generated_at: string
+  replay_indicators: string[]
+  federation_classification: FederationClassification
+  evidence_only: true
+  remote_authority_denied: true
+  read_only: true
+  mutation_capable: false
+  replay_neutral: true
+  projection: PortableLegitimacyProjection | null
+}
+type FederatedCheckpointEnvelope = {
+  envelope_type: "FederatedCheckpointEnvelope"
+  canonical_hash: string
+  checkpoint_envelope_id: string
+  lineage_root: string
+  continuity_id: string
+  reconciliation_id: string
+  generated_at: string
+  replay_indicators: string[]
+  federation_classification: FederationClassification
+  evidence_only: true
+  remote_authority_denied: true
+  read_only: true
+  mutation_capable: false
+  replay_neutral: true
+  checkpoint: ReconciliationCheckpoint
+}
+type FederatedLineageEnvelope = {
+  envelope_type: "FederatedLineageEnvelope"
+  canonical_hash: string
+  lineage_root: string
+  continuity_id: string
+  reconciliation_id: string
+  generated_at: string
+  replay_indicators: string[]
+  federation_classification: FederationClassification
+  evidence_only: true
+  remote_authority_denied: true
+  read_only: true
+  mutation_capable: false
+  replay_neutral: true
+  lineage_summary: Record<string, unknown>
+}
+
 const RECONCILIATION_MERKLE_LAYERS: readonly ReconciliationMerkleNode["layer"][] = ["session", "continuity", "authority", "AEO", "validation", "execution", "proof", "attestation", "PREO"] as const
 
 function classifyRemoteRuntime(runtime_id: string, local_runtime_id = LOCAL_FEDERATION_RUNTIME_ID): RemoteRuntimeClassification {
@@ -1484,6 +1569,124 @@ async function deterministicReconciliationCheckpoint(result: ReconciliationResul
     revocation_snapshot_hash,
     created_at
   }
+}
+
+function deterministicInteroperabilityGeneratedAt(result: ReconciliationResult): string {
+  // Interoperability checkpoint material is replay-neutral and timestamp-independent.
+  return `DETERMINISTIC_INTEROPERABILITY_CHECKPOINT:${result.lineage_anchor}`
+}
+
+function federationClassificationForInteroperability(result: ReconciliationResult, federation_origin = LOCAL_FEDERATION_RUNTIME_ID): FederationClassification {
+  const driftClasses = result.drift_classifications.map((drift) => drift.drift_class)
+  const verification_status: FederationVerificationStatus = driftClasses.includes("interoperability_replay_attempt") || driftClasses.includes("replay_resurrection_attempt") || driftClasses.includes("federated_replay_drift")
+    ? "REPLAY_DETECTED"
+    : driftClasses.includes("distributed_lineage_divergence") || driftClasses.includes("federated_lineage_divergence") || driftClasses.includes("checkpoint_hash_instability")
+      ? "LINEAGE_MISMATCH"
+      : driftClasses.includes("federated_projection_corruption") || driftClasses.includes("remote_authority_claim")
+        ? "CORRUPTED"
+        : result.result === "VALID_RECONCILIATION"
+          ? "VERIFIED"
+          : "NULL_STATE"
+  return canonicalFederatedTrustEnvelope({ federation_origin, verification_status, continuity_reference: resolveCanonicalPortableIdentifiers(result)?.continuity_id || "", lineage_root: result.lineage_anchor, observed_at: deterministicInteroperabilityGeneratedAt(result) })
+}
+
+function replayIndicatorsForInteroperability(result: ReconciliationResult): string[] {
+  const indicators = new Set<string>()
+  for (const drift of result.drift_classifications) {
+    if (String(drift.drift_class).includes("replay")) indicators.add(String(drift.drift_class))
+  }
+  for (const entry of result.deterministic_traversal_trace) {
+    if (entry.registry === "invocation_registry" && entry.row_count !== 1) indicators.add("replay_neutral_invocation_unresolved")
+  }
+  return Array.from(indicators).sort()
+}
+
+function interoperabilityDriftIndicators(result: ReconciliationResult, projection: PortableLegitimacyProjection | null): InteroperabilityDriftClassification[] {
+  const indicators = new Set<InteroperabilityDriftClassification>()
+  for (const drift of result.drift_classifications) {
+    if (drift.drift_class === "federated_lineage_divergence" || drift.drift_class === "foreign_ancestry_mismatch_drift" || drift.drift_class === "recursive_ancestry_drift") indicators.add("distributed_lineage_divergence")
+    if (drift.drift_class === "replay_resurrection_attempt" || drift.drift_class === "federated_replay_drift" || drift.drift_class === "federated_replay_discontinuity_drift") indicators.add("interoperability_replay_attempt")
+    if (drift.drift_class === "federated_bundle_drift" || drift.drift_class === "reconciliation_payload_corruption_drift") indicators.add("federated_projection_corruption")
+    if (drift.drift_class === "federated_checkpoint_drift") indicators.add("checkpoint_hash_instability")
+  }
+  if (!projection) indicators.add("federated_projection_corruption")
+  return Array.from(indicators).sort()
+}
+
+async function deriveDistributedLegitimacyProjection(result: ReconciliationResult, generated_at = deterministicInteroperabilityGeneratedAt(result), runtime_id = LOCAL_FEDERATION_RUNTIME_ID): Promise<PortableLegitimacyProjection | null> {
+  if (result.result !== "VALID_RECONCILIATION") return null
+  const bundle = await portableLegitimacyBundleFromResult(result, generated_at, runtime_id)
+  if (!bundle) return null
+  if (bundle.federation_boundary !== "portable_evidence_not_portable_authority") return null
+  const classification = federationClassificationForInteroperability(result, runtime_id)
+  if (classification.remote_authority_denied !== true || classification.evidence_only !== true) return null
+  const core = canonicalRecord({
+    exact_object_hash: await sha256Hex(canonicalize(bundle)),
+    federation_classification: classification,
+    generated_at,
+    lineage_root: bundle.reconciliation_merkle_root,
+    local_execution_authority: false,
+    remote_execution_legitimacy: false,
+    reconciliation_id: bundle.reconciliation_id,
+    replay_indicators: replayIndicatorsForInteroperability(result),
+    continuity_id: bundle.continuity_id
+  })
+  const canonical_hash = await sha256Hex(canonicalize({ projection_type: "PortableLegitimacyProjection", ...core, evidence_only: true, mutation_capable: false, read_only: true, remote_authority_denied: true, replay_neutral: true }))
+  return Object.freeze({ projection_type: "PortableLegitimacyProjection", canonical_hash, ...core, evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true } as PortableLegitimacyProjection)
+}
+
+async function buildDistributedLegitimacyEnvelope(result: ReconciliationResult, projection: PortableLegitimacyProjection | null, generated_at = deterministicInteroperabilityGeneratedAt(result), runtime_id = LOCAL_FEDERATION_RUNTIME_ID): Promise<DistributedLegitimacyEnvelope> {
+  const classification = projection?.federation_classification || federationClassificationForInteroperability(result, runtime_id)
+  const continuity_id = projection?.continuity_id || resolveCanonicalPortableIdentifiers(result)?.continuity_id || ""
+  const lineage_root = projection?.lineage_root || result.lineage_anchor
+  const reconciliation_id = projection?.reconciliation_id || await deterministicReconciliationId("distributed_legitimacy_quarantine", { lineage_root: result.lineage_anchor })
+  const replay_indicators = replayIndicatorsForInteroperability(result)
+  const core = { envelope_type: "DistributedLegitimacyEnvelope", lineage_root, continuity_id, reconciliation_id, generated_at, replay_indicators, federation_classification: classification, evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true, projection }
+  const canonical_hash = await sha256Hex(canonicalize(core))
+  return Object.freeze({ ...core, canonical_hash, envelope_id: await sha256Hex(canonicalize({ envelope_type: "DistributedLegitimacyEnvelope", canonical_hash })) } as DistributedLegitimacyEnvelope)
+}
+
+async function buildFederatedCheckpoint(result: ReconciliationResult, generated_at = deterministicInteroperabilityGeneratedAt(result), runtime_id = LOCAL_FEDERATION_RUNTIME_ID): Promise<FederatedCheckpointEnvelope> {
+  const checkpoint = await deterministicReconciliationCheckpoint(result, generated_at, runtime_id)
+  const projection = await deriveDistributedLegitimacyProjection(result, generated_at, runtime_id)
+  const classification = projection?.federation_classification || federationClassificationForInteroperability(result, runtime_id)
+  const continuity_id = projection?.continuity_id || resolveCanonicalPortableIdentifiers(result)?.continuity_id || ""
+  const lineage_root = projection?.lineage_root || checkpoint.reconciliation_merkle_root || result.lineage_anchor
+  const reconciliation_id = projection?.reconciliation_id || await deterministicReconciliationId("federated_checkpoint_quarantine", { checkpoint_id: checkpoint.checkpoint_id, lineage_root })
+  const replay_indicators = replayIndicatorsForInteroperability(result)
+  const core = { envelope_type: "FederatedCheckpointEnvelope", lineage_root, continuity_id, reconciliation_id, generated_at, replay_indicators, federation_classification: classification, evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true, checkpoint }
+  const canonical_hash = await sha256Hex(canonicalize(core))
+  return Object.freeze({ ...core, canonical_hash, checkpoint_envelope_id: await sha256Hex(canonicalize({ envelope_type: "FederatedCheckpointEnvelope", canonical_hash })) } as FederatedCheckpointEnvelope)
+}
+
+async function buildFederatedLineageEnvelope(result: ReconciliationResult, generated_at = deterministicInteroperabilityGeneratedAt(result), runtime_id = LOCAL_FEDERATION_RUNTIME_ID): Promise<FederatedLineageEnvelope> {
+  const classification = federationClassificationForInteroperability(result, runtime_id)
+  const canonical = resolveCanonicalPortableIdentifiers(result)
+  const lineage_summary = canonicalRecord({ canonical_identifiers: canonical || null, traversal_trace: result.deterministic_traversal_trace, drift_classifications: result.drift_classifications.map((drift) => drift.drift_class).sort(), authority_boundary: "portable_evidence_not_portable_authority", remote_execution_legitimacy: false })
+  const core = { envelope_type: "FederatedLineageEnvelope", lineage_root: await sha256Hex(canonicalize(lineage_summary)), continuity_id: canonical?.continuity_id || "", reconciliation_id: await deterministicReconciliationId("federated_lineage", lineage_summary), generated_at, replay_indicators: replayIndicatorsForInteroperability(result), federation_classification: classification, evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true, lineage_summary }
+  const canonical_hash = await sha256Hex(canonicalize(core))
+  return Object.freeze({ ...core, canonical_hash } as FederatedLineageEnvelope)
+}
+
+function verifyDistributedLineageCompatibility(local: DistributedLegitimacyEnvelope | FederatedCheckpointEnvelope | FederatedLineageEnvelope | null, remote: any): { compatible: boolean, drift_class?: InteroperabilityDriftClassification, quarantined: boolean, remote_authority_denied: true, evidence_only: true } {
+  const denied = { remote_authority_denied: true as const, evidence_only: true as const }
+  if (!local || !isPlainRecord(remote)) return { compatible: false, drift_class: "federated_projection_corruption", quarantined: true, ...denied }
+  if ((remote as any).evidence_only !== true || (remote as any).remote_authority_denied !== true || (remote as any).mutation_capable === true || (remote as any).remote_execution_legitimacy === true || (remote as any).remote_authority_inherited === true) return { compatible: false, drift_class: "remote_authority_claim", quarantined: true, ...denied }
+  if (Array.isArray((remote as any).replay_indicators) && (remote as any).replay_indicators.length > 0) return { compatible: false, drift_class: "interoperability_replay_attempt", quarantined: true, ...denied }
+  if (String((remote as any).lineage_root || "") !== String(local.lineage_root || "")) return { compatible: false, drift_class: "distributed_lineage_divergence", quarantined: true, ...denied }
+  return { compatible: true, quarantined: false, ...denied }
+}
+
+async function detectFederatedCheckpointDrift(envelope: FederatedCheckpointEnvelope, remote?: any): Promise<InteroperabilityDriftClassification[]> {
+  const drift = new Set<InteroperabilityDriftClassification>()
+  const recomputed = await buildFederatedCheckpoint({ status: "NULL", result: "NULL", lineage_anchor: envelope.checkpoint.reconciliation_merkle_root, canonical_registry_ordering: CANONICAL_RECONCILIATION_REGISTRY_ORDER, recursion_depth: 0, deterministic_traversal_trace: [], drift_classifications: [] }, envelope.generated_at, envelope.checkpoint.runtime_id)
+  if (!/^[a-f0-9]{64}$/.test(envelope.canonical_hash) || !/^[a-f0-9]{64}$/.test(envelope.checkpoint.checkpoint_id)) drift.add("checkpoint_hash_instability")
+  if (remote) {
+    const compatibility = verifyDistributedLineageCompatibility(envelope, remote)
+    if (!compatibility.compatible && compatibility.drift_class) drift.add(compatibility.drift_class)
+  }
+  if (recomputed.evidence_only !== true || recomputed.remote_authority_denied !== true) drift.add("remote_authority_claim")
+  return Array.from(drift).sort()
 }
 
 function canonicalIdentifiersForRegistry(byRegistry: Map<ReconciliationRegistry, ReconciliationTraceEntry>, registry: ReconciliationRegistry): CanonicalReconciliationIdentifiers | null {
@@ -2083,6 +2286,29 @@ export default {
         return json({ status: result.result, route: "/federation/reconcile/checkpoint", reason: "observability_only", append_only: true, rollback_overwrite: false, replay_neutral: true, checkpoint })
       } catch {
         return json({ status: "NULL", route: "/federation/reconcile/checkpoint", reason: "reconciliation_unavailable" })
+      }
+    }
+
+    if (url.pathname === "/federation/interoperability/checkpoint" && request.method === "GET") {
+      try {
+        const anchor = reconciliationAnchorFromRequest(url)
+        const result = await deterministicRecursiveReconciliationTraversal(env, anchor)
+        const generated_at = deterministicInteroperabilityGeneratedAt(result)
+        const projection = await deriveDistributedLegitimacyProjection(result, generated_at)
+        const distributed_legitimacy_envelope = await buildDistributedLegitimacyEnvelope(result, projection, generated_at)
+        const checkpoint_envelope = await buildFederatedCheckpoint(result, generated_at)
+        const lineage_envelope = await buildFederatedLineageEnvelope(result, generated_at)
+        const remoteSupplied = url.searchParams.get("remote_envelope")
+        const remoteEnvelope = remoteSupplied ? JSON.parse(new TextDecoder().decode(base64ToBytes(String(remoteSupplied)) || utf8Bytes("{}"))) : null
+        const compatibility = verifyDistributedLineageCompatibility(distributed_legitimacy_envelope, remoteEnvelope || distributed_legitimacy_envelope)
+        const checkpointDrift = await detectFederatedCheckpointDrift(checkpoint_envelope, remoteEnvelope)
+        const projectionDrift = interoperabilityDriftIndicators(result, projection)
+        const drift_indicators = Array.from(new Set([...projectionDrift, ...checkpointDrift, ...(compatibility.drift_class ? [compatibility.drift_class] : [])])).sort()
+        const replay_indicators = Array.from(new Set([...distributed_legitimacy_envelope.replay_indicators, ...checkpoint_envelope.replay_indicators])).sort()
+        const interoperability_status: InteroperabilityStatus = drift_indicators.length > 0 || !projection || !compatibility.compatible ? "INTEROPERABILITY_QUARANTINED" : "INTEROPERABILITY_EVIDENCE_OBSERVED"
+        return json({ status: interoperability_status, route: "/federation/interoperability/checkpoint", reason: "observability_only", interoperability_status, distributed_legitimacy_envelope, checkpoint_envelope, lineage_envelope, drift_indicators, replay_indicators, evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true, local_validation_required: true, remote_execution_legitimacy: false, remote_authority_inherited: false, append_only: false })
+      } catch {
+        return json({ status: "NULL", route: "/federation/interoperability/checkpoint", reason: "reconciliation_unavailable", evidence_only: true, remote_authority_denied: true, read_only: true, mutation_capable: false, replay_neutral: true })
       }
     }
     if (NON_EXECUTABLE_OBSERVABILITY_ROUTES.includes(url.pathname as any)) return json({ status: "NULL", route: url.pathname, reason: "observability_only" }, request.method === "GET" ? 200 : 405)
