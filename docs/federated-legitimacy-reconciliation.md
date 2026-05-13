@@ -74,7 +74,7 @@ Each node is canonically serialized and hashed with its traversal position and p
 
 ## Deterministic checkpoints
 
-`ReconciliationCheckpoint` contains `checkpoint_id`, `runtime_id`, `reconciliation_merkle_root`, `traversal_position`, `deterministic_hash`, `lineage_count`, `replay_snapshot_hash`, `drift_snapshot_hash`, and `created_at`.
+`ReconciliationCheckpoint` contains `checkpoint_id`, `runtime_id`, `reconciliation_merkle_root`, `traversal_position`, `deterministic_hash`, `lineage_count`, `replay_snapshot_hash`, `drift_snapshot_hash`, `revocation_snapshot_hash`, and `created_at`.
 
 Checkpoints are deterministic, append-only evidence. Checkpoint identity derives only from `runtime_id`, `reconciliation_merkle_root`, `deterministic_hash`, `traversal_position`, `lineage_count`, `replay_snapshot_hash`, and `drift_snapshot_hash`; `created_at` is observational metadata only and never participates in checkpoint identity hashing. Same lineage state therefore yields the same checkpoint identity, while a different observation time alone is not a different checkpoint. They are not rollback overwrites and they do not mutate legitimacy.
 
@@ -180,6 +180,22 @@ The revocation-aware federated drift classes are:
 - `federated_revocation_projection_drift`
 - `federated_revocation_exact_object_drift`
 - `federated_revocation_anchor_drift`
+## Federated revocation observability
+
+Federated revocation propagation is observability federation, not authority federation. Foreign evidence is not local authority; distributed awareness is allowed without distributed authority collapse.
+
+Additional route:
+
+- `GET /federation/reconcile/revocation`
+
+`FederatedRevocationEvidence` contains `runtime_id`, `remote_runtime_id`, `continuity_id`, `decision_id`, `validated_object_hash`, `revocation_class`, `revocation_reason`, `lineage_hash`, `reconciliation_merkle_root`, `attestation_hash`, and `observed_at`.
+
+The revocation evidence envelope is `replay_neutral`, `read_only`, `mutation_capable: false`, `portable_evidence_not_portable_authority`, `deterministic_serialization`, and `exact_object_bound`. It carries `remote_authority_inherited: false`, `remote_execution_legitimacy: false`, and `replay_state_consumed: false` so remote revocation remains evidence only.
+
+Federated revocation drift taxonomy additions:
+
+- `federated_revocation_divergence_drift`
+- `federated_revocation_projection_drift`
 - `federated_revocation_replay_drift`
 - `federated_checkpoint_revocation_drift`
 - `federated_expiration_visibility_drift`
@@ -187,6 +203,7 @@ The revocation-aware federated drift classes are:
 ## Revocation FATE coverage
 
 The revocation fail-closed FATE cases are:
+Federated revocation FATE additions all fail closed to `NULL`:
 
 - `federated_revocation_identity_mismatch`
 - `federated_revocation_replay_collision`
@@ -202,3 +219,27 @@ Every case returns `NULL`.
 ## Governance position
 
 The architecture remains observability federation, not authority federation: distributed legitimacy awareness WITHOUT distributed authority collapse.
+
+Revocation checkpoints include `revocation_snapshot_hash` in deterministic checkpoint material, preserving deterministic checkpoint identity while remaining append-only and replay-neutral.
+
+### Revocation exact-object repair notes
+
+Revocation evidence envelopes are exact-object-bound: supplied `evidence_hash` must equal deterministic recomputation of the canonical `FederatedRevocationEvidence`, supplied `envelope_hash` must equal deterministic recomputation of the replay-neutral envelope, `exact_object_bound` must be true, and `canonical_hash_locked` must be true. Mismatch resolves to `NULL` with `federated_revocation_exact_object_drift`.
+
+`validated_object_hash` is anchored only to canonical persisted legitimacy lineage from `validation_registry`, `aeo_registry`, or `proof_registry`. It is not derived from traversal hashes, checkpoint hashes, observability lineage, or the reconciliation Merkle root. Anchor mismatch resolves to `NULL` with `federated_revocation_anchor_drift`.
+
+Checkpoint identity excludes `created_at`; `created_at` is metadata only. The checkpoint identity material is `runtime_id`, `reconciliation_merkle_root`, `deterministic_hash`, `traversal_position`, and `lineage_count`.
+
+Additional exact-object and anchor drift classes:
+
+- `federated_revocation_exact_object_drift`
+- `federated_revocation_anchor_drift`
+- `federated_identifier_resolution_drift`
+
+Additional exact-object and anchor FATE cases all fail closed to `NULL`:
+
+- `federated_revocation_envelope_hash_mismatch`
+- `federated_revocation_exact_object_flag_drift`
+- `federated_revocation_anchor_mismatch`
+- `federated_revocation_reconciliation_hash_as_validated_hash`
+- `federated_revocation_stale_envelope_replay`

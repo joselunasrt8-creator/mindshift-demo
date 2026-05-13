@@ -20,7 +20,8 @@
     "GET /federation/reconcile",
     "GET /federation/reconcile/report",
     "GET /federation/reconcile/drift",
-    "GET /federation/reconcile/checkpoint"
+    "GET /federation/reconcile/checkpoint",
+    "GET /federation/reconcile/revocation"
   ],
   "route_semantics": {
     "read_only": true,
@@ -29,7 +30,8 @@
     "reserves_replay_state": false,
     "consumes_replay_state": false,
     "repairs_drift": false,
-    "infers_legitimacy": false
+    "infers_legitimacy": false,
+    "revocation_observability_only": true
   },
   "portable_legitimacy_bundle": {
     "schema": "schemas/federation/portable-legitimacy-bundle.schema.json",
@@ -113,7 +115,9 @@
     "append_only": true,
     "deterministic": true,
     "mutation_capable": false,
-    "rollback_overwrite": false
+    "rollback_overwrite": false,
+    "checkpoint_identity": "sha256(JCS({runtime_id,reconciliation_merkle_root,deterministic_hash,traversal_position,lineage_count}))",
+    "created_at_identity_material": false
   },
   "federated_drift_taxonomy": [
     "federated_checkpoint_drift",
@@ -134,6 +138,15 @@
     "federated_revocation_replay_drift",
     "federated_checkpoint_revocation_drift",
     "federated_expiration_visibility_drift"
+    "federated_revocation_divergence_drift",
+    "federated_revocation_projection_drift",
+    "federated_revocation_replay_drift",
+    "federated_checkpoint_revocation_drift",
+    "federated_expiration_visibility_drift",
+    "federated_identifier_resolution_drift",
+    "federated_revocation_exact_object_drift",
+    "federated_revocation_anchor_drift"
+    "federated_identifier_resolution_drift"
   ],
   "fate_matrix": [
     {
@@ -185,6 +198,47 @@
       "expected_result": "NULL"
     },
     {
+      "test_id": "federated_revocation_identity_mismatch",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_replay_collision",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_without_lineage",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_remote_revocation_authority_inference",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_checkpoint_revocation_divergence",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_expired_lineage_visibility_corruption",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_envelope_hash_mismatch",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_exact_object_flag_drift",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_anchor_mismatch",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_reconciliation_hash_as_validated_hash",
+      "expected_result": "NULL"
+    },
+    {
+      "test_id": "federated_revocation_stale_envelope_replay",
       "test_id": "federated_identifier_resolution_drift",
       "expected_result": "NULL"
     },
@@ -253,6 +307,67 @@
       "verify",
       "classify",
       "emit_evidence"
+    ],
+    "governance_position": "observability federation not authority federation; distributed awareness without distributed authority collapse",
+    "may_not": [
+      "grant authority",
+      "inherit legitimacy",
+      "consume replay state",
+      "bypass local validation",
+      "mutate local runtime legitimacy"
+    ]
+  },
+  "federated_revocation_observability_registry": {
+    "purpose": "append-only observability index for remote revocation evidence",
+    "authority_policy": "portable_evidence_not_portable_authority",
+    "replay_neutral": true,
+    "read_only": true,
+    "mutation_capable": false,
+    "columns": [
+      "revocation_evidence_id",
+      "runtime_id",
+      "remote_runtime_id",
+      "continuity_id",
+      "decision_id",
+      "validated_object_hash",
+      "revocation_class",
+      "revocation_reason",
+      "lineage_hash",
+      "reconciliation_merkle_root",
+      "attestation_hash",
+      "observed_at",
+      "evidence_hash",
+      "verification_status",
+      "created_at"
+    ]
+  },
+  "federated_revocation_evidence": {
+    "schema": "schemas/federation/federated-revocation-evidence.schema.json",
+    "required_fields": [
+      "runtime_id",
+      "remote_runtime_id",
+      "continuity_id",
+      "decision_id",
+      "validated_object_hash",
+      "revocation_class",
+      "revocation_reason",
+      "lineage_hash",
+      "reconciliation_merkle_root",
+      "attestation_hash",
+      "observed_at"
+    ],
+    "replay_neutral": true,
+    "read_only": true,
+    "mutation_capable": false,
+    "federation_boundary": "portable_evidence_not_portable_authority",
+    "deterministic_serialization": true,
+    "exact_object_bound": true,
+    "remote_authority_inherited": false,
+    "remote_execution_legitimacy": false,
+    "replay_state_consumed": false,
+    "canonical_hash_locked": true,
+    "envelope_hash_validation": "supplied evidence_hash and envelope_hash must equal deterministic recomputation or resolve NULL with federated_revocation_exact_object_drift",
+    "validated_object_hash_anchor": "canonical persisted validation_registry, aeo_registry, or proof_registry legitimacy lineage only; never traversal, checkpoint, or Merkle material"
     ]
   },
   "federated_revocation_registry": {

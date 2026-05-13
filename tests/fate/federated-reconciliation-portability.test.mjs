@@ -106,6 +106,23 @@ test('expanded reconciliation FATE and drift taxonomy fail closed to NULL', () =
   }
 })
 
+test('portable revocation evidence uses persisted identifiers without authority portability', () => {
+  assert.match(reconciliationSource, /type FederatedRevocationEvidence/)
+  assert.match(reconciliationSource, /canonicalFederatedRevocationEvidence/)
+  assert.match(reconciliationSource, /deterministicFederatedRevocationEvidenceHash/)
+  assert.match(reconciliationSource, /deterministicFederatedRevocationEnvelopeHash/)
+  assert.match(reconciliationSource, /resolveCanonicalPortableIdentifiers/)
+  assert.match(reconciliationSource, /canonical_persisted_identifiers/)
+  assert.match(reconciliationSource, /portable_evidence_not_portable_authority/)
+  assert.match(reconciliationSource, /remote_authority_inherited: false/)
+  assert.match(reconciliationSource, /remote_execution_legitimacy: false/)
+  assert.match(reconciliationSource, /replay_state_consumed: false/)
+  assert.match(reconciliationSource, /replay_neutral: true/)
+  assert.doesNotMatch(source, /remote.*revoke.*local.*authority/)
+  assert.equal(spec.federated_revocation_observability.replay_neutral, true)
+  assert.equal(spec.federated_revocation_observability.mutation_capable, false)
+  assert.equal(spec.federated_revocation_observability.canonical_hash_locked, true)
+  assert.match(source, /federated_identifier_resolution_drift/)
 
 test('portable reconciliation identity hardening preserves portability and exact-object boundaries', () => {
   assert.match(source, /function resolvedPortableIdentifiersFromCanonicalRows/)

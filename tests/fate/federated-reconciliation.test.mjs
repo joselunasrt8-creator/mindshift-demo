@@ -113,6 +113,91 @@ test('federated drift taxonomy and FATE cases fail closed to NULL', () => {
   }
 })
 
+const revocationDriftClasses = [
+  'federated_revocation_divergence_drift',
+  'federated_revocation_projection_drift',
+  'federated_revocation_replay_drift',
+  'federated_checkpoint_revocation_drift',
+  'federated_expiration_visibility_drift',
+  'federated_revocation_exact_object_drift',
+  'federated_revocation_anchor_drift'
+]
+
+const revocationFateCases = [
+  'federated_revocation_identity_mismatch',
+  'federated_revocation_replay_collision',
+  'federated_revocation_without_lineage',
+  'federated_remote_revocation_authority_inference',
+  'federated_checkpoint_revocation_divergence',
+  'federated_expired_lineage_visibility_corruption',
+  'federated_revocation_envelope_hash_mismatch',
+  'federated_revocation_exact_object_flag_drift',
+  'federated_revocation_anchor_mismatch',
+  'federated_revocation_reconciliation_hash_as_validated_hash',
+  'federated_revocation_stale_envelope_replay'
+]
+
+test('federated revocation evidence remains observability-only and non-authoritative', () => {
+  const revocationSchema = JSON.parse(readFileSync(new URL('../../schemas/federation/federated-revocation-evidence.schema.json', import.meta.url), 'utf8'))
+  assert.match(source, /type FederatedRevocationEvidence = \{[\s\S]*runtime_id: string[\s\S]*remote_runtime_id: string[\s\S]*observed_at: string[\s\S]*\}/)
+  assert.match(source, /portable_evidence_not_portable_authority/)
+  assert.match(source, /remote_authority_inherited: false/)
+  assert.match(source, /remote_execution_legitimacy: false/)
+  assert.match(source, /replay_state_consumed: false/)
+  assert.match(source, /replay_neutral: true/)
+  assert.match(source, /read_only: true/)
+  assert.match(source, /mutation_capable: false/)
+  assert.doesNotMatch(source, /remote.*revoke.*local.*authority/)
+  for (const field of spec.federated_revocation_evidence.required_fields) {
+    assert.ok(revocationSchema.required.includes(field), `revocation schema missing ${field}`)
+    assert.ok(doc.includes('`' + field + '`'), `revocation doc missing ${field}`)
+  }
+  assert.equal(spec.federated_revocation_evidence.replay_neutral, true)
+  assert.equal(spec.federated_revocation_evidence.read_only, true)
+  assert.equal(spec.federated_revocation_evidence.mutation_capable, false)
+  assert.equal(spec.federated_revocation_evidence.canonical_hash_locked, true)
+})
+
+test('federated revocation drift taxonomy and FATE cases fail closed to NULL', () => {
+  const fateById = new Map(spec.fate_matrix.map((entry) => [entry.test_id, entry.expected_result]))
+  for (const drift of revocationDriftClasses) {
+    assert.ok(spec.federated_drift_taxonomy.includes(drift), `spec missing ${drift}`)
+    assert.match(source, new RegExp(`"${drift}"`), `runtime missing ${drift}`)
+    assert.ok(doc.includes('`' + drift + '`'), `doc missing ${drift}`)
+  }
+  for (const fate of revocationFateCases) {
+    assert.equal(fateById.get(fate), 'NULL', `${fate} must fail closed`)
+    assert.ok(doc.includes('`' + fate + '`'), `doc missing ${fate}`)
+  }
+})
+
+
+test('federated revocation exact-object envelopes and checkpoint identity are deterministic', () => {
+  const revocationSource = source.slice(source.indexOf('type FederatedRevocationEvidence'), source.indexOf('async function verifyFederatedLineageContinuity'))
+  const checkpointSource = source.slice(source.indexOf('async function deterministicReconciliationCheckpoint'), source.indexOf('async function portableLegitimacyBundleFromResult'))
+  assert.match(revocationSource, /const supplied_evidence_hash/)
+  assert.match(revocationSource, /const recomputed_evidence_hash/)
+  assert.match(revocationSource, /supplied_evidence_hash !== recomputed_evidence_hash/)
+  assert.match(revocationSource, /const canonical_envelope_hash/)
+  assert.match(revocationSource, /const deterministic_envelope_hash/)
+  assert.match(revocationSource, /canonical_envelope_hash !== deterministic_envelope_hash/)
+  assert.match(revocationSource, /exact_object_bound !== true/)
+  assert.match(revocationSource, /canonical_hash_locked !== true/)
+  const checkpointIdentityLine = checkpointSource.split('\n').find((line) => line.includes('checkpoint_id:')) || ''
+  assert.doesNotMatch(checkpointIdentityLine, /created_at/)
+  assert.match(checkpointSource, /revocation_snapshot_hash/)
+})
+
+test('federated revocation anchors use canonical persisted identifiers only', () => {
+  const portabilitySource = source.slice(source.indexOf('function resolveCanonicalPortableIdentifiers'), source.indexOf('async function deterministicRecursiveReconciliationTraversal'))
+  const revocationGeneration = source.slice(source.indexOf('async function federatedRevocationEvidenceFromResult'), source.indexOf('async function verifyFederatedLineageContinuity'))
+  const persistedIdentifierSource = source.slice(source.indexOf('function canonicalPersistedIdentifierMap'), source.indexOf('function resolveCanonicalPortableIdentifiers'))
+  assert.match(persistedIdentifierSource, /canonical_persisted_identifiers/)
+  assert.match(portabilitySource, /proof\.validated_object_hash \|\| validation\.validated_object_hash \|\| aeo\.validated_object_hash/)
+  assert.match(revocationGeneration, /validated_object_hash: object_hash/)
+  assert.doesNotMatch(revocationGeneration, /validated_object_hash:[\s\S]*lookup_key/)
+  assert.doesNotMatch(revocationGeneration, /validated_object_hash:[\s\S]*checkpoint/i)
+  assert.doesNotMatch(revocationGeneration, /validated_object_hash:[\s\S]*reconciliation/i)
 test('portable bundle identifiers resolve only from canonical persisted row identifiers', () => {
   const bundleStart = source.indexOf('async function portableLegitimacyBundleFromResult')
   const bundleEnd = source.indexOf('async function verifyFederatedProofEnvelope')
