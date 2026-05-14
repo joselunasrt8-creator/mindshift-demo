@@ -456,7 +456,10 @@
     "no_execution_without_proof_persistence",
     "no_reused_authority",
     "no_validated_object_mutation",
-    "no_unclassified_state_changing_surface"
+    "no_unclassified_state_changing_surface",
+    "no_recursive_governance_evidence_authority",
+    "recursive_governance_drift_returns_NULL",
+    "containment_routes_excluded_from_CANONICAL_RUNTIME_ROUTES"
   ],
   "unauthorized_mutation_path_closure": {
     "issue": "342",
@@ -470,5 +473,40 @@
     "evidence_only": true,
     "non_authoritative": true,
     "replay_neutral": true
-  }
+  },
+  "surfaces": [
+    {
+      "surface_id": "recursive_governance_drift_containment",
+      "surface_type": "observability_validation_artifact",
+      "entrypoint": "/governance/recursive/containment (GET-only)",
+      "required_authority": "none_evidence_only",
+      "required_AEO": "not_applicable_observability_only",
+      "required_validation": [
+        "governance_equivalence_hash_present",
+        "semantic_divergence_classes_present",
+        "lineage_binding_present",
+        "non_authoritative_flags_present"
+      ],
+      "required_proof": [
+        "no_proof_generated_by_containment_evidence"
+      ],
+      "replay_semantics": "append-only evidence; replay-neutral; consumes no nonce or authority",
+      "drift_checks": [
+        "validator_semantics",
+        "schema_semantics",
+        "proof_semantics",
+        "replay_semantics",
+        "authority_semantics",
+        "execution_boundary_topology",
+        "federation_semantics",
+        "observability_semantics"
+      ],
+      "observability": [
+        "recursive_governance_containment_registry"
+      ],
+      "execution_boundary": "GET-only observability boundary",
+      "bypass_risk": "observability_to_authority_escalation",
+      "enforcement_status": "implemented_observability_only"
+    }
+  ]
 }
