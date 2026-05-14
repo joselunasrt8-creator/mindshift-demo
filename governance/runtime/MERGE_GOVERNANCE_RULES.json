@@ -30,7 +30,10 @@
     "Sovereignty drift -> PREO invalid",
     "Infrastructure mutation ambiguity -> containment required",
     "Root authority topology divergence -> governance trust isolated",
-    "Root authority containment evidence may invalidate legitimacy but may NEVER authorize merge"
+    "Root authority containment evidence may invalidate legitimacy but may NEVER authorize merge",
+    "Recursive governance semantic drift -> merge legitimacy NULL",
+    "Governance equivalence mismatch -> recursive containment required",
+    "Governance containment evidence may invalidate legitimacy but may NEVER authorize merge, proof, deployment, or execution"
   ],
   "required_proof_fields": [
     "pr_number",
@@ -152,5 +155,20 @@
     "evidence_only": true,
     "non_authoritative": true,
     "replay_neutral": true
+  },
+  "recursive_governance_containment": {
+    "registry": "recursive_governance_containment_registry",
+    "artifacts": [
+      "governance/recursive/RECURSIVE_GOVERNANCE_CONTAINMENT_MODEL.json",
+      "governance/recursive/GOVERNANCE_MUTATION_CAPABILITY_MATRIX.json",
+      "governance/recursive/RECURSIVE_GOVERNANCE_DRIFT_TAXONOMY.json"
+    ],
+    "evidence_only": true,
+    "direct_merge_authority": false,
+    "may_invalidate_legitimacy": true,
+    "may_authorize_merge": false,
+    "may_authorize_execution": false,
+    "may_authorize_proof": false,
+    "fail_closed_on_ambiguity": true
   }
 }

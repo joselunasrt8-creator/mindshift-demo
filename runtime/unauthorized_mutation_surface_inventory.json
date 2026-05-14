@@ -2661,6 +2661,28 @@
       "containment_status": "NULL",
       "evidence_only": false,
       "non_authoritative": true
+    },
+    {
+      "surface_id": "db_write:recursive_governance_containment_registry",
+      "surface_type": "database_write_surface",
+      "source_file": "src/index.ts",
+      "entrypoint": "recursive_governance_containment_registry",
+      "mutation_capability": true,
+      "execution_capability": false,
+      "deployment_capability": false,
+      "authority_required": "none_evidence_only_observability",
+      "aeo_required": false,
+      "validation_required": false,
+      "proof_required": false,
+      "replay_semantics": "append_only_replay_neutral_evidence",
+      "drift_observable": true,
+      "proof_bound": true,
+      "governance_addressable": true,
+      "canonical_boundary_status": "OBSERVABILITY_REGISTRY_APPEND_ONLY",
+      "bypass_risk": "raw_database_write",
+      "containment_status": "CONTAINED_EVIDENCE_ONLY",
+      "evidence_only": true,
+      "non_authoritative": true
     }
   ]
 }
