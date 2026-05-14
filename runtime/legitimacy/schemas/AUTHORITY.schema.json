@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.dev/schemas/AUTHORITY.schema.json",
+  "title": "Authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["object_type", "version", "authority_id", "subject", "scope", "constraints", "lifecycle", "proof_requirement", "replay_semantics"],
+  "properties": {
+    "object_type": {"const": "Authority"},
+    "version": {"type": "string"},
+    "authority_id": {"type": "string"},
+    "subject": {"type": "string"},
+    "scope": {"type": "array", "items": {"type": "string"}},
+    "constraints": {"type": "object"},
+    "lifecycle": {"enum": ["ACTIVE", "CONSUMED", "REVOKED", "EXPIRED"]},
+    "proof_requirement": {"type": "string"},
+    "replay_semantics": {"type": "string"}
+  },
+  "x-mindshift": {"failure_mode": "NULL", "canonicalization": "required", "hash_relevant_fields": ["object_type", "version", "authority_id", "subject", "scope", "constraints", "lifecycle", "proof_requirement", "replay_semantics"]}
+}
