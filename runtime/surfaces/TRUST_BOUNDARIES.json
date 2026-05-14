@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "classification": "trust_boundaries",
+  "core_invariant": "Trust does not imply authority; all trust crossings must bind authority before execution.",
+  "boundaries": [
+    {
+      "boundary_id": "cognition_to_execution",
+      "from": "LLM / agent cognition",
+      "to": "runtime execution boundary",
+      "trust_tier": "Tier 2 or Tier 3",
+      "required_control": "ATAO → authority binding → AEO → validation"
+    },
+    {
+      "boundary_id": "github_to_cloudflare",
+      "from": "GitHub Actions",
+      "to": "Cloudflare Worker / D1",
+      "trust_tier": "Tier 1 internal with root-authority risk",
+      "required_control": "governed deploy path + proof persistence"
+    },
+    {
+      "boundary_id": "local_operator_to_runtime",
+      "from": "local terminal / wrangler",
+      "to": "Cloudflare runtime",
+      "trust_tier": "Tier 0 only when explicitly authorized",
+      "required_control": "root authority containment"
+    },
+    {
+      "boundary_id": "remote_runtime_to_local_runtime",
+      "from": "federated runtime",
+      "to": "local runtime registry",
+      "trust_tier": "Tier 3 mixed external",
+      "required_control": "observability-only evidence; no remote authority inheritance"
+    }
+  ]
+}
