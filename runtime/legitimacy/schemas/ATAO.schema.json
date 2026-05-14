@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.dev/schemas/ATAO.schema.json",
+  "title": "ATAO",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["object_type", "version", "atao_id", "intent", "scope", "target", "constraints", "requested_action"],
+  "properties": {
+    "object_type": {"const": "ATAO"},
+    "version": {"type": "string"},
+    "atao_id": {"type": "string"},
+    "intent": {"type": "string"},
+    "scope": {"type": "array", "items": {"type": "string"}},
+    "target": {"type": "string"},
+    "constraints": {"type": "object"},
+    "requested_action": {"type": "string"}
+  },
+  "x-mindshift": {
+    "failure_mode": "NULL",
+    "canonicalization": "required",
+    "hash_relevant_fields": ["object_type", "version", "atao_id", "intent", "scope", "target", "constraints", "requested_action"]
+  }
+}
