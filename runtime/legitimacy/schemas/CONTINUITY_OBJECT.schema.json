@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.dev/schemas/CONTINUITY_OBJECT.schema.json",
+  "title": "ContinuityObject",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["object_type", "version", "continuity_id", "identity_chain", "authority_lineage", "revocation_semantics", "replay_semantics", "continuity_status"],
+  "properties": {
+    "object_type": {"const": "ContinuityObject"},
+    "version": {"type": "string"},
+    "continuity_id": {"type": "string"},
+    "identity_chain": {"type": "array", "items": {"type": "string"}},
+    "authority_lineage": {"type": "array", "items": {"type": "string"}},
+    "revocation_semantics": {"type": "string"},
+    "replay_semantics": {"type": "string"},
+    "continuity_status": {"enum": ["ACTIVE", "BROKEN", "REVOKED", "NULL"]}
+  },
+  "x-mindshift": {
+    "failure_mode": "NULL",
+    "canonicalization": "required",
+    "hash_relevant_fields": ["object_type", "version", "continuity_id", "identity_chain", "authority_lineage", "revocation_semantics", "replay_semantics", "continuity_status"]
+  }
+}
