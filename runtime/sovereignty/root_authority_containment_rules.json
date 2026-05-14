@@ -1,9 +1,13 @@
 {
   "artifact_type": "root_authority_containment_rules",
-  "version": "1.0",
+  "version": "2.0",
   "rules": [
     "same topology -> same canonical representation -> same topology hash -> same containment identity",
-    "undeclared root mutation surface -> containment evidence -> merge legitimacy NULL",
+    "undeclared root mutation surface -> containment evidence -> PREO validity NULL -> merge legitimacy NULL",
+    "bypass-capable root authority -> ROOT_AUTHORITY_BYPASS_RISK -> containment required -> merge legitimacy NULL",
+    "deployment-token authority -> declared presence and scope assumption only -> no secret value inspection",
+    "workflow_dispatch -> trigger evidence only -> authority\u2192compile\u2192validate\u2192execute\u2192proof still required",
+    "Wrangler/local deploy capability -> root authority surface -> containment required when outside governed workflow",
     "root authority evidence != execution authority",
     "observability != sovereignty",
     "classification != authorization",

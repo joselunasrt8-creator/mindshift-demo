@@ -93,6 +93,11 @@ test('GET-only sovereignty routes are non-executable and do not expand route exe
   assert.equal(body.creates_authority, false)
   assert.equal(body.secret_values_inspected, false)
   assert.ok(db.statements.some((sql) => sql.includes('INSERT OR IGNORE INTO root_authority_observability_registry')))
+  assert.ok(db.statements.some((sql) => sql.includes('declared_root_surfaces')))
+  assert.ok(db.statements.some((sql) => sql.includes('undeclared_root_surfaces')))
+  assert.ok(db.statements.some((sql) => sql.includes('drift_classes')))
+  assert.ok(body.envelope.observation_id)
+  assert.ok(Array.isArray(body.envelope.declared_root_surfaces))
   const post = await runtime.fetch(new Request('https://runtime.test/sovereignty/root-authority', { method: 'POST' }), { DB: db })
   assert.equal(post.status, 405)
 })
@@ -120,18 +125,62 @@ test('no secret material persistence and no deployment capability introduction',
   assert.match(source, /rootAuthorityFlags\(\)/)
 })
 
-test('workflow, package script, and local deploy authority classification is deterministic', () => {
-  assert.ok(classifyRootAuthoritySurface({ surface_id: 'github_actions_workflow_dispatch' }).includes('ROOT_WORKFLOW_AUTHORITY'))
-  assert.ok(classifyRootAuthoritySurface({ surface_id: 'package_script_deploy_guard' }).includes('ROOT_PACKAGE_EXECUTION_AUTHORITY'))
-  assert.ok(classifyRootAuthoritySurface({ surface_id: 'local_deploy_credentials_presence' }).includes('ROOT_LOCAL_EXECUTION_AUTHORITY'))
+test('workflow, package script, Wrangler, and local deploy authority classification is deterministic', () => {
+  const workflow = canonicalizeRootAuthorityInventory({ surfaces: [{ surface_id: 'github_actions_workflow_dispatch', authority_origin: 'github_actions', declared_boundary: '/authority→/compile→/validate→/execute→/proof' }] }).surfaces[0]
+  assert.ok(workflow.classifications.includes('ROOT_WORKFLOW_AUTHORITY'))
+  assert.equal(workflow.canonical_boundary_status, 'DECLARED')
+  assert.ok(classifyRootAuthoritySurface({ surface_id: 'package_script_deploy_capability' }).includes('ROOT_PACKAGE_EXECUTION_AUTHORITY'))
+  const wranglerClasses = classifyRootAuthoritySurface({ surface_id: 'wrangler_local_deploy_capability', authority_origin: 'cloudflare_wrangler', declared_boundary: 'direct-local-deploy-outside-canonical-path', containment_status: 'CONTAINMENT_REQUIRED' })
+  assert.ok(wranglerClasses.includes('ROOT_DEPLOY_AUTHORITY'))
+  assert.ok(wranglerClasses.includes('ROOT_LOCAL_EXECUTION_AUTHORITY'))
+  assert.ok(wranglerClasses.includes('ROOT_AUTHORITY_BYPASS_RISK'))
+  assert.ok(wranglerClasses.includes('ROOT_AUTHORITY_CONTAINMENT_REQUIRED'))
+  assert.ok(classifyRootAuthoritySurface({ surface_id: 'local_credential_authority' }).includes('ROOT_LOCAL_EXECUTION_AUTHORITY'))
+})
+
+test('expanded root authority inventory declares required surfaces without secret values', () => {
+  const required = [
+    'cloudflare_account_authority',
+    'cloudflare_api_deployment_token_authority',
+    'wrangler_local_deploy_capability',
+    'github_admin_authority',
+    'github_actions_token_authority',
+    'github_actions_workflow_dispatch',
+    'repository_secret_environment_mutation_authority',
+    'branch_protection_mutation_authority',
+    'package_script_deploy_capability',
+    'local_credential_authority',
+    'federation_root_runtime_authority_assumption',
+  ]
+  for (const surface_id of required) assert.ok(inventoryArtifact.surfaces.some((surface) => surface.surface_id === surface_id), `missing ${surface_id}`)
+  for (const surface of inventoryArtifact.surfaces) {
+    for (const field of ['surface_id', 'authority_origin', 'mutation_capability', 'deployment_capability', 'canonical_boundary_status', 'classification', 'secret_values_inspected', 'evidence_only', 'non_authoritative', 'drift_observable', 'containment_status']) assert.ok(Object.hasOwn(surface, field), `${surface.surface_id} missing ${field}`)
+    assert.equal(surface.secret_values_inspected, false)
+    assert.equal(surface.evidence_only, true)
+    assert.equal(surface.non_authoritative, true)
+  }
+})
+
+test('baseline bypass-capable authority fails closed without granting execution or merge', () => {
+  const envelope = buildRootAuthorityContainmentEnvelope()
+  assert.ok(envelope.drift.drift_classes.includes('ROOT_AUTHORITY_BYPASS_RISK'))
+  assert.ok(envelope.drift.drift_classes.includes('ROOT_AUTHORITY_CONTAINMENT_REQUIRED'))
+  assert.equal(envelope.boundary.merge_legitimacy, 'NULL')
+  assert.equal(envelope.boundary.preo_validity, 'NULL')
+  assert.equal(envelope.boundary.evidence_authorizes_merge, false)
+  assert.equal(envelope.executable, false)
 })
 
 test('sovereignty assumption continuity and required artifacts are present', () => {
   assert.equal(inventoryArtifact.secret_values_inspected, false)
   assert.equal(boundaryArtifact.classification_is_authorization, false)
+  assert.equal(boundaryArtifact.workflow_dispatch_is_legitimacy, false)
+  assert.equal(boundaryArtifact.bypass_capable_root_authority_result, 'merge_legitimacy_NULL')
   assert.ok(mapArtifact.map.some((entry) => entry.classification === 'ROOT_WORKFLOW_AUTHORITY'))
   assert.ok(assumptionArtifact.assumptions.some((entry) => entry.assumption_id === 'undeclared_surface_null'))
   for (const classification of ROOT_AUTHORITY_CLASSIFICATIONS) assert.ok(taxonomyArtifact.classifications.includes(classification))
+  assert.ok(assumptionArtifact.assumptions.some((entry) => entry.assumption_id === 'deployment_token_presence_is_evidence_only'))
+  assert.ok(rulesArtifact.rules.includes('workflow_dispatch -> trigger evidence only -> authority→compile→validate→execute→proof still required'))
   assert.ok(rulesArtifact.rules.includes('observability != sovereignty'))
 })
 
@@ -142,7 +191,11 @@ test('merge governance root authority rules invalidate legitimacy but never auth
     'Infrastructure mutation ambiguity -> containment required',
     'Root authority topology divergence -> governance trust isolated',
     'Root authority containment evidence may invalidate legitimacy but may NEVER authorize merge',
+    'Bypass-capable root authority -> merge legitimacy NULL',
+    'Root authority bypass risk -> PREO invalid',
   ]) assert.ok(governance.rules.includes(rule))
   assert.equal(governance.root_authority_containment.may_authorize_merge, false)
   assert.equal(governance.root_authority_containment.secret_values_inspected, false)
+  assert.equal(governance.root_authority_containment.workflow_dispatch_is_legitimacy, false)
+  assert.equal(governance.root_authority_containment.merge_legitimacy_on_bypass_or_undeclared, 'NULL')
 })

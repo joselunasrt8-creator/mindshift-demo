@@ -30,7 +30,12 @@
     "Sovereignty drift -> PREO invalid",
     "Infrastructure mutation ambiguity -> containment required",
     "Root authority topology divergence -> governance trust isolated",
-    "Root authority containment evidence may invalidate legitimacy but may NEVER authorize merge"
+    "Root authority containment evidence may invalidate legitimacy but may NEVER authorize merge",
+    "Bypass-capable root authority -> merge legitimacy NULL",
+    "Root authority bypass risk -> PREO invalid",
+    "workflow_dispatch is trigger evidence only and never automatic merge legitimacy",
+    "Deployment token evidence is observability-only and may not read secret values",
+    "Wrangler/local deploy authority outside governed workflow -> containment required"
   ],
   "required_proof_fields": [
     "pr_number",
@@ -133,9 +138,17 @@
       "ROOT_PACKAGE_EXECUTION_AUTHORITY",
       "ROOT_INFRASTRUCTURE_MUTATION_AUTHORITY",
       "UNDECLARED_ROOT_SURFACE",
+      "ROOT_AUTHORITY_CONTAINMENT_REQUIRED",
+      "ROOT_AUTHORITY_BYPASS_RISK",
       "SOVEREIGNTY_DRIFT_DETECTED",
       "ROOT_AUTHORITY_TOPOLOGY_DIVERGENCE",
       "ROOT_AUTHORITY_BOUNDARY_OVERFLOW"
-    ]
+    ],
+    "preo_validity_on_root_drift": "NULL",
+    "merge_legitimacy_on_bypass_or_undeclared": "NULL",
+    "execution_authority_on_root_drift": "UNCHANGED",
+    "workflow_dispatch_is_legitimacy": false,
+    "deployment_token_secret_values_inspected": false,
+    "containment_status_on_bypass": "CONTAINMENT_REQUIRED"
   }
 }

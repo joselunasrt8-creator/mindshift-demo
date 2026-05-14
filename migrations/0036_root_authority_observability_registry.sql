@@ -5,7 +5,11 @@ CREATE TABLE IF NOT EXISTS root_authority_observability_registry (
   boundary_hash TEXT NOT NULL,
   drift_hash TEXT NOT NULL,
   containment_identity TEXT NOT NULL,
-  classification TEXT NOT NULL CHECK (classification IN ('ROOT_DEPLOY_AUTHORITY','ROOT_REPOSITORY_AUTHORITY','ROOT_ENVIRONMENT_AUTHORITY','ROOT_WORKFLOW_AUTHORITY','ROOT_BRANCH_POLICY_AUTHORITY','ROOT_RUNTIME_CONFIGURATION_AUTHORITY','ROOT_FEDERATION_AUTHORITY','ROOT_LOCAL_EXECUTION_AUTHORITY','ROOT_PACKAGE_EXECUTION_AUTHORITY','ROOT_INFRASTRUCTURE_MUTATION_AUTHORITY','UNDECLARED_ROOT_SURFACE','SOVEREIGNTY_DRIFT_DETECTED','ROOT_AUTHORITY_TOPOLOGY_DIVERGENCE','ROOT_AUTHORITY_BOUNDARY_OVERFLOW')),
+  classification TEXT NOT NULL CHECK (classification IN ('ROOT_DEPLOY_AUTHORITY','ROOT_REPOSITORY_AUTHORITY','ROOT_ENVIRONMENT_AUTHORITY','ROOT_WORKFLOW_AUTHORITY','ROOT_BRANCH_POLICY_AUTHORITY','ROOT_RUNTIME_CONFIGURATION_AUTHORITY','ROOT_FEDERATION_AUTHORITY','ROOT_LOCAL_EXECUTION_AUTHORITY','ROOT_PACKAGE_EXECUTION_AUTHORITY','ROOT_INFRASTRUCTURE_MUTATION_AUTHORITY','UNDECLARED_ROOT_SURFACE','ROOT_AUTHORITY_BYPASS_RISK','ROOT_AUTHORITY_CONTAINMENT_REQUIRED','SOVEREIGNTY_DRIFT_DETECTED','ROOT_AUTHORITY_TOPOLOGY_DIVERGENCE','ROOT_AUTHORITY_BOUNDARY_OVERFLOW')),
+  containment_status TEXT NOT NULL CHECK (containment_status IN ('CONTAINED','CONTAINMENT_REQUIRED')),
+  declared_root_surfaces TEXT NOT NULL,
+  undeclared_root_surfaces TEXT NOT NULL,
+  drift_classes TEXT NOT NULL,
   inventory_object TEXT NOT NULL,
   boundary_object TEXT NOT NULL,
   drift_object TEXT NOT NULL,
@@ -27,10 +31,13 @@ CREATE INDEX IF NOT EXISTS idx_root_authority_observability_registry_topology
   ON root_authority_observability_registry (topology_hash, containment_identity);
 
 CREATE INDEX IF NOT EXISTS idx_root_authority_observability_registry_boundary
-  ON root_authority_observability_registry (boundary_hash, classification);
+  ON root_authority_observability_registry (boundary_hash, classification, containment_status);
 
 CREATE INDEX IF NOT EXISTS idx_root_authority_observability_registry_drift
-  ON root_authority_observability_registry (drift_hash, classification);
+  ON root_authority_observability_registry (drift_hash, classification, containment_status);
+
+CREATE INDEX IF NOT EXISTS idx_root_authority_observability_registry_observation
+  ON root_authority_observability_registry (observation_id, generated_at);
 
 CREATE TRIGGER IF NOT EXISTS trg_root_authority_observability_registry_no_update
 BEFORE UPDATE ON root_authority_observability_registry
