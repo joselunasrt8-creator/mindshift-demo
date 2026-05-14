@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mindshift.dev/schemas/PROOF_OBJECT.schema.json",
+  "title": "ProofObject",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["object_type", "version", "proof_id", "proof_type", "validated_object_hash", "execution_hash", "registry_reference", "timestamp"],
+  "properties": {
+    "object_type": {"const": "ProofObject"},
+    "version": {"type": "string"},
+    "proof_id": {"type": "string"},
+    "proof_type": {"type": "string"},
+    "validated_object_hash": {"type": "string"},
+    "execution_hash": {"type": "string"},
+    "registry_reference": {"type": "string"},
+    "timestamp": {"type": "string"}
+  },
+  "x-mindshift": {"failure_mode": "NULL", "canonicalization": "required", "hash_relevant_fields": ["object_type", "version", "proof_id", "proof_type", "validated_object_hash", "execution_hash", "registry_reference", "timestamp"]}
+}
