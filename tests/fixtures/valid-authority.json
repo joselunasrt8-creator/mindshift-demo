@@ -1,0 +1,21 @@
+{
+  "object_type": "Authority",
+  "authority_id": "auth-fixture-001",
+  "decision_id": "decision-fixture-001",
+  "identity_id": "identity-fixture-001",
+  "session_id": "session-fixture-001",
+  "continuity_id": "continuity-fixture-001",
+  "runtime_id": "runtime-local-fixture",
+  "subject": "github-governed-production-deploy",
+  "scope": {
+    "repo": "mindshift-demo",
+    "branch": "main",
+    "workflow": "governed-deploy.yml"
+  },
+  "status": "ACTIVE",
+  "nonce": "nonce-fixture-001",
+  "issued_at": "2026-05-14T00:00:00.000Z",
+  "expires_at": "2026-05-14T01:00:00.000Z",
+  "key_id": "local-test-key-v1",
+  "revoked_descendants": []
+}

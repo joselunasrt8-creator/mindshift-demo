@@ -1,0 +1,12 @@
+{
+  "object_type": "Continuity",
+  "continuity_id": "continuity-fixture-001",
+  "session_id": "session-fixture-001",
+  "runtime_id": "runtime-local-fixture",
+  "authority_id": "auth-fixture-001",
+  "decision_id": "decision-fixture-001",
+  "parent_continuity_id": null,
+  "chain": ["session-fixture-001", "continuity-fixture-001", "auth-fixture-001"],
+  "status": "ACTIVE",
+  "expires_at": "2026-05-14T01:00:00.000Z"
+}

@@ -1,0 +1,13 @@
+{
+  "object_type": "Proof",
+  "proof_id": "proof-fixture-001",
+  "execution_id": "execution-fixture-001",
+  "decision_id": "decision-fixture-001",
+  "authority_id": "auth-fixture-001",
+  "session_id": "session-fixture-001",
+  "continuity_id": "continuity-fixture-001",
+  "validated_object_hash": "__FILLED_BY_TEST_HELPER__",
+  "execution_hash": "__FILLED_BY_TEST_HELPER__",
+  "persisted": true,
+  "created_at": "2026-05-14T00:10:00.000Z"
+}
