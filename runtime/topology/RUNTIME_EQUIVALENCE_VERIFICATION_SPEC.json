@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "classification": "runtime_equivalence_verification_specification",
+  "status": "non_operative_specification",
+  "core_invariant": "Two runtimes may prove governance equivalence without sharing authority, execution capability, credentials, or mutable state.",
+  "purpose": "Define how independent runtimes compare governance topology, policy semantics, replay semantics, proof semantics, federation mode, and reconciliation behavior.",
+  "inputs": [
+    "local_runtime_self_description",
+    "remote_runtime_self_description",
+    "local_runtime_snapshot",
+    "remote_runtime_snapshot",
+    "local_runtime_graph_hash",
+    "remote_runtime_graph_hash",
+    "local_policy_set_hash",
+    "remote_policy_set_hash"
+  ],
+  "equivalence_dimensions": [
+    "governance_topology_hash",
+    "surface_inventory_hash",
+    "authority_surface_hash",
+    "policy_set_hash",
+    "replay_semantics_version",
+    "proof_semantics_version",
+    "federation_mode",
+    "reconciliation_version"
+  ],
+  "outputs": [
+    "RUNTIME_EQUIVALENT",
+    "RUNTIME_DIVERGENT",
+    "RUNTIME_INCOMPARABLE",
+    "NULL"
+  ],
+  "forbidden_behavior": [
+    "remote_authority_inheritance",
+    "cross_runtime_execution",
+    "credential_exchange",
+    "runtime_state_mutation",
+    "proof_creation",
+    "authority_creation"
+  ],
+  "failure_mode": "NULL"
+}
