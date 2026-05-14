@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "classification": "federation_surfaces",
+  "core_invariant": "Federation may exchange evidence, not inherit authority.",
+  "surfaces": [
+    {"surface_id":"federated_evidence_ingest","mode":"observability_only","authority_inheritance":"DENIED"},
+    {"surface_id":"distributed_reconciliation_summary","mode":"read_only","authority_inheritance":"DENIED"},
+    {"surface_id":"remote_runtime_lineage_reference","mode":"evidence_reference","authority_inheritance":"DENIED"}
+  ]
+}
