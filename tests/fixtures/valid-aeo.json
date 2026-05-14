@@ -1,0 +1,30 @@
+{
+  "object_type": "AEO",
+  "aeo_id": "aeo-fixture-001",
+  "decision_id": "decision-fixture-001",
+  "authority_id": "auth-fixture-001",
+  "session_id": "session-fixture-001",
+  "continuity_id": "continuity-fixture-001",
+  "runtime_id": "runtime-local-fixture",
+  "intent": "governed_production_deploy",
+  "scope": {
+    "repo": "mindshift-demo",
+    "branch": "main",
+    "workflow": "governed-deploy.yml"
+  },
+  "target": {
+    "repo": "mindshift-demo",
+    "branch": "main",
+    "workflow": "governed-deploy.yml"
+  },
+  "validation": {
+    "requires_authority": true,
+    "requires_continuity": true,
+    "requires_proof": true
+  },
+  "finality": {
+    "proof_required": true,
+    "registry_persistence_required": true
+  },
+  "nonce": "nonce-fixture-001"
+}

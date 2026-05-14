@@ -1,0 +1,11 @@
+{
+  "object_type": "FederationEnvelope",
+  "envelope_id": "federation-fixture-001",
+  "runtime_id": "remote-runtime-fixture",
+  "authority_id": "auth-fixture-001",
+  "decision_id": "decision-fixture-001",
+  "evidence_hash": "remote-evidence-only-fixture",
+  "claims_local_authority": false,
+  "inherits_authority": false,
+  "signature": "remote-evidence-signature-fixture"
+}
