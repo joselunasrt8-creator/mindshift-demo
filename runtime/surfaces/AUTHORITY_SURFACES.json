@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "classification": "authority_bearing_surfaces",
+  "core_invariant": "Trust does not imply authority",
+  "authority_surfaces": [
+    {
+      "authority_id": "github_admin",
+      "risk_class": "P3",
+      "containment_status": "INCOMPLETE"
+    },
+    {
+      "authority_id": "cloudflare_root",
+      "risk_class": "P3",
+      "containment_status": "INCOMPLETE"
+    },
+    {
+      "authority_id": "agent_connector_authority",
+      "risk_class": "P3",
+      "containment_status": "UNGOVERNED"
+    }
+  ]
+}
