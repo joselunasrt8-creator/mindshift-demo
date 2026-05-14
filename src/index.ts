@@ -44,6 +44,10 @@ const RECONCILIATION_IMPACT_ROUTE = "/reconcile/impact" as const
 const RECONCILIATION_VERDICT_ROUTE = "/reconcile/verdict" as const
 const RECONCILIATION_PROPAGATION_ROUTE = "/reconcile/propagation" as const
 const RECONCILIATION_TOPOLOGY_DELTA_ROUTE = "/reconcile/topology-delta" as const
+const RECONCILIATION_QUARANTINE_ROUTE = "/reconcile/quarantine" as const
+const RECONCILIATION_CONTAINMENT_ROUTE = "/reconcile/containment" as const
+const RECONCILIATION_ISOLATION_ROUTE = "/reconcile/isolation" as const
+const RECONCILIATION_FEDERATION_BOUNDARY_ROUTE = "/reconcile/federation-boundary" as const
 const DELEGATION_LINEAGE_ROUTE = "/delegation/lineage" as const
 const DELEGATION_CHECKPOINT_ROUTE = "/delegation/checkpoint" as const
 const DELEGATION_DRIFT_ROUTE = "/delegation/drift" as const
@@ -68,7 +72,7 @@ const RECURSIVE_GOVERNANCE_ADMISSION_ROUTE = "/governance/recursive/admit" as co
 const RECURSIVE_GOVERNANCE_SELF_INTEGRITY_ROUTE = "/governance/recursive/self-integrity" as const
 const RUNTIME_EVOLUTION_CONSENSUS_ROUTE = "/governance/evolution/consensus" as const
 const RUNTIME_EVOLUTION_CONSENSUS_REGISTRY = "runtime_evolution_consensus_registry" as const
-const NON_EXECUTABLE_OBSERVABILITY_ROUTES = [RUNTIME_SOVEREIGNTY_ROUTE, RUNTIME_EVOLUTION_CONSENSUS_ROUTE, GRAPH_VERIFY_ROUTE, GRAPH_TOPOLOGY_ROUTE, GRAPH_CHECKPOINT_ROUTE, GRAPH_ORPHANS_ROUTE, RECONCILIATION_CLOSURE_ROUTE, RECONCILIATION_CLOSURE_CHECKPOINT_ROUTE, RECONCILIATION_CLOSURE_EQUIVALENCE_ROUTE, RECONCILIATION_CLOSURE_DRIFT_ROUTE, RECONCILIATION_IMPACT_ROUTE, RECONCILIATION_VERDICT_ROUTE, RECONCILIATION_PROPAGATION_ROUTE, RECONCILIATION_TOPOLOGY_DELTA_ROUTE, ...DELEGATION_OBSERVABILITY_ROUTES, "/governance/recursive/verify", "/governance/recursive/self-integrity", "/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/reconcile/distributed", "/federation/reconcile/compression", "/federation/interoperability/checkpoint", "/federation/conformance", "/federation/sovereignty/checkpoint", EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE, ...CONTINUOUS_FATE_ROUTES, ...RUNTIME_CONTAINMENT_ROUTES] as const
+const NON_EXECUTABLE_OBSERVABILITY_ROUTES = [RUNTIME_SOVEREIGNTY_ROUTE, RUNTIME_EVOLUTION_CONSENSUS_ROUTE, GRAPH_VERIFY_ROUTE, GRAPH_TOPOLOGY_ROUTE, GRAPH_CHECKPOINT_ROUTE, GRAPH_ORPHANS_ROUTE, RECONCILIATION_CLOSURE_ROUTE, RECONCILIATION_CLOSURE_CHECKPOINT_ROUTE, RECONCILIATION_CLOSURE_EQUIVALENCE_ROUTE, RECONCILIATION_CLOSURE_DRIFT_ROUTE, RECONCILIATION_IMPACT_ROUTE, RECONCILIATION_VERDICT_ROUTE, RECONCILIATION_PROPAGATION_ROUTE, RECONCILIATION_TOPOLOGY_DELTA_ROUTE, RECONCILIATION_QUARANTINE_ROUTE, RECONCILIATION_CONTAINMENT_ROUTE, RECONCILIATION_ISOLATION_ROUTE, RECONCILIATION_FEDERATION_BOUNDARY_ROUTE, ...DELEGATION_OBSERVABILITY_ROUTES, "/governance/recursive/verify", "/governance/recursive/self-integrity", "/reconcile", "/reconcile/schedule", "/reconcile/report", "/reconcile/drift", "/federation/reconcile", "/federation/reconcile/report", "/federation/reconcile/drift", "/federation/reconcile/checkpoint", "/federation/reconcile/revocation", "/federation/reconcile/topology", "/federation/reconcile/distributed", "/federation/reconcile/compression", "/federation/interoperability/checkpoint", "/federation/conformance", "/federation/sovereignty/checkpoint", EXTERNAL_AUTHORITY_OBSERVABILITY_ROUTE, BOOTSTRAP_VERIFY_ROUTE, BOOTSTRAP_TOPOLOGY_ROUTE, BOOTSTRAP_CHECKPOINT_ROUTE, ...CONTINUOUS_FATE_ROUTES, ...RUNTIME_CONTAINMENT_ROUTES] as const
 const REQUIRE_PREO_LINEAGE = "explicit_governed_deploy_policy" as const
 const CANONICAL_RECONCILIATION_REGISTRY_ORDER = [
   "session_registry",
@@ -101,6 +105,7 @@ const DELEGATED_AUTHORITY_REGISTRY = "delegated_authority_registry" as const
 const RUNTIME_SURFACE_CONTAINMENT_REGISTRY = "runtime_surface_containment_registry" as const
 const TOPOLOGY_RECONCILIATION_REGISTRY = "topology_reconciliation_registry" as const
 const LEGITIMACY_DRIFT_PROPAGATION_REGISTRY = "legitimacy_drift_propagation_registry" as const
+const LEGITIMACY_QUARANTINE_REGISTRY = "legitimacy_quarantine_registry" as const
 
 
 const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
@@ -140,7 +145,8 @@ const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
   continuous_fate_registry: ["continuous_fate_id", "stress_window_id", "deterministic_stress_hash", "topology_stability_hash", "drift_survivability_state", "replay_mutation_vector_hash", "governance_replay_checkpoint", "runtime_stress_depth", "scenario_set_hash", "drift_classes", "checkpoint_hash", "evidence_only", "replay_neutral", "mutation_capable", "remote_authority_denied", "read_only", "creates_authority", "execution_started", "replay_consumed", "authoritative", "generated_at", "created_at"],
   runtime_surface_containment_registry: ["containment_id", "containment_hash", "route_surface_hash", "deployment_surface_hash", "package_surface_hash", "runtime_sovereignty_hash", "hidden_surface_count", "drift_classes", "evidence_only", "replay_neutral", "mutation_capable", "remote_authority_denied", "read_only", "creates_authority", "execution_started", "replay_consumed", "authoritative", "generated_at", "created_at"],
   topology_reconciliation_registry: ["reconciliation_id", "topology_hash", "governance_hash", "workflow_hash", "schema_hash", "reconciliation_hash", "traversal_hash", "classification", "drift_summary", "topology_ancestry", "merge_signal", "evidence_only", "remote_authority_denied", "replay_neutral", "mutation_capable", "read_only", "creates_authority", "execution_started", "generated_at", "created_at"],
-  legitimacy_drift_propagation_registry: ["propagation_id", "propagation_hash", "topology_hash", "impact_hash", "merge_legitimacy_hash", "verdict_hash", "classification", "propagation_object", "impact_graph", "merge_impact", "verdict_object", "evidence_only", "replay_neutral", "mutation_capable", "read_only", "creates_authority", "executable", "deployment_capable", "proof_generating", "fail_closed_on_ambiguity", "generated_at", "created_at"]
+  legitimacy_drift_propagation_registry: ["propagation_id", "propagation_hash", "topology_hash", "impact_hash", "merge_legitimacy_hash", "verdict_hash", "classification", "propagation_object", "impact_graph", "merge_impact", "verdict_object", "evidence_only", "replay_neutral", "mutation_capable", "read_only", "creates_authority", "executable", "deployment_capable", "proof_generating", "fail_closed_on_ambiguity", "generated_at", "created_at"],
+  legitimacy_quarantine_registry: ["quarantine_id", "quarantine_hash", "containment_hash", "lineage_hash", "federation_hash", "boundary_hash", "classification", "quarantine_object", "containment_boundary", "isolation_graph", "federated_containment", "propagation_envelope", "verdict_object", "evidence_only", "replay_neutral", "mutation_capable", "read_only", "creates_authority", "executable", "deployment_capable", "proof_generating", "fail_closed_on_ambiguity", "quarantine_authoritative", "generated_at", "created_at"]
 }
 
 type SchemaDiagnosticReason = "missing_required_table" | "missing_required_column" | "migration_required" | "database_unavailable" | "schema_initialization_failed"
@@ -966,7 +972,14 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE TRIGGER IF NOT EXISTS trg_governance_compression_registry_no_delete BEFORE DELETE ON governance_compression_registry BEGIN SELECT RAISE(ABORT, 'governance_compression_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_federated_sovereignty_registry_no_update BEFORE UPDATE ON federated_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'federated_sovereignty_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_federated_sovereignty_registry_no_delete BEFORE DELETE ON federated_sovereignty_registry BEGIN SELECT RAISE(ABORT, 'federated_sovereignty_registry is append-only'); END`,
-      `CREATE INDEX IF NOT EXISTS idx_federation_conformance_registry_semantics ON federation_conformance_registry(fingerprint_hash, checkpoint_hash, compatibility_hash)`
+      `CREATE INDEX IF NOT EXISTS idx_federation_conformance_registry_semantics ON federation_conformance_registry(fingerprint_hash, checkpoint_hash, compatibility_hash)`,
+      `CREATE TABLE IF NOT EXISTS legitimacy_quarantine_registry (quarantine_id TEXT PRIMARY KEY, quarantine_hash TEXT NOT NULL, containment_hash TEXT NOT NULL, lineage_hash TEXT NOT NULL, federation_hash TEXT NOT NULL, boundary_hash TEXT NOT NULL, classification TEXT NOT NULL CHECK (classification IN ('RECURSIVE_QUARANTINE_ACTIVE','FEDERATED_CONTAINMENT_REQUIRED','LINEAGE_TRUST_ISOLATED','TOPOLOGY_ANCESTRY_QUARANTINED','DOWNSTREAM_COORDINATION_RESTRICTED','MERGE_TRUST_COLLAPSED','PROOF_TRUST_CONTAINED','GOVERNANCE_CONTAMINATION_EXPANDED','CONTAINMENT_BOUNDARY_OVERFLOW','NULL')), quarantine_object TEXT NOT NULL, containment_boundary TEXT NOT NULL, isolation_graph TEXT NOT NULL, federated_containment TEXT NOT NULL, propagation_envelope TEXT NOT NULL, verdict_object TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), read_only TEXT NOT NULL CHECK (read_only='true'), creates_authority TEXT NOT NULL CHECK (creates_authority='false'), executable TEXT NOT NULL CHECK (executable='false'), deployment_capable TEXT NOT NULL CHECK (deployment_capable='false'), proof_generating TEXT NOT NULL CHECK (proof_generating='false'), fail_closed_on_ambiguity TEXT NOT NULL CHECK (fail_closed_on_ambiguity='true'), quarantine_authoritative TEXT NOT NULL CHECK (quarantine_authoritative='false'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_quarantine_hash ON legitimacy_quarantine_registry(quarantine_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_containment_hash ON legitimacy_quarantine_registry(containment_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_lineage_hash ON legitimacy_quarantine_registry(lineage_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_federation_hash ON legitimacy_quarantine_registry(federation_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_boundary_hash ON legitimacy_quarantine_registry(boundary_hash)`,
+      `CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_classification ON legitimacy_quarantine_registry(classification)`
     ]
     for (const s of stmts) await env.DB.prepare(s).run()
     await ensureRequiredSchemaColumns(env)
@@ -1035,6 +1048,8 @@ async function activateAppendOnlyRegistryEnforcement(env: Env) {
     `CREATE TRIGGER IF NOT EXISTS trg_legitimacy_graph_registry_no_delete BEFORE DELETE ON legitimacy_graph_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_graph_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_reconciliation_closure_registry_no_update BEFORE UPDATE ON reconciliation_closure_registry BEGIN SELECT RAISE(ABORT, 'reconciliation_closure_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_reconciliation_closure_registry_no_delete BEFORE DELETE ON reconciliation_closure_registry BEGIN SELECT RAISE(ABORT, 'reconciliation_closure_registry is append-only'); END`,
+    `CREATE TRIGGER IF NOT EXISTS trg_legitimacy_quarantine_registry_no_update BEFORE UPDATE ON legitimacy_quarantine_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_quarantine_registry is append-only'); END`,
+    `CREATE TRIGGER IF NOT EXISTS trg_legitimacy_quarantine_registry_no_delete BEFORE DELETE ON legitimacy_quarantine_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_quarantine_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_continuous_fate_registry_no_update BEFORE UPDATE ON continuous_fate_registry BEGIN SELECT RAISE(ABORT, 'continuous_fate_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_continuous_fate_registry_no_delete BEFORE DELETE ON continuous_fate_registry BEGIN SELECT RAISE(ABORT, 'continuous_fate_registry is append-only'); END`,
     `CREATE TRIGGER IF NOT EXISTS trg_runtime_surface_containment_registry_no_update BEFORE UPDATE ON runtime_surface_containment_registry BEGIN SELECT RAISE(ABORT, 'runtime_surface_containment_registry is append-only'); END`,
@@ -1751,6 +1766,17 @@ function parseJsonArray(value: unknown): any[] {
   }
 }
 
+function parseJsonRecord(value: unknown): any {
+  if (isPlainRecord(value)) return value
+  if (typeof value !== "string") return {}
+  try {
+    const parsed = JSON.parse(value)
+    return isPlainRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 function propagationClass(entry: any): string {
   const classification = String(entry?.classification || entry?.drift_class || "").toUpperCase()
   const reason = String(entry?.reason || "").toLowerCase()
@@ -1841,6 +1867,130 @@ async function buildDriftPropagationEnvelope(evidence: Record<string, unknown>) 
 async function appendDriftPropagationObservation(env: Env, envelope: any) {
   await env.DB.prepare(`INSERT OR IGNORE INTO legitimacy_drift_propagation_registry (propagation_id,propagation_hash,topology_hash,impact_hash,merge_legitimacy_hash,verdict_hash,classification,propagation_object,impact_graph,merge_impact,verdict_object,evidence_only,replay_neutral,mutation_capable,read_only,creates_authority,executable,deployment_capable,proof_generating,fail_closed_on_ambiguity,generated_at,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'true','true','false','true','false','false','false','false','true',?12,?13)`)
     .bind(envelope.propagation_hash, envelope.propagation_hash, envelope.topology_hash, envelope.impact_hash, envelope.merge_legitimacy_hash, envelope.verdict_hash, envelope.classification, canonicalize(envelope.propagation_object), canonicalize(envelope.impact_graph), canonicalize(envelope.merge_impact), canonicalize(envelope.verdict_object), new Date(0).toISOString(), new Date(0).toISOString())
+    .run()
+}
+
+
+const QUARANTINE_CONTAINMENT_ROUTES = [RECONCILIATION_QUARANTINE_ROUTE, RECONCILIATION_CONTAINMENT_ROUTE, RECONCILIATION_ISOLATION_ROUTE, RECONCILIATION_FEDERATION_BOUNDARY_ROUTE] as const
+const QUARANTINE_CONTAINMENT_CLASSES = ["RECURSIVE_QUARANTINE_ACTIVE", "FEDERATED_CONTAINMENT_REQUIRED", "LINEAGE_TRUST_ISOLATED", "TOPOLOGY_ANCESTRY_QUARANTINED", "DOWNSTREAM_COORDINATION_RESTRICTED", "MERGE_TRUST_COLLAPSED", "PROOF_TRUST_CONTAINED", "GOVERNANCE_CONTAMINATION_EXPANDED", "CONTAINMENT_BOUNDARY_OVERFLOW"] as const
+const QUARANTINE_CONTAINMENT_FLAGS = { evidence_only: true, executable: false, creates_authority: false, mutation_capable: false, deployment_capable: false, proof_generating: false, fail_closed_on_ambiguity: true, quarantine_authoritative: false, read_only: true, replay_neutral: true, authoritative: false } as const
+const QUARANTINE_CONTAINMENT_RULES: Record<string, string[]> = {
+  PROOF_LINEAGE_CONTAMINATION: ["downstream_proof_trust_quarantined", "containment_boundary_established", "merge_legitimacy_isolated"],
+  PROOF_LINEAGE_DISCONTINUITY: ["downstream_proof_trust_quarantined", "containment_boundary_established", "merge_legitimacy_isolated"],
+  UNDECLARED_SURFACE: ["topology_contamination", "recursive_ancestry_quarantine", "federated_trust_isolation", "downstream_legitimacy_containment"],
+  SCHEMA_DIVERGENCE: ["route_legitimacy_quarantine", "governance_continuity_collapse", "preo_trust_isolation"],
+  SCHEMA_PROPAGATION_FAILURE: ["route_legitimacy_quarantine", "governance_continuity_collapse", "preo_trust_isolation"],
+  GOVERNANCE_MISMATCH: ["containment_graph_expansion", "downstream_coordination_trust_restricted"],
+  GOVERNANCE_IMPACT_EXPANDED: ["containment_graph_expansion", "downstream_coordination_trust_restricted"],
+  TOPOLOGY_DRIFT: ["topology_contamination", "recursive_ancestry_quarantine", "downstream_legitimacy_containment"],
+  TOPOLOGY_DRIFT_PROPAGATED: ["topology_contamination", "recursive_ancestry_quarantine", "downstream_legitimacy_containment"],
+  MERGE_LINEAGE_CONTAMINATED: ["containment_boundary_established", "merge_legitimacy_isolated"],
+  DOWNSTREAM_LEGITIMACY_NULL: ["downstream_legitimacy_containment", "downstream_coordination_trust_restricted"],
+  WORKFLOW_TRUST_COLLAPSE: ["preo_trust_isolation", "merge_legitimacy_isolated"],
+  RECONCILIATION_EQUIVALENCE_INVALID: ["containment_graph_expansion", "governance_continuity_collapse"],
+}
+const QUARANTINE_CONSEQUENCE_CLASSES: Record<string, string> = {
+  downstream_proof_trust_quarantined: "PROOF_TRUST_CONTAINED",
+  containment_boundary_established: "RECURSIVE_QUARANTINE_ACTIVE",
+  merge_legitimacy_isolated: "MERGE_TRUST_COLLAPSED",
+  topology_contamination: "TOPOLOGY_ANCESTRY_QUARANTINED",
+  recursive_ancestry_quarantine: "TOPOLOGY_ANCESTRY_QUARANTINED",
+  federated_trust_isolation: "FEDERATED_CONTAINMENT_REQUIRED",
+  downstream_legitimacy_containment: "LINEAGE_TRUST_ISOLATED",
+  route_legitimacy_quarantine: "RECURSIVE_QUARANTINE_ACTIVE",
+  governance_continuity_collapse: "GOVERNANCE_CONTAMINATION_EXPANDED",
+  preo_trust_isolation: "LINEAGE_TRUST_ISOLATED",
+  containment_graph_expansion: "GOVERNANCE_CONTAMINATION_EXPANDED",
+  downstream_coordination_trust_restricted: "DOWNSTREAM_COORDINATION_RESTRICTED",
+}
+
+function quarantineClass(entry: any): string {
+  const classification = String(entry?.classification || entry?.drift_class || entry || "").toUpperCase()
+  const reason = String(entry?.reason || "").toLowerCase()
+  if (classification === "NULL") return "NULL"
+  if (reason.includes("proof_lineage") || reason.includes("continuity") || classification === "PROOF_LINEAGE_DISCONTINUITY") return "PROOF_LINEAGE_CONTAMINATION"
+  if (QUARANTINE_CONTAINMENT_RULES[classification]) return classification
+  return classification ? "TOPOLOGY_DRIFT" : "NULL"
+}
+
+async function ensureLegitimacyQuarantineRegistry(env: Env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS legitimacy_quarantine_registry (quarantine_id TEXT PRIMARY KEY, quarantine_hash TEXT NOT NULL, containment_hash TEXT NOT NULL, lineage_hash TEXT NOT NULL, federation_hash TEXT NOT NULL, boundary_hash TEXT NOT NULL, classification TEXT NOT NULL CHECK (classification IN ('RECURSIVE_QUARANTINE_ACTIVE','FEDERATED_CONTAINMENT_REQUIRED','LINEAGE_TRUST_ISOLATED','TOPOLOGY_ANCESTRY_QUARANTINED','DOWNSTREAM_COORDINATION_RESTRICTED','MERGE_TRUST_COLLAPSED','PROOF_TRUST_CONTAINED','GOVERNANCE_CONTAMINATION_EXPANDED','CONTAINMENT_BOUNDARY_OVERFLOW','NULL')), quarantine_object TEXT NOT NULL, containment_boundary TEXT NOT NULL, isolation_graph TEXT NOT NULL, federated_containment TEXT NOT NULL, propagation_envelope TEXT NOT NULL, verdict_object TEXT NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), replay_neutral TEXT NOT NULL CHECK (replay_neutral='true'), mutation_capable TEXT NOT NULL CHECK (mutation_capable='false'), read_only TEXT NOT NULL CHECK (read_only='true'), creates_authority TEXT NOT NULL CHECK (creates_authority='false'), executable TEXT NOT NULL CHECK (executable='false'), deployment_capable TEXT NOT NULL CHECK (deployment_capable='false'), proof_generating TEXT NOT NULL CHECK (proof_generating='false'), fail_closed_on_ambiguity TEXT NOT NULL CHECK (fail_closed_on_ambiguity='true'), quarantine_authoritative TEXT NOT NULL CHECK (quarantine_authoritative='false'), generated_at TEXT NOT NULL, created_at TEXT NOT NULL)`).run()
+  await env.DB.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_quarantine_hash ON legitimacy_quarantine_registry(quarantine_hash)`).run()
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_containment_hash ON legitimacy_quarantine_registry(containment_hash)`).run()
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_lineage_hash ON legitimacy_quarantine_registry(lineage_hash)`).run()
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_federation_hash ON legitimacy_quarantine_registry(federation_hash)`).run()
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_boundary_hash ON legitimacy_quarantine_registry(boundary_hash)`).run()
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_legitimacy_quarantine_registry_classification ON legitimacy_quarantine_registry(classification)`).run()
+  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_legitimacy_quarantine_registry_no_update BEFORE UPDATE ON legitimacy_quarantine_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_quarantine_registry is append-only'); END`).run()
+  await env.DB.prepare(`CREATE TRIGGER IF NOT EXISTS trg_legitimacy_quarantine_registry_no_delete BEFORE DELETE ON legitimacy_quarantine_registry BEGIN SELECT RAISE(ABORT, 'legitimacy_quarantine_registry is append-only'); END`).run()
+  const columns = await tableColumns(env, LEGITIMACY_QUARANTINE_REGISTRY)
+  for (const column of REQUIRED_SCHEMA_COLUMNS.legitimacy_quarantine_registry) if (!columns.has(column)) throw new SchemaInitializationError("missing_required_column")
+}
+
+async function latestContainmentContaminationEvidence(env: Env): Promise<Record<string, unknown>> {
+  const propagated = await env.DB.prepare(`SELECT * FROM legitimacy_drift_propagation_registry ORDER BY propagation_hash ASC LIMIT 1`).all<any>()
+  const row = Array.isArray(propagated?.results) ? propagated.results[0] : null
+  if (row) {
+    const propagationObject = parseJsonRecord(row.propagation_object)
+    return { classification: String(row.classification || "NULL"), propagated_drift_classes: Array.isArray(propagationObject.propagated_drift_classes) ? propagationObject.propagated_drift_classes : [], lineage_hash: String(row.topology_hash || ""), propagation_hash: String(row.propagation_hash || ""), drift_summary: Array.isArray(propagationObject.topology_delta?.drift_sources) ? propagationObject.topology_delta.drift_sources : [] }
+  }
+  const evidence = await latestTopologyReconciliationEvidence(env)
+  return { ...evidence, lineage_hash: String(evidence.topology_hash || "") }
+}
+
+async function buildQuarantineContainmentEnvelope(evidence: Record<string, unknown>) {
+  const sourceEntries = propagationSort(parseJsonArray(evidence.drift_summary).length > 0 ? parseJsonArray(evidence.drift_summary) : (Array.isArray(evidence.propagated_drift_classes) ? (evidence.propagated_drift_classes as any[]).map((classification) => ({ classification, identity: classification, reason: "propagated_drift_class" })) : []))
+  const nodes: any[] = []
+  const edges: any[] = []
+  const classes = new Set<string>()
+  let ambiguous = false
+  const max_depth = SYSTEM_MAX_CONTINUITY_DEPTH
+  const max_nodes = 256
+  for (const entry of sourceEntries) {
+    const sourceClass = quarantineClass(entry)
+    if (sourceClass === "NULL") ambiguous = true
+    if (nodes.length >= max_nodes) { ambiguous = true; break }
+    const sourceId = `contamination:${sourceClass}:${propagationStableIdentity(entry)}`
+    nodes.push({ node_id: sourceId, node_type: "contamination_source", classification: sourceClass, identity: propagationStableIdentity(entry), reason: String(entry?.reason || "unspecified") })
+    let prior = sourceId
+    for (const [depth, consequence] of (QUARANTINE_CONTAINMENT_RULES[sourceClass] || []).entries()) {
+      if (depth >= max_depth || nodes.length >= max_nodes) { ambiguous = true; break }
+      const classification = QUARANTINE_CONSEQUENCE_CLASSES[consequence] || "DOWNSTREAM_COORDINATION_RESTRICTED"
+      classes.add(classification)
+      const nodeId = `containment:${consequence}:${propagationStableIdentity(entry)}`
+      nodes.push({ node_id: nodeId, node_type: "containment_consequence", consequence, classification, depth: depth + 1, quarantines_legitimacy: true })
+      edges.push({ from: prior, to: nodeId, rule: `${sourceClass}->${consequence}`, depth: depth + 1 })
+      prior = nodeId
+    }
+  }
+  if (ambiguous) classes.add("CONTAINMENT_BOUNDARY_OVERFLOW")
+  const containment_classes = Array.from(classes).sort()
+  const lineage_hash = String(evidence.lineage_hash || evidence.topology_hash || await sha256Hex(canonicalize({ quarantine_null_lineage: true })))
+  const graphMaterial = { nodes: propagationSort(nodes), edges: propagationSort(edges), containment_classes, bounded: true, max_depth, max_nodes, ambiguous, truncated: ambiguous, lineage_hash }
+  const containment_hash = await sha256Hex(canonicalize(graphMaterial))
+  const isolation_graph = { object_type: "RecursiveIsolationGraph", ...graphMaterial, containment_hash, ...QUARANTINE_CONTAINMENT_FLAGS }
+  const quarantined_objects = propagationSort(nodes.filter((node) => node.node_type === "containment_consequence").map((node) => ({ node_id: node.node_id, classification: node.classification, consequence: node.consequence })))
+  const propagationMaterial = { containment_hash, quarantined_objects, containment_classes, fail_closed: ambiguous || containment_classes.length > 0 }
+  const quarantine_hash = await sha256Hex(canonicalize(propagationMaterial))
+  const propagation_envelope = { object_type: "QuarantinePropagationEnvelope", ...propagationMaterial, quarantine_hash, ...QUARANTINE_CONTAINMENT_FLAGS }
+  const boundaryMaterial = { containment_hash, boundary_nodes: propagationSort(nodes.filter((node) => node.node_type === "containment_consequence")), merge_legitimacy: containment_classes.includes("MERGE_TRUST_COLLAPSED") || containment_classes.includes("RECURSIVE_QUARANTINE_ACTIVE") || containment_classes.includes("CONTAINMENT_BOUNDARY_OVERFLOW") ? "NULL" : "UNCHANGED", merge_authorization_allowed: false, containment_blocked: containment_classes.length > 0, governance_surfaces_trust_continuity: containment_classes.includes("GOVERNANCE_CONTAMINATION_EXPANDED") ? "ISOLATED" : "UNCHANGED" }
+  const boundary_hash = await sha256Hex(canonicalize(boundaryMaterial))
+  const containment_boundary = { object_type: "ContainmentBoundaryObject", ...boundaryMaterial, boundary_hash, ...QUARANTINE_CONTAINMENT_FLAGS }
+  const federationMaterial = { containment_hash, federation_state: containment_classes.includes("FEDERATED_CONTAINMENT_REQUIRED") || containment_classes.includes("LINEAGE_TRUST_ISOLATED") || containment_classes.includes("CONTAINMENT_BOUNDARY_OVERFLOW") ? "FEDERATED_TRUST_ISOLATED" : "FEDERATED_TRUST_UNCHANGED", isolated_boundaries: propagationSort(nodes.filter((node) => ["FEDERATED_CONTAINMENT_REQUIRED", "LINEAGE_TRUST_ISOLATED"].includes(node.classification))), remote_authority_denied: true, remote_execution_legitimacy: false }
+  const federation_hash = await sha256Hex(canonicalize(federationMaterial))
+  const federated_containment = { object_type: "FederatedContainmentObject", ...federationMaterial, federation_hash, ...QUARANTINE_CONTAINMENT_FLAGS }
+  const classification = containment_classes[0] || "NULL"
+  const verdictMaterial = { containment_hash, boundary_hash, federation_hash, classification, containment_verdict: containment_classes.length > 0 ? "CONTAINMENT_ACTIVE" : "NO_CONTAINMENT_REQUIRED", downstream_legitimacy: containment_classes.length > 0 ? "QUARANTINED" : "UNCHANGED", governed_merge_allowed: false, preo_validity: containment_classes.length > 0 ? "NULL" : "UNCHANGED", classes: containment_classes }
+  const verdict_hash = await sha256Hex(canonicalize(verdictMaterial))
+  const verdict_object = { object_type: "ContainmentVerdictObject", ...verdictMaterial, verdict_hash, ...QUARANTINE_CONTAINMENT_FLAGS }
+  const quarantineMaterial = { quarantine_hash, containment_hash, quarantined_objects, lineage_hash, containment_classes }
+  const quarantine_object = { object_type: "LegitimacyQuarantineObject", ...quarantineMaterial, object_hash: await sha256Hex(canonicalize(quarantineMaterial)), ...QUARANTINE_CONTAINMENT_FLAGS }
+  return { status: verdict_object.containment_verdict, quarantine_hash, containment_hash, lineage_hash, federation_hash, boundary_hash, classification, quarantine_object, containment_boundary, isolation_graph, federated_containment, propagation_envelope, verdict_object, containment_classes, ...QUARANTINE_CONTAINMENT_FLAGS }
+}
+
+async function appendQuarantineContainmentObservation(env: Env, envelope: any) {
+  await env.DB.prepare(`INSERT OR IGNORE INTO legitimacy_quarantine_registry (quarantine_id,quarantine_hash,containment_hash,lineage_hash,federation_hash,boundary_hash,classification,quarantine_object,containment_boundary,isolation_graph,federated_containment,propagation_envelope,verdict_object,evidence_only,replay_neutral,mutation_capable,read_only,creates_authority,executable,deployment_capable,proof_generating,fail_closed_on_ambiguity,quarantine_authoritative,generated_at,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'true','true','false','true','false','false','false','false','true','false',?14,?15)`)
+    .bind(envelope.quarantine_hash, envelope.quarantine_hash, envelope.containment_hash, envelope.lineage_hash, envelope.federation_hash, envelope.boundary_hash, envelope.classification, canonicalize(envelope.quarantine_object), canonicalize(envelope.containment_boundary), canonicalize(envelope.isolation_graph), canonicalize(envelope.federated_containment), canonicalize(envelope.propagation_envelope), canonicalize(envelope.verdict_object), new Date(0).toISOString(), new Date(0).toISOString())
     .run()
 }
 
@@ -5311,6 +5461,26 @@ export default {
         return json({ status: envelope.status, route: RECONCILIATION_VERDICT_ROUTE, reason: "observability_only", verdict: envelope.verdict_object, merge_impact: envelope.merge_impact, verdict_hash: envelope.verdict_hash, propagation_hash: envelope.propagation_hash, append_only: true, ...DRIFT_PROPAGATION_FLAGS })
       } catch {
         return json({ status: "NULL", route: url.pathname, reason: "drift_propagation_unavailable", drift_classes: ["DOWNSTREAM_LEGITIMACY_NULL"], ...DRIFT_PROPAGATION_FLAGS }, 500)
+      }
+    }
+
+    if (QUARANTINE_CONTAINMENT_ROUTES.includes(url.pathname as any) && request.method !== "GET") return json({ status: "NULL", route: url.pathname, reason: "get_only", ...QUARANTINE_CONTAINMENT_FLAGS }, 405)
+
+    if (QUARANTINE_CONTAINMENT_ROUTES.includes(url.pathname as any) && request.method === "GET") {
+      try {
+        if (!hasDb(env)) return json({ status: "NULL", route: url.pathname, reason: "database_unavailable", ...QUARANTINE_CONTAINMENT_FLAGS }, 500)
+        await ensureSchema(env, { stabilizeProofRegistry: false })
+        await ensureLegitimacyDriftPropagationRegistry(env)
+        await ensureLegitimacyQuarantineRegistry(env)
+        const contamination = await latestContainmentContaminationEvidence(env)
+        const envelope = await buildQuarantineContainmentEnvelope(contamination)
+        await appendQuarantineContainmentObservation(env, envelope)
+        if (url.pathname === RECONCILIATION_QUARANTINE_ROUTE) return json({ status: envelope.status, route: RECONCILIATION_QUARANTINE_ROUTE, reason: "observability_only", quarantine: envelope.quarantine_object, propagation_envelope: envelope.propagation_envelope, quarantine_hash: envelope.quarantine_hash, containment_classes: envelope.containment_classes, append_only: true, ...QUARANTINE_CONTAINMENT_FLAGS })
+        if (url.pathname === RECONCILIATION_CONTAINMENT_ROUTE) return json({ status: envelope.status, route: RECONCILIATION_CONTAINMENT_ROUTE, reason: "observability_only", containment_boundary: envelope.containment_boundary, verdict: envelope.verdict_object, containment_hash: envelope.containment_hash, boundary_hash: envelope.boundary_hash, containment_classes: envelope.containment_classes, append_only: true, ...QUARANTINE_CONTAINMENT_FLAGS })
+        if (url.pathname === RECONCILIATION_ISOLATION_ROUTE) return json({ status: envelope.status, route: RECONCILIATION_ISOLATION_ROUTE, reason: "observability_only", isolation_graph: envelope.isolation_graph, containment_hash: envelope.containment_hash, lineage_hash: envelope.lineage_hash, containment_classes: envelope.containment_classes, append_only: true, ...QUARANTINE_CONTAINMENT_FLAGS })
+        return json({ status: envelope.status, route: RECONCILIATION_FEDERATION_BOUNDARY_ROUTE, reason: "observability_only", federated_containment: envelope.federated_containment, federation_hash: envelope.federation_hash, boundary_hash: envelope.boundary_hash, containment_classes: envelope.containment_classes, append_only: true, ...QUARANTINE_CONTAINMENT_FLAGS })
+      } catch {
+        return json({ status: "NULL", route: url.pathname, reason: "quarantine_containment_unavailable", containment_classes: ["CONTAINMENT_BOUNDARY_OVERFLOW"], ...QUARANTINE_CONTAINMENT_FLAGS }, 500)
       }
     }
 

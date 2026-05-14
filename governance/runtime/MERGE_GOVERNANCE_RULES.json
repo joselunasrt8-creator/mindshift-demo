@@ -20,7 +20,12 @@
     "Unresolved propagated drift -> merge legitimacy NULL",
     "Topology impact divergence -> PREO invalid",
     "Governance propagation mismatch -> reconciliation verdict invalid",
-    "Downstream legitimacy collapse -> governed merge denied"
+    "Downstream legitimacy collapse -> governed merge denied",
+    "Active containment boundary -> merge legitimacy NULL",
+    "Recursive quarantine propagation -> PREO invalid",
+    "Federated containment divergence -> governance trust isolated",
+    "Downstream contamination spread -> merge authorization prohibited",
+    "Containment evidence may invalidate legitimacy but may NEVER authorize merge"
   ],
   "required_proof_fields": [
     "pr_number",
@@ -74,6 +79,25 @@
       "PROOF_LINEAGE_CONTAMINATION",
       "RECONCILIATION_EQUIVALENCE_INVALID",
       "DOWNSTREAM_LEGITIMACY_NULL"
+    ]
+  },
+  "legitimacy_quarantine_containment": {
+    "registry": "legitimacy_quarantine_registry",
+    "evidence_only": true,
+    "direct_merge_authority": false,
+    "may_invalidate_legitimacy": true,
+    "may_authorize_merge": false,
+    "fail_closed_on_ambiguity": true,
+    "containment_classes": [
+      "RECURSIVE_QUARANTINE_ACTIVE",
+      "FEDERATED_CONTAINMENT_REQUIRED",
+      "LINEAGE_TRUST_ISOLATED",
+      "TOPOLOGY_ANCESTRY_QUARANTINED",
+      "DOWNSTREAM_COORDINATION_RESTRICTED",
+      "MERGE_TRUST_COLLAPSED",
+      "PROOF_TRUST_CONTAINED",
+      "GOVERNANCE_CONTAMINATION_EXPANDED",
+      "CONTAINMENT_BOUNDARY_OVERFLOW"
     ]
   }
 }
