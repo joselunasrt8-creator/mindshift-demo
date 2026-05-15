@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
-import crypto from 'node:crypto'
+import { canonicalize, sha256Hex } from '../../src/canonical.js'
 
 const source = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf8')
 const inventory = JSON.parse(readFileSync(new URL('../../runtime/unauthorized_mutation_surface_inventory.json', import.meta.url), 'utf8'))
@@ -10,12 +10,7 @@ const bypass = JSON.parse(readFileSync(new URL('../../runtime/bypass_paths.json'
 const executionSurfaces = JSON.parse(readFileSync(new URL('../../runtime/execution_surfaces.json', import.meta.url), 'utf8'))
 const rootAuthority = JSON.parse(readFileSync(new URL('../../runtime/sovereignty/root_authority_inventory.json', import.meta.url), 'utf8'))
 
-const canonicalize = (value) => {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`
-  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(',')}}`
-}
-const hash = (value) => crypto.createHash('sha256').update(typeof value === 'string' ? value : canonicalize(value)).digest('hex')
+const hash = (value) => sha256Hex(typeof value === 'string' ? value : canonicalize(value))
 const byId = new Map(inventory.surfaces.map((surface) => [surface.surface_id, surface]))
 const requiredFields = ['surface_id','surface_type','source_file','entrypoint','mutation_capability','execution_capability','deployment_capability','authority_required','aeo_required','validation_required','proof_required','replay_semantics','drift_observable','proof_bound','governance_addressable','canonical_boundary_status','bypass_risk','containment_status','evidence_only','non_authoritative']
 const driftTaxonomy = ['UNDECLARED_MUTATION_SURFACE','UNCLASSIFIED_EXECUTION_SURFACE','UNBOUND_DATABASE_WRITE','UNBOUND_DEPLOYMENT_SURFACE','OBSERVABILITY_MUTATION_ESCALATION','GOVERNANCE_MUTATION_WITHOUT_SCO','AGENT_TOOL_MUTATION_UNCLASSIFIED','EXTERNAL_API_MUTATION_UNCLASSIFIED','RECONCILIATION_MUTATION_ESCAPE','PROOFLESS_MUTATION_PATH','AUTHORITYLESS_MUTATION_PATH','CLOSURE_INCOMPLETE']

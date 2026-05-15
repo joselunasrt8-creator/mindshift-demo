@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { canonicalize, hashCanonical, normalize } from '../../src/canonical.js'
+export { canonicalize, hashCanonical }
 
 export const CANONICAL_CROSS_REGISTRY_ORDER = Object.freeze([
   'session_registry',
@@ -46,19 +47,6 @@ const EVIDENCE_FLAGS = Object.freeze({
   proof_generating: false,
 })
 
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
-}
-
-function normalize(value) {
-  if (Array.isArray(value)) return value.map(normalize)
-  if (isPlainObject(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalize(value[key])]))
-  if (value === undefined) return null
-  return value
-}
-
-export function canonicalize(value) { return JSON.stringify(normalize(value)) }
-export function hashCanonical(value) { return createHash('sha256').update(canonicalize(value)).digest('hex') }
 function asArray(value) { return Array.isArray(value) ? value : [] }
 function truthy(value) { return value === true || value === 'true' || value === 1 || value === '1' }
 function field(record, name) { return String(record?.[name] ?? '') }

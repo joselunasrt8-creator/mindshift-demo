@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { canonicalize, hashCanonical, normalize } from '../../src/canonical.js'
+export { canonicalize, hashCanonical }
 
 export const CANONICAL_TRAVERSAL_ORDER = Object.freeze([
   'runtime_routes',
@@ -54,21 +55,11 @@ export const MERGE_SIGNALS = Object.freeze([
   'LEGITIMACY_NULL',
 ])
 
+function isPlainObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value) }
+
 const CANONICAL_EXECUTION_PATH = Object.freeze(['/authority', '/compile', '/validate', '/execute', '/proof'])
 const CANONICAL_RUNTIME_ROUTES = Object.freeze(['/session', '/continuity', ...CANONICAL_EXECUTION_PATH])
 
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
-}
-
-function normalize(value) {
-  if (Array.isArray(value)) return value.map(normalize)
-  if (isPlainObject(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalize(value[key])]))
-  return value
-}
-
-export function canonicalize(value) { return JSON.stringify(normalize(value)) }
-export function hashCanonical(value) { return createHash('sha256').update(canonicalize(value)).digest('hex') }
 function asArray(value) { return Array.isArray(value) ? value : [] }
 function booleanTrue(value) { return value === true || value === 'true' }
 function declaredFalse(value) { return value === false || value === 'false' }

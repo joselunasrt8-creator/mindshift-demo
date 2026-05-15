@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { canonicalize, hashCanonical, normalize } from '../../src/canonical.js'
+export { canonicalize, hashCanonical }
 
 export const ROOT_AUTHORITY_EVIDENCE_FLAGS = Object.freeze({
   evidence_only: true,
@@ -54,25 +55,6 @@ export const ROOT_AUTHORITY_BASELINE_SURFACES = Object.freeze([
   { surface_id: 'federated_runtime_authority', authority_origin: 'remote_runtime', declared_boundary: 'remote-authority-denied', classifications: ['ROOT_FEDERATION_AUTHORITY', 'ROOT_AUTHORITY_CONTAINMENT_REQUIRED'] },
   { surface_id: 'root_runtime_authority_assumption', authority_origin: 'runtime_root', declared_boundary: 'runtime-authority-assumption-observability-only', classifications: ['ROOT_FEDERATION_AUTHORITY', 'ROOT_RUNTIME_CONFIGURATION_AUTHORITY', 'ROOT_AUTHORITY_CONTAINMENT_REQUIRED'] },
 ].sort((a, b) => a.surface_id.localeCompare(b.surface_id)))
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
-}
-
-function normalize(value) {
-  if (Array.isArray(value)) return value.map(normalize)
-  if (isPlainObject(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalize(value[key])]))
-  if (value === undefined) return null
-  return value
-}
-
-export function canonicalize(value) {
-  return JSON.stringify(normalize(value))
-}
-
-export function hashCanonical(value) {
-  return createHash('sha256').update(canonicalize(value)).digest('hex')
-}
 
 export function classifyRootAuthoritySurface(surface = {}) {
   const material = `${surface.surface_id ?? ''} ${surface.authority_origin ?? ''} ${surface.declared_boundary ?? ''}`.toLowerCase()
