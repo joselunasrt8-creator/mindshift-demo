@@ -1,4 +1,4 @@
-import { canonicalize, hashCanonical, normalize } from '../../../src/canonical.ts'
+import { canonicalize, hashCanonical, normalize } from '../../../src/canonical.js'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

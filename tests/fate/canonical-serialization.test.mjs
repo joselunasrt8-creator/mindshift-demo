@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { canonicalize, hashCanonical, normalize, sha256Hex } from '../../src/canonical.ts'
+import { canonicalize, hashCanonical, normalize, sha256Hex } from '../../src/canonical.js'
 import { canonicalize as conformanceCanonicalize, hashCanonicalObject } from '../../runtime/legitimacy/validators/schema-validator.js'
-import { canonicalize as reconciliationCanonicalize, hashCanonical as reconciliationHashCanonical } from '../../runtime/reconciliation/topology-reconciliation-engine.js'
+import { canonicalize as reconciliationCanonicalize, hashCanonical as reconciliationHashCanonical, reconcileTopology } from '../../runtime/reconciliation/topology-reconciliation-engine.js'
 
 const fixture = Object.freeze({
   b: 2,
@@ -37,4 +37,14 @@ test('runtime, reconciliation, and conformance layers share canonical serializat
   assert.equal(reconciliationCanonicalize(fixture), canonicalize(fixture))
   assert.equal(hashCanonicalObject(fixture), hashCanonical(fixture))
   assert.equal(reconciliationHashCanonical(fixture), hashCanonical(fixture))
+})
+
+
+test('merge-governance JavaScript consumers load the shared canonical primitive without TypeScript transpilation', () => {
+  const topologySource = readFileSync(new URL('../../runtime/reconciliation/topology-reconciliation-engine.js', import.meta.url), 'utf8')
+  const conformanceSource = readFileSync(new URL('../../conformance/runner.mjs', import.meta.url), 'utf8')
+  assert.match(topologySource, /from '\.\.\/\.\.\/src\/canonical\.js'/)
+  assert.match(conformanceSource, /from '\.\.\/src\/canonical\.js'/)
+  assert.doesNotMatch(topologySource, /canonical\.ts/)
+  assert.equal(typeof reconcileTopology, 'function')
 })

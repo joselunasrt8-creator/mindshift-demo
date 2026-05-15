@@ -1,14 +1,14 @@
-function isCanonicalObject(value: unknown): value is Record<string, unknown> {
+function isCanonicalObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
-export function normalize(value: unknown): unknown {
+export function normalize(value) {
   if (value === undefined) return null
   if (value === null || typeof value === "string" || typeof value === "boolean") return value
   if (typeof value === "number") return Number.isFinite(value) ? value : null
   if (Array.isArray(value)) return value.map((item) => normalize(item))
   if (isCanonicalObject(value)) {
-    return Object.freeze(Object.keys(value).sort().reduce<Record<string, unknown>>((normalized, key) => {
+    return Object.freeze(Object.keys(value).sort().reduce((normalized, key) => {
       normalized[key] = normalize(value[key])
       return normalized
     }, {}))
@@ -16,22 +16,22 @@ export function normalize(value: unknown): unknown {
   return null
 }
 
-export function canonicalize(value: unknown): string {
+export function canonicalize(value) {
   const normalized = normalize(value)
   if (Array.isArray(normalized)) return `[${normalized.map((item) => canonicalize(item)).join(",")}]`
   if (isCanonicalObject(normalized)) return `{${Object.keys(normalized).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(normalized[key])}`).join(",")}}`
   return JSON.stringify(normalized)
 }
 
-function rightRotate(value: number, amount: number): number {
+function rightRotate(value, amount) {
   return (value >>> amount) | (value << (32 - amount))
 }
 
-function utf8Bytes(value: string): Uint8Array {
+function utf8Bytes(value) {
   return new TextEncoder().encode(value)
 }
 
-export function sha256Hex(input: string): string {
+export function sha256Hex(input) {
   const bytes = utf8Bytes(input)
   const bitLength = bytes.length * 8
   const paddedLength = (((bytes.length + 9 + 63) >> 6) << 6)
@@ -56,7 +56,7 @@ export function sha256Hex(input: string): string {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
   ]
   const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
-  const w = new Array<number>(64)
+  const w = new Array(64)
 
   for (let offset = 0; offset < padded.length; offset += 64) {
     for (let i = 0; i < 16; i += 1) w[i] = view.getUint32(offset + i * 4)
@@ -97,6 +97,6 @@ export function sha256Hex(input: string): string {
   return h.map((word) => word.toString(16).padStart(8, "0")).join("")
 }
 
-export function hashCanonical(value: unknown): string {
+export function hashCanonical(value) {
   return sha256Hex(canonicalize(value))
 }

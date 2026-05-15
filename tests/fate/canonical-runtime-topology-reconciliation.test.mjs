@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canonicalize, hashCanonical, normalize } from '../../src/canonical.ts'
+import { canonicalize, hashCanonical, normalize } from '../../src/canonical.js'
 import { readFileSync } from 'node:fs'
 import { validateLegitimacySchema } from '../../runtime/legitimacy/validators/schema-validator.js'
 

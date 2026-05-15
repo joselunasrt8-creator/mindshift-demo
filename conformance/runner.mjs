@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { canonicalize, sha256Hex } from '../src/canonical.ts'
+import { canonicalize, sha256Hex } from '../src/canonical.js'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 

@@ -1,4 +1,4 @@
-import { canonicalize, hashCanonical, normalize } from '../../src/canonical.ts'
+import { canonicalize, hashCanonical, normalize } from '../../src/canonical.js'
 export { canonicalize, hashCanonical }
 
 export const EVIDENCE_ONLY_FLAGS = Object.freeze({

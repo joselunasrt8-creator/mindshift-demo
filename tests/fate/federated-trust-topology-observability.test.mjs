@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { canonicalize, sha256Hex } from '../../src/canonical.ts'
+import { canonicalize, sha256Hex } from '../../src/canonical.js'
 
 const source = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf8')
 

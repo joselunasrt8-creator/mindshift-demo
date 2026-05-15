@@ -1,4 +1,4 @@
-import { canonicalize, hashCanonical } from '../../src/canonical.ts'
+import { canonicalize, hashCanonical } from '../../src/canonical.js'
 import { readFileSync } from 'node:fs'
 
 export const OUTCOME = Object.freeze({
