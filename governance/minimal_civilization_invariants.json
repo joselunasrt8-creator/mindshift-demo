@@ -1,0 +1,91 @@
+{
+  "artifact": "MINIMAL_CIVILIZATION_SCALE_LEGITIMACY_INVARIANTS",
+  "status": "NON_OPERATIVE",
+  "issue": 436,
+  "authority_creating": false,
+  "execution_authorizing": false,
+  "runtime_mutating": false,
+  "invariants": [
+    {
+      "invariant_id": "INV-001",
+      "name": "capability does not imply authority",
+      "statement": "capability != permission",
+      "failure_class": "CAPABILITY_AUTHORITY_COLLAPSE",
+      "required_result": "NULL",
+      "civilization_scale_role": "prevents capability from becoming implicit sovereignty"
+    },
+    {
+      "invariant_id": "INV-002",
+      "name": "no valid object no action",
+      "statement": "if no valid object exists -> nothing happens",
+      "failure_class": "STRUCTURE_ABSENCE",
+      "required_result": "NULL",
+      "civilization_scale_role": "prevents implicit execution paths"
+    },
+    {
+      "invariant_id": "INV-004",
+      "name": "validation before execution",
+      "statement": "validation precedes state change",
+      "failure_class": "POST_HOC_VALIDATION",
+      "required_result": "invalid execution",
+      "civilization_scale_role": "ensures legitimacy gates execution before reality mutation"
+    },
+    {
+      "invariant_id": "INV-005",
+      "name": "validated object equals executed object",
+      "statement": "validated_object == executed_object",
+      "failure_class": "OBJECT_DRIFT",
+      "required_result": "NULL",
+      "civilization_scale_role": "prevents mutation between legitimacy and execution"
+    },
+    {
+      "invariant_id": "INV-006",
+      "name": "proof required for finality",
+      "statement": "no proof -> no completed execution",
+      "failure_class": "PROOFLESS_FINALITY",
+      "required_result": "execution incomplete",
+      "civilization_scale_role": "binds claims of execution to verifiable evidence"
+    },
+    {
+      "invariant_id": "INV-009",
+      "name": "local sovereignty preserved",
+      "statement": "remote evidence != local authority",
+      "failure_class": "SOVEREIGNTY_TRANSFER",
+      "required_result": "NULL",
+      "civilization_scale_role": "preserves local execution authority under federation"
+    },
+    {
+      "invariant_id": "INV-010",
+      "name": "observability cannot create authority",
+      "statement": "visibility != authority",
+      "failure_class": "OBSERVABILITY_AUTHORITY",
+      "required_result": "NULL",
+      "civilization_scale_role": "prevents dashboards and reports from becoming permission systems"
+    },
+    {
+      "invariant_id": "INV-011",
+      "name": "governance mutation must be governed",
+      "statement": "rules that govern execution must themselves be changed through governed objects",
+      "failure_class": "SELF_AUTHORIZATION_LOOP",
+      "required_result": "NULL",
+      "civilization_scale_role": "prevents runtime self-legitimization"
+    },
+    {
+      "invariant_id": "INV-013",
+      "name": "legitimacy remains reconciliable over time",
+      "statement": "valid record != valid lineage",
+      "failure_class": "LINEAGE_DECAY",
+      "required_result": "DRIFT_DETECTED",
+      "civilization_scale_role": "ensures long-term recursive legitimacy coherence"
+    },
+    {
+      "invariant_id": "INV-015",
+      "name": "human steering remains structured and bounded",
+      "statement": "human judgment remains sovereign only if converted into bounded decision objects",
+      "failure_class": "HUMAN_STEERING_COLLAPSE",
+      "required_result": "NULL",
+      "civilization_scale_role": "keeps human governance meaningful under superintelligent coordination pressure"
+    }
+  ],
+  "deepest_invariant": "Superintelligence may scale cognition. It must not inherit permission."
+}

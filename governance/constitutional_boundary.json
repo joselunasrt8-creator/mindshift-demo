@@ -1,0 +1,100 @@
+{
+  "artifact": "CONSTITUTIONAL_BOUNDARY",
+  "status": "NON_OPERATIVE",
+  "issue": 436,
+  "authority_creating": false,
+  "execution_authorizing": false,
+  "runtime_mutating": false,
+  "core_invariant": "constitutional code changes legitimacy semantics",
+  "constitutional_classes": [
+    "canonicalization",
+    "validator_logic",
+    "AEO_schema",
+    "proof_semantics",
+    "replay_semantics",
+    "authority_semantics",
+    "continuity_semantics",
+    "governance_mutation_rules",
+    "execution_boundary_rules",
+    "federation_sovereignty_rules"
+  ],
+  "mutation_risk_levels": [
+    "LOW",
+    "MEDIUM",
+    "HIGH",
+    "CRITICAL",
+    "CONSTITUTIONAL"
+  ],
+  "constitutional_paths": [
+    {
+      "path": "src/runtime/compile.ts",
+      "classification": "AEO_schema",
+      "mutation_risk": "CRITICAL",
+      "reason": "defines canonical executable object construction"
+    },
+    {
+      "path": "src/runtime/validate.ts",
+      "classification": "validator_logic",
+      "mutation_risk": "CONSTITUTIONAL",
+      "reason": "defines legitimacy acceptance semantics"
+    },
+    {
+      "path": "src/runtime/execute.ts",
+      "classification": "execution_boundary_rules",
+      "mutation_risk": "CONSTITUTIONAL",
+      "reason": "defines state mutation admission boundary"
+    },
+    {
+      "path": "src/runtime/proof.ts",
+      "classification": "proof_semantics",
+      "mutation_risk": "CRITICAL",
+      "reason": "defines proof/finality semantics"
+    },
+    {
+      "path": "src/runtime/canonicalize.ts",
+      "classification": "canonicalization",
+      "mutation_risk": "CONSTITUTIONAL",
+      "reason": "defines deterministic object identity"
+    },
+    {
+      "path": "src/runtime/replay.ts",
+      "classification": "replay_semantics",
+      "mutation_risk": "CRITICAL",
+      "reason": "defines replay consumption and uniqueness semantics"
+    },
+    {
+      "path": "src/runtime/authority.ts",
+      "classification": "authority_semantics",
+      "mutation_risk": "CONSTITUTIONAL",
+      "reason": "defines authority issuance and lineage rules"
+    },
+    {
+      "path": "src/runtime/continuity.ts",
+      "classification": "continuity_semantics",
+      "mutation_risk": "CRITICAL",
+      "reason": "defines recursive continuity legitimacy"
+    },
+    {
+      "path": "governance/governance_mutation_control.json",
+      "classification": "governance_mutation_rules",
+      "mutation_risk": "CONSTITUTIONAL",
+      "reason": "defines governance mutation classification semantics"
+    },
+    {
+      "path": "governance/minimal_civilization_invariants.json",
+      "classification": "federation_sovereignty_rules",
+      "mutation_risk": "CONSTITUTIONAL",
+      "reason": "defines civilization-scale legitimacy invariants"
+    }
+  ],
+  "required_controls": {
+    "constitutional_review_required": true,
+    "PREO_required": true,
+    "SCO_required": true,
+    "deterministic_regression_required": true,
+    "reconciliation_review_required": true,
+    "proof_continuity_review_required": true,
+    "federation_sovereignty_review_required": true
+  },
+  "deepest_invariant": "constitutional legitimacy semantics must not drift through ordinary refactors"
+}

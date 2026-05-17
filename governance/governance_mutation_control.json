@@ -1,0 +1,50 @@
+{
+  "artifact": "GOVERNANCE_MUTATION_CONTROL",
+  "status": "NON_OPERATIVE",
+  "issue": 436,
+  "authority_creating": false,
+  "execution_authorizing": false,
+  "runtime_mutating": false,
+  "core_invariant": "governance code changes what counts as legitimate",
+  "mutation_classes": [
+    {"id":"GM-0","name":"NON_GOVERNANCE_CHANGE","risk":"LOW"},
+    {"id":"GM-1","name":"OBSERVABILITY_CHANGE","risk":"LOW_MEDIUM"},
+    {"id":"GM-2","name":"POLICY_CHANGE","risk":"HIGH"},
+    {"id":"GM-3","name":"SCHEMA_CHANGE","risk":"HIGH"},
+    {"id":"GM-4","name":"VALIDATOR_CHANGE","risk":"CRITICAL"},
+    {"id":"GM-5","name":"CANONICALIZATION_CHANGE","risk":"CRITICAL"},
+    {"id":"GM-6","name":"PROOF_SEMANTICS_CHANGE","risk":"CRITICAL"},
+    {"id":"GM-7","name":"RECONCILIATION_CHANGE","risk":"HIGH"},
+    {"id":"GM-8","name":"EXECUTION_BOUNDARY_CHANGE","risk":"CRITICAL"},
+    {"id":"GM-9","name":"ROOT_AUTHORITY_CHANGE","risk":"CRITICAL"},
+    {"id":"GM-10","name":"CANONICAL_INVARIANT_CHANGE","risk":"CRITICAL"}
+  ],
+  "control_rules": [
+    {
+      "rule_id": "GMC-RULE-001",
+      "statement": "canonicalization changes require constitutional review",
+      "required_controls": ["PREO", "hash_drift_review", "full_FATE_regression"]
+    },
+    {
+      "rule_id": "GMC-RULE-002",
+      "statement": "validator changes affect existence semantics",
+      "required_controls": ["validator_version_binding", "exact_object_tests"]
+    },
+    {
+      "rule_id": "GMC-RULE-003",
+      "statement": "proof changes affect finality semantics",
+      "required_controls": ["proof_continuity_review", "lineage_tests"]
+    },
+    {
+      "rule_id": "GMC-RULE-004",
+      "statement": "execution boundary changes affect reality access",
+      "required_controls": ["boundary_bypass_review", "replay_tests"]
+    },
+    {
+      "rule_id": "GMC-RULE-005",
+      "statement": "observability cannot promote itself into governance authority",
+      "required_controls": ["non_authoritative_outputs_only"]
+    }
+  ],
+  "deepest_invariant": "canonicalization code is constitutional code"
+}
