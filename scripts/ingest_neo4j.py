@@ -33,17 +33,17 @@ DEFAULT_GRAPH = Path("graph/repo_graph.json")
 CREATE_NODE_QUERY = """
 MERGE (n:GraphNode {id: $id})
 SET n += $properties
-WITH n
-CALL apoc.create.addLabels(n, $labels) YIELD node
-RETURN node
+SET n.labels = $labels
+RETURN n
 """
 
 CREATE_EDGE_QUERY = """
-MATCH (a:GraphNode {id: $source})
-MATCH (b:GraphNode {id: $target})
-MERGE (a)-[r:GRAPH_EDGE {type: $type, edge_key: $edge_key}]->(b)
-SET r += $properties
-RETURN r
+UNWIND $edges AS edge
+MATCH (a:GraphNode {id: edge.source})
+MATCH (b:GraphNode {id: edge.target})
+MERGE (a)-[r:GRAPH_EDGE {type: edge.type, edge_key: edge.edge_key}]->(b)
+SET r += edge.properties
+RETURN count(r) AS count
 """
 
 
@@ -89,22 +89,21 @@ def ingest_nodes(tx: Any, nodes: list[dict[str, Any]]) -> None:
 
 
 def ingest_edges(tx: Any, edges: list[dict[str, Any]]) -> None:
+    batch = []
+
     for edge in edges:
         properties = dict(edge.get("properties", {}))
         properties["mode"] = "observability_only"
 
-        edge_key = (
-            f"{edge['source']}|{edge['type']}|{edge['target']}"
-        )
+        batch.append({
+            "source": edge["source"],
+            "target": edge["target"],
+            "type": edge["type"],
+            "edge_key": f"{edge['source']}|{edge['type']}|{edge['target']}",
+            "properties": properties,
+        })
 
-        tx.run(
-            CREATE_EDGE_QUERY,
-            source=edge["source"],
-            target=edge["target"],
-            type=edge["type"],
-            edge_key=edge_key,
-            properties=properties,
-        )
+    tx.run(CREATE_EDGE_QUERY, edges=batch)
 
 
 def parse_args() -> argparse.Namespace:
