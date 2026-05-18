@@ -5684,7 +5684,7 @@ function rootAuthorityInventoryFromUrl(url: URL): Partial<RootAuthorityInventory
 
 
 
-type CrossRegistryDriftClass = "REGISTRY_LINEAGE_MISMATCH" | "ORPHANED_AUTHORITY_RECORD" | "ORPHANED_AEO_RECORD" | "ORPHANED_VALIDATION_RECORD" | "ORPHANED_EXECUTION_RECORD" | "ORPHANED_PROOF_RECORD" | "ORPHANED_INVOCATION_RECORD" | "VALIDATED_HASH_DISCONTINUITY" | "EXECUTION_PROOF_HASH_MISMATCH" | "SESSION_CONTINUITY_DIVERGENCE" | "AUTHORITY_CONTINUITY_DIVERGENCE" | "REPLAY_GRAPH_FRAGMENTATION" | "TOPOLOGY_BINDING_DIVERGENCE" | "GOVERNANCE_BINDING_DIVERGENCE" | "ROOT_AUTHORITY_EVIDENCE_ESCALATION" | "OBSERVABILITY_RECORD_AUTHORITY_ESCALATION" | "CROSS_REGISTRY_RECONCILIATION_AMBIGUITY"
+type CrossRegistryDriftClass = "REGISTRY_LINEAGE_MISMATCH" | "ORPHANED_AUTHORITY_RECORD" | "ORPHANED_AEO_RECORD" | "ORPHANED_VALIDATION_RECORD" | "ORPHANED_EXECUTION_RECORD" | "ORPHANED_PROOF_RECORD" | "ORPHANED_INVOCATION_RECORD" | "VALIDATED_HASH_DISCONTINUITY" | "EXECUTION_PROOF_HASH_MISMATCH" | "CANONICAL_OBJECT_HASH_MISMATCH" | "MISSING_PROOF_LINEAGE" | "DUPLICATE_PROOF_QUARANTINED" | "AUTHORITY_LINEAGE_INVALID" | "AUTHORITY_REUSE_BLOCKED" | "SESSION_CONTINUITY_DIVERGENCE" | "AUTHORITY_CONTINUITY_DIVERGENCE" | "REPLAY_GRAPH_FRAGMENTATION" | "TOPOLOGY_BINDING_DIVERGENCE" | "GOVERNANCE_BINDING_DIVERGENCE" | "ROOT_AUTHORITY_EVIDENCE_ESCALATION" | "OBSERVABILITY_RECORD_AUTHORITY_ESCALATION" | "CROSS_REGISTRY_RECONCILIATION_AMBIGUITY"
 type CrossRegistryLineageEdge = { object_type: "CrossRegistryLineageEdge", from_registry: string, from_id: string, to_registry: string, to_id: string, relation: string, status: "RESOLVED" | "UNRESOLVED", drift_class: CrossRegistryDriftClass }
 type CrossRegistryDrift = { object_type: "CrossRegistryDrift", drift_class: CrossRegistryDriftClass, registry: string, record_id: string, reason: string, legitimacy_status: "NULL" }
 type CrossRegistryReconciliationSnapshot = {
@@ -5730,6 +5730,21 @@ function crossRegistryEdge(from_registry: string, from_id: string, to_registry: 
   return { object_type: "CrossRegistryLineageEdge", from_registry, from_id, to_registry, to_id, relation, status: resolved ? "RESOLVED" : "UNRESOLVED", drift_class }
 }
 function truthyEvidenceEscalation(value: unknown): boolean { return value === true || value === "true" || value === 1 || value === "1" }
+function parseCrossRegistryCanonicalObject(value: unknown): Record<string, unknown> | null {
+  if (isPlainRecord(value)) return canonicalRecord(value)
+  if (typeof value !== "string" || value.length === 0) return null
+  try {
+    const parsed = JSON.parse(value)
+    return isPlainRecord(parsed) ? canonicalRecord(parsed) : null
+  } catch {
+    return null
+  }
+}
+async function crossRegistryCanonicalObjectHash(record: Record<string, unknown>): Promise<string> {
+  const object = parseCrossRegistryCanonicalObject(record.canonical_aeo || record.canonical_object || record.validated_object || record.object)
+  return object ? sha256Hex(canonicalize(object)) : ""
+}
+function crossRegistryAuthorityHistoricallyValid(status: unknown): boolean { return ["ACTIVE", "VALIDATED", "RESERVED", "EXECUTED", "CONSUMED"].includes(String(status || "")) }
 async function buildCrossRegistryReconciliationSnapshot(state: Record<string, Record<string, unknown>[]>, generated_at = new Date().toISOString()): Promise<CrossRegistryReconciliationSnapshot> {
   const canonicalState = Object.fromEntries((CANONICAL_RECONCILIATION_REGISTRY_ORDER as readonly string[]).map((registry) => [registry, sortCrossRegistryRecords(state[registry] || [])])) as Record<string, Record<string, unknown>[]>
   const edges: CrossRegistryLineageEdge[] = []
@@ -5762,6 +5777,11 @@ async function buildCrossRegistryReconciliationSnapshot(state: Record<string, Re
     edges.push(crossRegistryEdge("validation_registry", crossRegistryRecordId(validation), "invocation_registry", crossRegistryField(validation, "invocation_nonce"), "VALIDATION_NONCE", Boolean(invocation.match) && !invocation.ambiguous, "ORPHANED_INVOCATION_RECORD"))
     if (!aeo.match || !session.match || !invocation.match || !crossRegistryField(validation, "invocation_nonce")) addDrift("ORPHANED_VALIDATION_RECORD", "validation_registry", validation, "validation requires AEO, session, and nonce")
     if (aeo.ambiguous || session.ambiguous || invocation.ambiguous) addDrift("CROSS_REGISTRY_RECONCILIATION_AMBIGUITY", "validation_registry", validation, "validation lineage resolves ambiguously")
+    if (aeo.match) {
+      const objectHash = await crossRegistryCanonicalObjectHash(aeo.match)
+      if (!objectHash || objectHash !== crossRegistryField(validation, "validated_object_hash") || objectHash !== crossRegistryField(aeo.match, "validated_object_hash")) addDrift("CANONICAL_OBJECT_HASH_MISMATCH", "validation_registry", validation, "validation hash must equal the canonical serialized object hash")
+      if (canonicalize(parseCrossRegistryCanonicalObject(aeo.match.canonical_aeo)) !== String(aeo.match.canonical_aeo || "")) addDrift("CANONICAL_OBJECT_HASH_MISMATCH", "aeo_registry", aeo.match, "canonical object serialization is not stable")
+    }
   }
   for (const execution of executions) {
     const validation = oneCrossRegistry(validations, (row) => crossRegistryField(row, "decision_id") === crossRegistryField(execution, "decision_id") && crossRegistryField(row, "validated_object_hash") === crossRegistryField(execution, "validated_object_hash") && crossRegistryField(row, "invocation_nonce") === crossRegistryField(execution, "invocation_nonce"))
@@ -5770,9 +5790,15 @@ async function buildCrossRegistryReconciliationSnapshot(state: Record<string, Re
     edges.push(crossRegistryEdge("execution_registry", crossRegistryRecordId(execution), "validation_registry", validation.match ? crossRegistryRecordId(validation.match) : "", "EXECUTION_VALIDATION", Boolean(validation.match) && !validation.ambiguous, "ORPHANED_EXECUTION_RECORD"))
     edges.push(crossRegistryEdge("execution_registry", crossRegistryRecordId(execution), "session_registry", crossRegistryField(execution, "session_id"), "EXECUTION_SESSION", Boolean(session.match) && !session.ambiguous, "ORPHANED_EXECUTION_RECORD"))
     edges.push(crossRegistryEdge("execution_registry", crossRegistryRecordId(execution), "continuity_registry", crossRegistryField(execution, "continuity_id"), "EXECUTION_CONTINUITY", Boolean(continuity.match) && !continuity.ambiguous, "ORPHANED_EXECUTION_RECORD"))
+    const proof = oneCrossRegistry(proofs, (row) => crossRegistryField(row, "execution_id") === crossRegistryField(execution, "execution_id") && crossRegistryField(row, "decision_id") === crossRegistryField(execution, "decision_id") && crossRegistryField(row, "validated_object_hash") === crossRegistryField(execution, "validated_object_hash"))
+    const authority = oneCrossRegistry(authorities, (row) => crossRegistryField(row, "decision_id") === crossRegistryField(execution, "decision_id"))
+    edges.push(crossRegistryEdge("execution_registry", crossRegistryRecordId(execution), "proof_registry", proof.match ? crossRegistryRecordId(proof.match) : "", "EXECUTION_PROOF", Boolean(proof.match) && !proof.ambiguous, "MISSING_PROOF_LINEAGE"))
+    edges.push(crossRegistryEdge("execution_registry", crossRegistryRecordId(execution), "authority_registry", authority.match ? crossRegistryRecordId(authority.match) : "", "EXECUTION_AUTHORITY", Boolean(authority.match) && !authority.ambiguous, "AUTHORITY_LINEAGE_INVALID"))
     if (!validation.match || !session.match || !continuity.match) addDrift("ORPHANED_EXECUTION_RECORD", "execution_registry", execution, "execution requires validation, session, and continuity")
-    if (validation.ambiguous || session.ambiguous || continuity.ambiguous) addDrift("CROSS_REGISTRY_RECONCILIATION_AMBIGUITY", "execution_registry", execution, "execution lineage resolves ambiguously")
-    if (validation.match && crossRegistryField(validation.match, "validated_object_hash") !== crossRegistryField(execution, "validated_object_hash")) addDrift("VALIDATED_HASH_DISCONTINUITY", "execution_registry", execution, "execution hash differs from validation hash")
+    if (!proof.match) addDrift("MISSING_PROOF_LINEAGE", "execution_registry", execution, "execution requires canonical proof lineage")
+    if (!authority.match || !crossRegistryAuthorityHistoricallyValid(crossRegistryField(authority.match, "status")) || crossRegistryField(authority.match, "session_id") !== crossRegistryField(execution, "session_id")) addDrift("AUTHORITY_LINEAGE_INVALID", "execution_registry", execution, "execution authority must exist and be historically valid for the execution session")
+    if (validation.ambiguous || session.ambiguous || continuity.ambiguous || proof.ambiguous || authority.ambiguous) addDrift("CROSS_REGISTRY_RECONCILIATION_AMBIGUITY", "execution_registry", execution, "execution lineage resolves ambiguously")
+    if (validation.match && (crossRegistryField(validation.match, "validated_object_hash") !== crossRegistryField(execution, "validated_object_hash") || crossRegistryField(validation.match, "status") !== "VALID" || crossRegistryField(validation.match, "result") !== "VALID")) addDrift("VALIDATED_HASH_DISCONTINUITY", "execution_registry", execution, "execution requires matching VALID validation result")
   }
   for (const proof of proofs) {
     const execution = oneCrossRegistry(executions, (row) => crossRegistryField(row, "execution_id") === crossRegistryField(proof, "execution_id"))
@@ -5780,8 +5806,30 @@ async function buildCrossRegistryReconciliationSnapshot(state: Record<string, Re
     edges.push(crossRegistryEdge("proof_registry", crossRegistryRecordId(proof), "execution_registry", crossRegistryField(proof, "execution_id"), "PROOF_EXECUTION", Boolean(execution.match) && !execution.ambiguous, "ORPHANED_PROOF_RECORD"))
     edges.push(crossRegistryEdge("proof_registry", crossRegistryRecordId(proof), "authority_registry", authority.match ? crossRegistryRecordId(authority.match) : "", "PROOF_AUTHORITY", Boolean(authority.match) && !authority.ambiguous, "ORPHANED_PROOF_RECORD"))
     if (!execution.match || !authority.match || !crossRegistryField(proof, "validated_object_hash")) addDrift("ORPHANED_PROOF_RECORD", "proof_registry", proof, "proof requires execution, authority, and validated object hash")
+    if (authority.match && (!crossRegistryAuthorityHistoricallyValid(crossRegistryField(authority.match, "status")) || crossRegistryField(authority.match, "session_id") !== crossRegistryField(proof, "session_id"))) addDrift("AUTHORITY_LINEAGE_INVALID", "proof_registry", proof, "proof authority must exist and be historically valid for the proof session")
     if (execution.ambiguous || authority.ambiguous) addDrift("CROSS_REGISTRY_RECONCILIATION_AMBIGUITY", "proof_registry", proof, "proof lineage resolves ambiguously")
     if (execution.match && crossRegistryField(execution.match, "validated_object_hash") !== crossRegistryField(proof, "validated_object_hash")) addDrift("EXECUTION_PROOF_HASH_MISMATCH", "proof_registry", proof, "proof hash differs from execution hash")
+  }
+  const proofTruth = new Map<string, Record<string, unknown>[]>()
+  for (const proof of proofs) {
+    const key = `${crossRegistryField(proof, "decision_id")}:${crossRegistryField(proof, "validated_object_hash")}`
+    if (!key.includes(":") || key === ":") continue
+    const set = proofTruth.get(key) || []
+    set.push(proof)
+    proofTruth.set(key, set)
+  }
+  for (const duplicateSet of proofTruth.values()) if (duplicateSet.length > 1) for (const proof of duplicateSet) addDrift("DUPLICATE_PROOF_QUARANTINED", "proof_registry", proof, "duplicate proof cannot become canonical truth")
+  const executionByAuthority = new Map<string, Record<string, unknown>[]>()
+  for (const execution of executions) {
+    const key = crossRegistryField(execution, "decision_id")
+    const set = executionByAuthority.get(key) || []
+    set.push(execution)
+    executionByAuthority.set(key, set)
+  }
+  for (const authority of authorities) {
+    const executionsForAuthority = executionByAuthority.get(crossRegistryField(authority, "decision_id")) || []
+    if ((crossRegistryField(authority, "status") === "REVOKED" && executionsForAuthority.length > 0) || executionsForAuthority.length > 1) addDrift("AUTHORITY_REUSE_BLOCKED", "authority_registry", authority, "revoked or already consumed authority cannot be reused for execution")
+    if (crossRegistryField(authority, "status") === "CONSUMED" && executionsForAuthority.length > 1) addDrift("AUTHORITY_REUSE_BLOCKED", "authority_registry", authority, "consumed authority cannot authorize multiple executions")
   }
   const nonceToObjects = new Map<string, Set<string>>()
   for (const record of [...validations, ...executions]) {
