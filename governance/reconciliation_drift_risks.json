@@ -1,0 +1,91 @@
+{
+  "artifact": "RECONCILIATION_DRIFT_RISKS",
+  "status": "NON_OPERATIVE",
+  "issue": 436,
+  "authority_creating": false,
+  "execution_authorizing": false,
+  "runtime_mutating": false,
+  "core_distinction": "valid record != valid lineage",
+  "expanded_invariant": "all persisted legitimacy lineage must remain recursively reconcilable",
+  "risk_classes": [
+    "LINEAGE_DRIFT",
+    "HASH_DRIFT",
+    "REPLAY_DRIFT",
+    "REVOCATION_DRIFT",
+    "EXPIRY_DRIFT",
+    "PROOF_DRIFT",
+    "REGISTRY_DRIFT",
+    "FEDERATION_DRIFT",
+    "OBSERVABILITY_DRIFT",
+    "POLICY_DRIFT",
+    "SCHEMA_DRIFT",
+    "CANONICALIZATION_DRIFT",
+    "AUTHORITY_DRIFT",
+    "EXECUTION_DRIFT"
+  ],
+  "risks": [
+    {
+      "risk_id": "RDR-001",
+      "risk_class": ["LINEAGE_DRIFT", "PROOF_DRIFT"],
+      "description": "Proof references missing execution lineage",
+      "affected_registries": ["proof_registry", "execution_registry"],
+      "failure_result": "PROOF_INVALID",
+      "closure_requirement": "proof must require valid execution_id lineage",
+      "status": "OPEN"
+    },
+    {
+      "risk_id": "RDR-002",
+      "risk_class": ["LINEAGE_DRIFT", "EXECUTION_DRIFT"],
+      "description": "Execution references missing validation lineage",
+      "affected_registries": ["execution_registry", "validation_registry"],
+      "failure_result": "EXECUTION_INVALID",
+      "closure_requirement": "execution must require validation_id lineage",
+      "status": "OPEN"
+    },
+    {
+      "risk_id": "RDR-006",
+      "risk_class": ["REVOCATION_DRIFT", "LINEAGE_DRIFT"],
+      "description": "Continuity revoked but descendants remain usable",
+      "affected_registries": ["continuity_registry", "authority_registry", "validation_registry", "execution_registry"],
+      "failure_result": "REVOKED_LINEAGE",
+      "closure_requirement": "cascade revocation must propagate downstream",
+      "status": "OPEN"
+    },
+    {
+      "risk_id": "RDR-009",
+      "risk_class": ["HASH_DRIFT", "EXECUTION_DRIFT"],
+      "description": "Executed payload differs from validated object",
+      "affected_registries": ["validation_registry", "execution_registry"],
+      "failure_result": "HASH_MISMATCH",
+      "closure_requirement": "validated_object_hash == executed_object_hash",
+      "status": "OPEN"
+    },
+    {
+      "risk_id": "RDR-012",
+      "risk_class": ["CANONICALIZATION_DRIFT", "HASH_DRIFT"],
+      "description": "Serialization code changes object identity",
+      "affected_registries": ["all_hashed_objects"],
+      "failure_result": "LEGITIMACY_IDENTITY_UNSTABLE",
+      "closure_requirement": "canonicalization changes require governance-root review",
+      "status": "OPEN"
+    },
+    {
+      "risk_id": "RDR-015",
+      "risk_class": ["FEDERATION_DRIFT"],
+      "description": "Remote evidence treated as local authority",
+      "affected_registries": ["federation_evidence_registry", "authority_registry"],
+      "failure_result": "SOVEREIGNTY_VIOLATION",
+      "closure_requirement": "federation evidence remains observability-only unless locally bound",
+      "status": "OPEN"
+    },
+    {
+      "risk_id": "RDR-016",
+      "risk_class": ["OBSERVABILITY_DRIFT"],
+      "description": "Graph or reconciliation report creates implied authority",
+      "affected_registries": ["observability_registry", "reconciliation_registry", "authority_registry"],
+      "failure_result": "AUTHORITY_CORRUPTION",
+      "closure_requirement": "observability outputs cannot create authority",
+      "status": "OPEN"
+    }
+  ]
+}

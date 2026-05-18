@@ -1,0 +1,91 @@
+{
+  "artifact": "CROSS_REGISTRY_RECONCILIATION_LAYER",
+  "status": "NON_OPERATIVE",
+  "issue": 436,
+  "authority_creating": false,
+  "execution_authorizing": false,
+  "runtime_mutating": false,
+  "core_invariant": "all persisted legitimacy lineage must remain recursively reconcilable",
+  "canonical_traversal": [
+    "session_registry",
+    "continuity_registry",
+    "authority_registry",
+    "aeo_registry",
+    "validation_registry",
+    "execution_registry",
+    "proof_registry"
+  ],
+  "result_states": [
+    "RECONCILED",
+    "DRIFT_DETECTED",
+    "ORPHANED",
+    "STALE",
+    "REVOKED_LINEAGE",
+    "EXPIRED_LINEAGE",
+    "REPLAY_CONFLICT",
+    "HASH_MISMATCH",
+    "PROOF_INCOMPLETE",
+    "OBSERVABILITY_ONLY",
+    "ROOT_AUTHORITY_BOUNDARY",
+    "UNKNOWN"
+  ],
+  "checks": [
+    {
+      "check_id": "CRR-001",
+      "name": "session exists for continuity",
+      "source_registry": "session_registry",
+      "target_registry": "continuity_registry",
+      "required_edge": "continuity.session_id references existing session",
+      "failure_state": "ORPHANED"
+    },
+    {
+      "check_id": "CRR-004",
+      "name": "continuity not revoked or expired",
+      "source_registry": "continuity_registry",
+      "target_registry": "authority_registry",
+      "required_edge": "continuity.status == ACTIVE",
+      "failure_state": "REVOKED_LINEAGE"
+    },
+    {
+      "check_id": "CRR-008",
+      "name": "AEO hash matches validation subject",
+      "source_registry": "aeo_registry",
+      "target_registry": "validation_registry",
+      "required_edge": "aeo_hash == validated_object_hash",
+      "failure_state": "HASH_MISMATCH"
+    },
+    {
+      "check_id": "CRR-010",
+      "name": "execution hash matches validation hash",
+      "source_registry": "validation_registry",
+      "target_registry": "execution_registry",
+      "required_edge": "validated_object_hash == executed_object_hash",
+      "failure_state": "HASH_MISMATCH"
+    },
+    {
+      "check_id": "CRR-011",
+      "name": "execution has proof",
+      "source_registry": "execution_registry",
+      "target_registry": "proof_registry",
+      "required_edge": "proof.execution_id references execution",
+      "failure_state": "PROOF_INCOMPLETE"
+    },
+    {
+      "check_id": "CRR-014",
+      "name": "consumed replay state coherent",
+      "source_registry": "validation_registry",
+      "target_registry": "execution_registry",
+      "required_edge": "nonce and replay domain unused",
+      "failure_state": "REPLAY_CONFLICT"
+    },
+    {
+      "check_id": "CRR-019",
+      "name": "federation evidence remains evidence-only",
+      "source_registry": "federation_evidence_registry",
+      "target_registry": "authority_registry",
+      "required_edge": "remote evidence not treated as local authority",
+      "failure_state": "ROOT_AUTHORITY_BOUNDARY"
+    }
+  ],
+  "deepest_invariant": "reconciliation classifies coherence; it does not create authority"
+}
