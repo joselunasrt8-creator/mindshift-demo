@@ -19,3 +19,7 @@ graph/*.json
 graph/repo_graph.json
 __pycache__/
 *.pyc
+!graph/ingest_runtime_graph.ts
+!graph/output/
+!graph/output/runtime_nodes.json
+!graph/output/runtime_edges.json
