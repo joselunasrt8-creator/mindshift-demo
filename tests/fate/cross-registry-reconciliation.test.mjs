@@ -18,15 +18,17 @@ const equivalence = JSON.parse(readFileSync(new URL('../../governance/cross-regi
 const inventory = JSON.parse(readFileSync(new URL('../../runtime/unauthorized_mutation_surface_inventory.json', import.meta.url), 'utf8'))
 
 function coherentState() {
+  const canonicalAeo = '{"finality":{"proof_required":true},"intent":"deploy","scope":{"surface":"github"},"target":{"branch":"main"},"validation":{"mode":"strict"}}'
+  const objectHash = '7d40bccd2483496c144cf98b915f3b71ecd619f07c834778c7a0ddd8b3aabb1a'
   return {
     session_registry: [{ session_id: 's1', identity_id: 'i1', continuity_status: 'ACTIVE' }],
     continuity_registry: [{ continuity_id: 'c1', session_id: 's1', identity_id: 'i1', status: 'ACTIVE' }],
-    authority_registry: [{ authority_id: 'auth1', decision_id: 'd1', session_id: 's1', continuity_id: 'c1', status: 'EXECUTED' }],
-    aeo_registry: [{ aeo_id: 'aeo1', authority_id: 'auth1', decision_id: 'd1', validated_object_hash: 'h1', continuity_id: 'c1' }],
-    invocation_registry: [{ decision_id: 'd1', validated_object_hash: 'h1', invocation_nonce: 'n1', continuity_id: 'c1' }],
-    validation_registry: [{ validation_id: 'v1', session_id: 's1', decision_id: 'd1', validated_object_hash: 'h1', invocation_nonce: 'n1', status: 'VALID', continuity_id: 'c1' }],
-    execution_registry: [{ execution_id: 'e1', session_id: 's1', decision_id: 'd1', validated_object_hash: 'h1', invocation_nonce: 'n1', status: 'EXECUTED', continuity_id: 'c1' }],
-    proof_registry: [{ proof_id: 'p1', session_id: 's1', execution_id: 'e1', decision_id: 'd1', validated_object_hash: 'h1', continuity_id: 'c1' }],
+    authority_registry: [{ authority_id: 'auth1', decision_id: 'd1', session_id: 's1', continuity_id: 'c1', status: 'CONSUMED' }],
+    aeo_registry: [{ aeo_id: 'aeo1', authority_id: 'auth1', decision_id: 'd1', validated_object_hash: objectHash, canonical_aeo: canonicalAeo, continuity_id: 'c1' }],
+    invocation_registry: [{ decision_id: 'd1', validated_object_hash: objectHash, invocation_nonce: 'n1', continuity_id: 'c1' }],
+    validation_registry: [{ validation_id: 'v1', session_id: 's1', decision_id: 'd1', validated_object_hash: objectHash, invocation_nonce: 'n1', result: 'VALID', status: 'VALID', continuity_id: 'c1' }],
+    execution_registry: [{ execution_id: 'e1', session_id: 's1', decision_id: 'd1', validated_object_hash: objectHash, invocation_nonce: 'n1', status: 'EXECUTED', continuity_id: 'c1' }],
+    proof_registry: [{ proof_id: 'p1', session_id: 's1', execution_id: 'e1', decision_id: 'd1', validated_object_hash: objectHash, continuity_id: 'c1' }],
     preo_registry: [{ preo_id: 'preo1', decision_id: 'd1', authority_id: 'auth1', continuity_id: 'c1', status: 'PREO_VALID' }],
     runtime_topology_registry: [{ snapshot_id: 't1', evidence_only: 'true', executable: 'false', deployment_capable: 'false', creates_authority: 'false' }],
     recursive_governance_containment_registry: [{ governance_observation_id: 'g1', evidence_only: 'true', executable: 'false', deployment_capable: 'false', creates_authority: 'false' }],
@@ -72,6 +74,36 @@ test('orphan validation fails closed', () => {
 test('orphan execution fails closed', () => {
   const state = coherentState(); state.validation_registry = []
   expectNull(traverseCrossRegistries(state), 'ORPHANED_EXECUTION_RECORD')
+})
+
+test('missing proof lineage fails closed', () => {
+  const state = coherentState(); state.proof_registry = []
+  expectNull(traverseCrossRegistries(state), 'MISSING_PROOF_LINEAGE')
+})
+
+test('missing authority lineage fails closed', () => {
+  const state = coherentState(); state.authority_registry = []
+  expectNull(traverseCrossRegistries(state), 'AUTHORITY_LINEAGE_INVALID')
+})
+
+test('mismatched object hash fails closed', () => {
+  const state = coherentState(); state.aeo_registry[0].canonical_aeo = '{"finality":{"proof_required":false},"intent":"deploy","scope":{"surface":"github"},"target":{"branch":"main"},"validation":{"mode":"strict"}}'
+  expectNull(traverseCrossRegistries(state), 'CANONICAL_OBJECT_HASH_MISMATCH')
+})
+
+test('canonical object hash mismatch fails closed', () => {
+  const state = coherentState(); state.aeo_registry[0].canonical_aeo = '{"intent":"deploy"}'
+  expectNull(traverseCrossRegistries(state), 'CANONICAL_OBJECT_HASH_MISMATCH')
+})
+
+test('duplicate proof is quarantined', () => {
+  const state = coherentState(); state.proof_registry.push({ ...state.proof_registry[0], proof_id: 'p2' })
+  expectNull(traverseCrossRegistries(state), 'DUPLICATE_PROOF_QUARANTINED')
+})
+
+test('revoked authority reuse fails closed', () => {
+  const state = coherentState(); state.authority_registry[0].status = 'REVOKED'
+  expectNull(traverseCrossRegistries(state), 'AUTHORITY_REUSE_BLOCKED')
 })
 
 test('proof hash mismatch fails closed', () => {

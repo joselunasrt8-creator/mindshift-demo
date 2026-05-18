@@ -27,6 +27,11 @@ export const CROSS_REGISTRY_DRIFT_CLASSES = Object.freeze([
   'ORPHANED_INVOCATION_RECORD',
   'VALIDATED_HASH_DISCONTINUITY',
   'EXECUTION_PROOF_HASH_MISMATCH',
+  'CANONICAL_OBJECT_HASH_MISMATCH',
+  'MISSING_PROOF_LINEAGE',
+  'DUPLICATE_PROOF_QUARANTINED',
+  'AUTHORITY_LINEAGE_INVALID',
+  'AUTHORITY_REUSE_BLOCKED',
   'SESSION_CONTINUITY_DIVERGENCE',
   'AUTHORITY_CONTINUITY_DIVERGENCE',
   'REPLAY_GRAPH_FRAGMENTATION',
@@ -51,6 +56,22 @@ function asArray(value) { return Array.isArray(value) ? value : [] }
 function truthy(value) { return value === true || value === 'true' || value === 1 || value === '1' }
 function field(record, name) { return String(record?.[name] ?? '') }
 function nonEmpty(value) { return typeof value === 'string' && value.length > 0 }
+function parseCanonicalObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return normalize(value)
+  if (typeof value !== 'string' || value.length === 0) return null
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? normalize(parsed) : null
+  } catch {
+    return null
+  }
+}
+function canonicalObjectHash(record) {
+  const object = parseCanonicalObject(record?.canonical_aeo ?? record?.canonical_object ?? record?.validated_object ?? record?.object)
+  return object ? hashCanonical(object) : ''
+}
+function isHistoricallyValidAuthority(status) { return ['ACTIVE', 'VALIDATED', 'RESERVED', 'EXECUTED', 'CONSUMED'].includes(String(status || '')) }
+function isRejectedAuthority(status) { return ['REVOKED', 'NULL', 'EXPIRED', 'CONSUMED'].includes(String(status || '')) }
 
 function recordIdentity(record) {
   if (!record || typeof record !== 'object') return canonicalize(record)
@@ -129,6 +150,11 @@ export function traverseCrossRegistries(state = {}, options = {}) {
     ctx.edges.push(edge('validation_registry', recordIdentity(validation), 'invocation_registry', field(validation, 'invocation_nonce'), 'VALIDATION_NONCE', invocation.match && !invocation.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'ORPHANED_INVOCATION_RECORD'))
     if (!aeo.match || !session.match || !invocation.match || !field(validation, 'invocation_nonce')) addDrift(ctx, 'ORPHANED_VALIDATION_RECORD', 'validation_registry', validation, 'validation requires AEO, session, and nonce')
     if (aeo.ambiguous || session.ambiguous || invocation.ambiguous) addDrift(ctx, 'CROSS_REGISTRY_RECONCILIATION_AMBIGUITY', 'validation_registry', validation, 'validation lineage resolves ambiguously')
+    if (aeo.match) {
+      const objectHash = canonicalObjectHash(aeo.match)
+      if (!objectHash || objectHash !== field(validation, 'validated_object_hash') || objectHash !== field(aeo.match, 'validated_object_hash')) addDrift(ctx, 'CANONICAL_OBJECT_HASH_MISMATCH', 'validation_registry', validation, 'validation hash must equal the canonical serialized object hash')
+      if (canonicalize(parseCanonicalObject(aeo.match.canonical_aeo)) !== String(aeo.match.canonical_aeo || '')) addDrift(ctx, 'CANONICAL_OBJECT_HASH_MISMATCH', 'aeo_registry', aeo.match, 'canonical object serialization is not stable')
+    }
   }
 
   for (const execution of executions) {
@@ -138,9 +164,15 @@ export function traverseCrossRegistries(state = {}, options = {}) {
     ctx.edges.push(edge('execution_registry', recordIdentity(execution), 'validation_registry', recordIdentity(validation.match), 'EXECUTION_VALIDATION', validation.match && !validation.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'ORPHANED_EXECUTION_RECORD'))
     ctx.edges.push(edge('execution_registry', recordIdentity(execution), 'session_registry', field(execution, 'session_id'), 'EXECUTION_SESSION', session.match && !session.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'ORPHANED_EXECUTION_RECORD'))
     ctx.edges.push(edge('execution_registry', recordIdentity(execution), 'continuity_registry', field(execution, 'continuity_id'), 'EXECUTION_CONTINUITY', continuity.match && !continuity.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'ORPHANED_EXECUTION_RECORD'))
+    const proof = one(proofs, (row) => field(row, 'execution_id') === field(execution, 'execution_id') && field(row, 'decision_id') === field(execution, 'decision_id') && field(row, 'validated_object_hash') === field(execution, 'validated_object_hash'))
+    const authority = one(authorities, (row) => field(row, 'decision_id') === field(execution, 'decision_id'))
+    ctx.edges.push(edge('execution_registry', recordIdentity(execution), 'proof_registry', proof.match ? recordIdentity(proof.match) : '', 'EXECUTION_PROOF', proof.match && !proof.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'MISSING_PROOF_LINEAGE'))
+    ctx.edges.push(edge('execution_registry', recordIdentity(execution), 'authority_registry', authority.match ? recordIdentity(authority.match) : '', 'EXECUTION_AUTHORITY', authority.match && !authority.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'AUTHORITY_LINEAGE_INVALID'))
     if (!validation.match || !session.match || !continuity.match) addDrift(ctx, 'ORPHANED_EXECUTION_RECORD', 'execution_registry', execution, 'execution requires validation, session, and continuity')
-    if (validation.ambiguous || session.ambiguous || continuity.ambiguous) addDrift(ctx, 'CROSS_REGISTRY_RECONCILIATION_AMBIGUITY', 'execution_registry', execution, 'execution lineage resolves ambiguously')
-    if (validation.match && field(validation.match, 'validated_object_hash') !== field(execution, 'validated_object_hash')) addDrift(ctx, 'VALIDATED_HASH_DISCONTINUITY', 'execution_registry', execution, 'execution hash differs from validation hash')
+    if (!proof.match) addDrift(ctx, 'MISSING_PROOF_LINEAGE', 'execution_registry', execution, 'execution requires canonical proof lineage')
+    if (!authority.match || !isHistoricallyValidAuthority(field(authority.match, 'status')) || field(authority.match, 'session_id') !== field(execution, 'session_id')) addDrift(ctx, 'AUTHORITY_LINEAGE_INVALID', 'execution_registry', execution, 'execution authority must exist and be historically valid for the execution session')
+    if (validation.ambiguous || session.ambiguous || continuity.ambiguous || proof.ambiguous || authority.ambiguous) addDrift(ctx, 'CROSS_REGISTRY_RECONCILIATION_AMBIGUITY', 'execution_registry', execution, 'execution lineage resolves ambiguously')
+    if (validation.match && (field(validation.match, 'validated_object_hash') !== field(execution, 'validated_object_hash') || field(validation.match, 'status') !== 'VALID' || field(validation.match, 'result') !== 'VALID')) addDrift(ctx, 'VALIDATED_HASH_DISCONTINUITY', 'execution_registry', execution, 'execution requires matching VALID validation result')
   }
 
   for (const proof of proofs) {
@@ -149,8 +181,35 @@ export function traverseCrossRegistries(state = {}, options = {}) {
     ctx.edges.push(edge('proof_registry', recordIdentity(proof), 'execution_registry', field(proof, 'execution_id'), 'PROOF_EXECUTION', execution.match && !execution.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'ORPHANED_PROOF_RECORD'))
     ctx.edges.push(edge('proof_registry', recordIdentity(proof), 'authority_registry', recordIdentity(authority.match), 'PROOF_AUTHORITY', authority.match && !authority.ambiguous ? 'RESOLVED' : 'UNRESOLVED', 'ORPHANED_PROOF_RECORD'))
     if (!execution.match || !authority.match || !field(proof, 'validated_object_hash')) addDrift(ctx, 'ORPHANED_PROOF_RECORD', 'proof_registry', proof, 'proof requires execution, authority, and validated object hash')
+    if (authority.match && (!isHistoricallyValidAuthority(field(authority.match, 'status')) || field(authority.match, 'session_id') !== field(proof, 'session_id'))) addDrift(ctx, 'AUTHORITY_LINEAGE_INVALID', 'proof_registry', proof, 'proof authority must exist and be historically valid for the proof session')
     if (execution.ambiguous || authority.ambiguous) addDrift(ctx, 'CROSS_REGISTRY_RECONCILIATION_AMBIGUITY', 'proof_registry', proof, 'proof lineage resolves ambiguously')
     if (execution.match && field(execution.match, 'validated_object_hash') !== field(proof, 'validated_object_hash')) addDrift(ctx, 'EXECUTION_PROOF_HASH_MISMATCH', 'proof_registry', proof, 'proof hash differs from execution hash')
+  }
+
+  const proofTruth = new Map()
+  for (const proof of proofs) {
+    const key = `${field(proof, 'decision_id')}:${field(proof, 'validated_object_hash')}`
+    if (!key.includes(':') || key === ':') continue
+    const set = proofTruth.get(key) ?? []
+    set.push(proof)
+    proofTruth.set(key, set)
+  }
+  for (const duplicateSet of proofTruth.values()) {
+    if (duplicateSet.length > 1) {
+      for (const proof of duplicateSet) addDrift(ctx, 'DUPLICATE_PROOF_QUARANTINED', 'proof_registry', proof, 'duplicate proof cannot become canonical truth')
+    }
+  }
+  const executionByAuthority = new Map()
+  for (const execution of executions) {
+    const key = field(execution, 'decision_id')
+    const set = executionByAuthority.get(key) ?? []
+    set.push(execution)
+    executionByAuthority.set(key, set)
+  }
+  for (const authority of authorities) {
+    const executionsForAuthority = executionByAuthority.get(field(authority, 'decision_id')) ?? []
+    if ((field(authority, 'status') === 'REVOKED' && executionsForAuthority.length > 0) || executionsForAuthority.length > 1) addDrift(ctx, 'AUTHORITY_REUSE_BLOCKED', 'authority_registry', authority, 'revoked or already consumed authority cannot be reused for execution')
+    if (field(authority, 'status') === 'CONSUMED' && executionsForAuthority.length > 1) addDrift(ctx, 'AUTHORITY_REUSE_BLOCKED', 'authority_registry', authority, 'consumed authority cannot authorize multiple executions')
   }
 
   const nonceToObjects = new Map()
