@@ -53,7 +53,7 @@ test('proof creation binds authority and execution lineage into persisted proof'
 
   assert.match(
     source,
-    /INSERT INTO proof_registry[\s\S]*authority_lineage,execution_lineage[\s\S]*authorityLineage,executionLineage/,
+    /INSERT OR IGNORE INTO proof_registry[\s\S]*authority_lineage,execution_lineage[\s\S]*authorityLineage,executionLineage/,
     'proof must persist authority_lineage and execution_lineage',
   )
 })
@@ -95,8 +95,8 @@ test('proof persistence emits proof telemetry', () => {
 test('proof_requires_matching_execution_lineage', () => {
   assert.match(
     source,
-    /SELECT \* FROM execution_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 AND status='EXECUTED'/,
-    'proof must resolve execution by exact execution_id + decision_id + validated_object_hash lineage',
+    /SELECT \* FROM execution_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 AND invocation_nonce=\?4 AND status='EXECUTED'/,
+    'proof must resolve execution by exact execution_id + decision_id + validated_object_hash + invocation_nonce lineage',
   )
 })
 
@@ -126,7 +126,7 @@ test('proof_rejects_hash_mismatch', () => {
 
 test('proof_rejection_does_not_write_proof_registry', () => {
   const proofStart = source.indexOf('if (url.pathname === "/proof" && request.method === "POST") {')
-  const proofInsert = source.indexOf('INSERT INTO proof_registry', proofStart)
+  const proofInsert = source.indexOf('INSERT OR IGNORE INTO proof_registry', proofStart)
   const missingExecReject = source.indexOf('reason:"execution_missing"', proofStart)
   assert.ok(proofStart >= 0 && missingExecReject > proofStart && proofInsert > missingExecReject, 'expected proof lineage rejection before proof_registry insert')
   const failClosedBlock = source.slice(proofStart, proofInsert)
@@ -152,8 +152,8 @@ test('valid_execute_proof_path_preserved', () => {
 test('duplicate proof replay returns deterministic existing proof evidence without state mutation', () => {
   assert.match(
     source,
-    /SELECT \* FROM proof_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 ORDER BY created_at ASC, proof_id ASC LIMIT 3/,
-    'proof must preflight canonical lineage duplicates before writes',
+    /SELECT p\.\* FROM proof_registry p JOIN execution_registry e ON e\.execution_id=p\.execution_id WHERE p\.decision_hash=\?1 AND p\.execution_id=\?2 AND p\.decision_id=\?3 AND p\.validated_object_hash=\?4 AND e\.invocation_nonce=\?5 ORDER BY p\.created_at ASC, p\.proof_id ASC LIMIT 3/,
+    'proof must preflight canonical lineage duplicates by exact invocation before writes',
   )
 
   assert.match(
@@ -164,14 +164,14 @@ test('duplicate proof replay returns deterministic existing proof evidence witho
 
   assert.match(
     source,
-    /if \(canonicalExistingProof\) \{[\s\S]*return json\(\{ status:"PROVEN", result:"OK", proof_id: String\(canonicalExistingProof\.proof_id \|\| ""\), replay: canonicalEvidenceReplay, proof: canonicalExistingProof \}\)/,
-    'duplicate replay must return deterministic canonical existing proof evidence',
+    /if \(canonicalExistingProof\) \{[\s\S]*return json\(\{ status:"NULL", result:"INVALID", reason:"proof_replay", proof_id: String\(canonicalExistingProof\.proof_id \|\| ""\), replay: canonicalEvidenceReplay \}\)/,
+    'duplicate replay must return deterministic canonical existing proof evidence without accepting a new proof',
   )
 })
 
 test('duplicate proof preflight occurs before authority consumption mutation path', () => {
   const proofStart = source.indexOf('if (url.pathname === "/proof" && request.method === "POST") {')
-  const duplicatePreflight = source.indexOf('SELECT * FROM proof_registry WHERE execution_id=?1 AND decision_id=?2 AND validated_object_hash=?3 ORDER BY created_at ASC, proof_id ASC LIMIT 3', proofStart)
+  const duplicatePreflight = source.indexOf('SELECT p.* FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.decision_hash=?1 AND p.execution_id=?2 AND p.decision_id=?3 AND p.validated_object_hash=?4 AND e.invocation_nonce=?5 ORDER BY p.created_at ASC, p.proof_id ASC LIMIT 3', proofStart)
   const authorityConsume = source.indexOf("UPDATE authority_registry SET status='CONSUMED'", proofStart)
   assert.ok(proofStart >= 0 && duplicatePreflight > proofStart && authorityConsume > duplicatePreflight, 'expected duplicate proof preflight before authority consumption')
 })
@@ -206,7 +206,7 @@ test('proof ambiguity fail-closed binds existing proof evidence to invocation no
 test('proof ambiguity fail-closed returns NULL before governed mutations', () => {
   const proofStart = source.indexOf('if (url.pathname === "/proof" && request.method === "POST") {')
   const ambiguityReject = source.indexOf('PROOF_AMBIGUITY_FAIL_CLOSED_CONFIRMED', proofStart)
-  const proofInsert = source.indexOf('INSERT INTO proof_registry', proofStart)
+  const proofInsert = source.indexOf('INSERT OR IGNORE INTO proof_registry', proofStart)
   const authorityConsume = source.indexOf("UPDATE authority_registry SET status='CONSUMED'", proofStart)
   const invocationMutation = source.indexOf('UPDATE invocation_registry', proofStart)
   const executionMutation = source.indexOf('UPDATE execution_registry', proofStart)

@@ -29,7 +29,7 @@ test('deterministic repeated proof resolution is side-effect-free evidence repla
   assert.match(source, /proof_registry_appended: false/)
   assert.match(source, /proof_registry_mutated: false/)
   assert.match(source, /registry_mutation_blocked: \["authority_registry", "execution_registry", "invocation_registry", "proof_registry"\]/)
-  assert.match(source, /return json\(\{ status:"PROVEN", result:"OK", proof_id: String\(canonicalExistingProof\.proof_id \|\| ""\), replay: canonicalEvidenceReplay, proof: canonicalExistingProof \}\)/)
+  assert.match(source, /return json\(\{ status:"NULL", result:"INVALID", reason:"proof_replay", proof_id: String\(canonicalExistingProof\.proof_id \|\| ""\), replay: canonicalEvidenceReplay \}\)/)
 })
 
 test('replay evidence responses remain non-authoritative', () => {

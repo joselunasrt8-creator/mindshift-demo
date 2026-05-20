@@ -12,7 +12,7 @@ test('FATE proof integrity specs are now represented by executable assertions', 
 })
 
 test('proof without execution returns NULL / INVALID', () => {
-  assert.match(source, /SELECT \* FROM execution_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 AND status='EXECUTED'/)
+  assert.match(source, /SELECT \* FROM execution_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 AND invocation_nonce=\?4 AND status='EXECUTED'/)
   assert.match(source, /proof_without_execute/)
   assert.match(source, /return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"execution_missing" \}/)
 })

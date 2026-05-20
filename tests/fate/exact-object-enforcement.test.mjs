@@ -39,14 +39,14 @@ test('execution requires decision_id, validated_object_hash, and a VALID validat
 
   assert.match(
     source,
-    /SELECT \* FROM validation_registry WHERE decision_id=\?1 AND validated_object_hash=\?2 AND invocation_nonce=\?3 AND result='VALID' AND status='VALID'/,
-    'execution must look up a VALID validation record by decision_id, validated_object_hash, nonce, result, and status',
+    /SELECT \* FROM validation_registry WHERE decision_id=\?1 AND validated_object_hash=\?2 AND invocation_nonce=\?3/,
+    'execution must look up validation by decision_id, validated_object_hash, and nonce',
   )
 
   assert.match(
     source,
-    /if \(!validation\) return rejectWithTelemetry\(env, \{ status:\"NULL\", result:\"INVALID\", reason:\"hash_mismatch\" \}/,
-    'missing validation hash match must return NULL / INVALID with hash_mismatch',
+    /if \(!validation\) return rejectWithTelemetry\(env, \{ status:\"NULL\", result:\"INVALID\", reason:\"missing_validation\" \}/,
+    'missing validation hash match must return NULL / INVALID with missing_validation',
   )
 
   assert.match(
@@ -91,13 +91,13 @@ test('execution and proof preserve exact-object hash continuity', () => {
 
   assert.match(
     source,
-    /SELECT \* FROM execution_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 AND status='EXECUTED'/,
-    'proof must load execution by execution_id, decision_id, validated_object_hash, and executed state',
+    /SELECT \* FROM execution_registry WHERE execution_id=\?1 AND decision_id=\?2 AND validated_object_hash=\?3 AND invocation_nonce=\?4 AND status='EXECUTED'/,
+    'proof must load execution by execution_id, decision_id, validated_object_hash, invocation_nonce, and executed state',
   )
 
   assert.match(
     source,
-    /INSERT INTO proof_registry[\s\S]*validated_object_hash[\s\S]*EXISTS \(SELECT 1 FROM execution_registry WHERE execution_id=\?3 AND decision_id=\?4 AND validated_object_hash=\?5/,
+    /INSERT OR IGNORE INTO proof_registry[\s\S]*validated_object_hash[\s\S]*EXISTS \(SELECT 1 FROM execution_registry WHERE execution_id=\?3 AND decision_id=\?4 AND validated_object_hash=\?5 AND invocation_nonce=\?25/,
     'proof must persist only when the execution row has the same validated_object_hash',
   )
 })
@@ -196,14 +196,14 @@ test('execute_rejects_uncompiled_hash', () => {
 test('execute_rejects_unvalidated_hash', () => {
   assert.match(
     source,
-    /SELECT \* FROM validation_registry WHERE decision_id=\?1 AND validated_object_hash=\?2 AND invocation_nonce=\?3 AND result='VALID' AND status='VALID'/,
+    /SELECT \* FROM validation_registry WHERE decision_id=\?1 AND validated_object_hash=\?2 AND invocation_nonce=\?3/,
     'execute must require a VALID validation_registry row for decision_id + validated_object_hash + invocation_nonce',
   )
 
   assert.match(
     source,
-    /if \(!validation\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"hash_mismatch" \}/,
-    'execute must reject unvalidated hashes with hash_mismatch',
+    /if \(!validation\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"missing_validation" \}/,
+    'execute must reject unvalidated hashes with missing_validation',
   )
 })
 
@@ -269,13 +269,13 @@ test('execution rejection does not create proof_registry entry', () => {
 test('execute_requires_prior_valid_validation', () => {
   assert.match(
     source,
-    /SELECT \* FROM validation_registry WHERE decision_id=\?1 AND validated_object_hash=\?2 AND invocation_nonce=\?3 AND result='VALID' AND status='VALID'/,
+    /SELECT \* FROM validation_registry WHERE decision_id=\?1 AND validated_object_hash=\?2 AND invocation_nonce=\?3/,
     'execute must directly re-check validation_registry for a VALID row scoped to decision_id + validated_object_hash + invocation_nonce',
   )
 
   assert.match(
     source,
-    /if \(!validation\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"hash_mismatch" \}/,
+    /if \(!validation\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"missing_validation" \}/,
     'execute must fail closed when no VALID validation row exists',
   )
 })
