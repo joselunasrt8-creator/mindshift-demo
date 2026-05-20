@@ -1,0 +1,6 @@
+{
+  "fixture": "quorum_without_continuity",
+  "lineage_state": "QUORUM_WITHOUT_CONTINUITY",
+  "reason": "independent_runtime_quorum_synthesis",
+  "expected_result": "NULL"
+}

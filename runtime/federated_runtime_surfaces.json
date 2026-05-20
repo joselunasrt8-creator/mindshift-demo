@@ -1,0 +1,19 @@
+{
+  "scope": "cross_runtime_federation_governance_closure",
+  "canonical_federated_continuity": [
+    "/session",
+    "/continuity",
+    "/authority",
+    "/compile",
+    "/validate",
+    "federation_boundary",
+    "/execute",
+    "/proof"
+  ],
+  "invariants": {
+    "local_validity_not_equal_federated_validity": true,
+    "federated_event_not_execution_authorized": true,
+    "undeclared_federated_runtime_surface_fail_closed": true
+  },
+  "fail_closed_response": "NULL"
+}

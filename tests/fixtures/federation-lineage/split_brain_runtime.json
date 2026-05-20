@@ -1,0 +1,6 @@
+{
+  "fixture": "split_brain_runtime",
+  "lineage_state": "SPLIT_BRAIN",
+  "reason": "split_brain_runtime",
+  "expected_result": "NULL"
+}

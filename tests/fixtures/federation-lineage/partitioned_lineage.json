@@ -1,0 +1,6 @@
+{
+  "fixture": "partitioned_lineage",
+  "lineage_state": "PARTITIONED",
+  "reason": "partitioned_lineage",
+  "expected_result": "NULL"
+}

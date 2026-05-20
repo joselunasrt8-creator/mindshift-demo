@@ -1,0 +1,6 @@
+{
+  "fixture": "stale_remote_authority",
+  "lineage_state": "STALE_REMOTE_AUTHORITY",
+  "reason": "remote_proof_not_local_authority",
+  "expected_result": "NULL"
+}

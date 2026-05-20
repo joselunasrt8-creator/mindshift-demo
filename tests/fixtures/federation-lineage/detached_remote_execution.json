@@ -1,0 +1,6 @@
+{
+  "fixture": "detached_remote_execution",
+  "lineage_state": "DETACHED_REMOTE_EXECUTION",
+  "reason": "detached_federation_continuation",
+  "expected_result": "NULL"
+}

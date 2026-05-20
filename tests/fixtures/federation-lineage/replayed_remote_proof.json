@@ -1,0 +1,6 @@
+{
+  "fixture": "replayed_remote_proof",
+  "lineage_state": "REPLAYED",
+  "reason": "stale_remote_proof_reuse",
+  "expected_result": "NULL"
+}

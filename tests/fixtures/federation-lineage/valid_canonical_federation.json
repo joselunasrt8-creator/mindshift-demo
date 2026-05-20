@@ -1,0 +1,6 @@
+{
+  "fixture": "valid_canonical_federation",
+  "lineage_state": "CANONICAL_CONTINUOUS",
+  "federated_continuity": "BOUND",
+  "expected_result": "VALID"
+}
