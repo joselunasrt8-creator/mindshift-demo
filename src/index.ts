@@ -5512,6 +5512,35 @@ function proofAmbiguityReplayEvidence(candidate_count: number, canonical_candida
   } as const
 }
 
+function proofReplayEvidence(proof: any, candidate_count: number) {
+  return {
+    classification: "PROOF_CANONICAL_EVIDENCE_REPLAY_CONTAINED",
+    replay_detected: true,
+    duplicate_proof_replay: true,
+    proof_id: String(proof?.proof_id || ""),
+    execution_id: String(proof?.execution_id || ""),
+    decision_id: String(proof?.decision_id || ""),
+    validated_object_hash: String(proof?.validated_object_hash || ""),
+    candidate_count,
+    evidence_only: true,
+    read_only: true,
+    non_authoritative: true,
+    replay_neutral: true,
+    lifecycle_advanced: false,
+    proof_registry_appended: false,
+    proof_registry_mutated: false,
+    registry_mutation_blocked: ["authority_registry", "execution_registry", "invocation_registry", "proof_registry"],
+    authority_registry_mutated: false,
+    execution_registry_mutated: false,
+    invocation_registry_mutated: false,
+    merge_authorized: false,
+    deployment_authorized: false,
+    validator_mutation_authorized: false,
+    runtime_authority_granted: false,
+    proof_issue_authority_granted: false
+  } as const
+}
+
 async function rejectWithTelemetry(env: Env, response: Record<string, unknown>, telemetry: {
   event_type?: TelemetryEventType
   decision_id?: string
@@ -7250,10 +7279,12 @@ export default {
       const execution_id = String(b.execution_id || "")
       const decision_id = String(b.decision_id || "")
       const validated_object_hash = String(b.validated_object_hash || "")
+      const invocation_nonce = String(b.invocation_nonce || "")
       const session_id = String(b.session_id || "")
       if (!execution_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_execution_id" }, { event_type: "VALIDATION_REJECTED", decision_id, severity: "WARN", payload: { route: "/proof" }, drift_class: "proof_drift" })
       if (!decision_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_decision_id" }, { event_type: "VALIDATION_REJECTED", execution_id, severity: "WARN", payload: { route: "/proof" }, drift_class: "proof_drift" })
       if (!validated_object_hash) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_validated_object_hash" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "WARN", payload: { route: "/proof" }, drift_class: "proof_drift" })
+      if (!invocation_nonce) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_invocation_nonce" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", validated_object_hash, indicator: "missing_nonce" }, drift_class: "replay_drift" })
       const proof_id = crypto.randomUUID()
       const decision_hash = proofDecisionHash(decision_id, validated_object_hash)
       const created_at = new Date().toISOString()
@@ -7266,10 +7297,10 @@ export default {
       let proofBoundary: any[] = []
       try {
         const proofReads = await env.DB.batch<any>([
-          env.DB.prepare(`SELECT * FROM execution_registry WHERE execution_id=?1 AND decision_id=?2 AND validated_object_hash=?3 AND status='EXECUTED'`).bind(execution_id,decision_id,validated_object_hash),
+          env.DB.prepare(`SELECT * FROM execution_registry WHERE execution_id=?1 AND decision_id=?2 AND validated_object_hash=?3 AND invocation_nonce=?4 AND status='EXECUTED'`).bind(execution_id,decision_id,validated_object_hash,invocation_nonce),
           env.DB.prepare(`SELECT * FROM session_registry WHERE session_id=?1 AND continuity_status='ACTIVE' AND expires_at>?2`).bind(session_id,created_at),
           env.DB.prepare(`SELECT * FROM authority_registry WHERE decision_id=?1`).bind(decision_id),
-          env.DB.prepare(`SELECT * FROM validation_registry WHERE decision_id=?1 AND validated_object_hash=?2 AND session_id=?3 AND status='VALID' AND result='VALID' ORDER BY created_at DESC LIMIT 1`).bind(decision_id,validated_object_hash,session_id)
+          env.DB.prepare(`SELECT * FROM validation_registry WHERE decision_id=?1 AND validated_object_hash=?2 AND session_id=?3 AND invocation_nonce=?4 AND status='VALID' AND result='VALID' ORDER BY created_at DESC LIMIT 1`).bind(decision_id,validated_object_hash,session_id,invocation_nonce)
         ])
         execution = proofReads[0]?.results?.[0] || null
         session = proofReads[1]?.results?.[0] || null
@@ -7282,12 +7313,13 @@ export default {
         const executionById = await env.DB.prepare(`SELECT * FROM execution_registry WHERE execution_id=?1`).bind(execution_id).first<any>()
         if (executionById && String(executionById.decision_id || "") !== decision_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"execution_decision_mismatch" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_decision_id: executionById.decision_id, provided_decision_id: decision_id, indicator: "proof_execution_decision_mismatch" }, drift_class: "proof_drift" })
         if (executionById && String(executionById.validated_object_hash || "") !== validated_object_hash) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"execution_hash_mismatch" }, { event_type: "HASH_MISMATCH", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_hash: executionById.validated_object_hash, provided_hash: validated_object_hash, indicator: "proof_hash_mismatch" }, drift_class: "proof_drift" })
+        if (executionById && String(executionById.invocation_nonce || "") !== invocation_nonce) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"invocation_lineage_mismatch" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_invocation_nonce: executionById.invocation_nonce, provided_invocation_nonce: invocation_nonce, indicator: "proof_execution_invocation_mismatch" }, drift_class: "replay_drift" })
         return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"execution_missing" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", validated_object_hash, indicator: "proof_without_execute" }, drift_class: "proof_drift" })
       }
       if (!session) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"invalid_session" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", session_id }, drift_class: "proof_drift" })
       if (String(execution.session_id || "") !== session_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"session_lineage_mismatch" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_session_id: execution.session_id, provided_session_id: session_id }, drift_class: "proof_drift" })
       if (Object.hasOwn(b, "continuity_id") && String(b.continuity_id || "") && String(b.continuity_id || "") !== String(execution.continuity_id || "")) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"continuity_lineage_mismatch" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_continuity_id: execution.continuity_id, provided_continuity_id: b.continuity_id, indicator: "proof_execution_continuity_mismatch" }, drift_class: "proof_drift" })
-      if (Object.hasOwn(b, "invocation_nonce") && String(b.invocation_nonce || "") && String(b.invocation_nonce || "") !== String(execution.invocation_nonce || "")) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"invocation_lineage_mismatch" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_invocation_nonce: execution.invocation_nonce, provided_invocation_nonce: b.invocation_nonce, indicator: "proof_execution_invocation_mismatch" }, drift_class: "replay_drift" })
+      if (String(execution.invocation_nonce || "") !== invocation_nonce) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"invocation_lineage_mismatch" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", expected_invocation_nonce: execution.invocation_nonce, provided_invocation_nonce: invocation_nonce, indicator: "proof_execution_invocation_mismatch" }, drift_class: "replay_drift" })
       if (!authority) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"authority_not_executed" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, authority_id: "", severity: "HIGH", payload: { route: "/proof", authority_status: null, indicator: "authority_reuse_after_consumed" }, drift_class: "authority_drift" })
       if (String(authority.session_id || "") !== session_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"session_lineage_mismatch" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, authority_id: String(authority.authority_id || ""), severity: "HIGH", payload: { route: "/proof", expected_session_id: authority.session_id, provided_session_id: session_id }, drift_class: "authority_drift" })
       if (String(authority.continuity_id || "") !== String(execution.continuity_id || "")) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"continuity_lineage_mismatch" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, authority_id: String(authority.authority_id || ""), severity: "HIGH", payload: { route: "/proof", expected_continuity_id: authority.continuity_id, provided_continuity_id: execution.continuity_id }, drift_class: "proof_drift" })
@@ -7296,8 +7328,7 @@ export default {
       if (String(authority.status) !== "EXECUTED") return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"authority_not_executed" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, authority_id: String(authority.authority_id || ""), severity: "HIGH", payload: { route: "/proof", authority_status: authority.status || null, indicator: "authority_reuse_after_consumed" }, drift_class: "authority_drift" })
       const executionContinuityRevoked = await continuityIsRevokedOrAmbiguous(env, String(execution.continuity_id || ""))
       if (executionContinuityRevoked) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"revoked_continuity" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, authority_id: String(authority.authority_id || ""), severity: "CRITICAL", payload: { route: "/proof", continuity_id: execution.continuity_id || null, indicator: "proof_lookup_blocked_by_revocation" }, drift_class: "proof_drift" })
-      // canonical legacy source audit fragment (non-executable): SELECT * FROM proof_registry WHERE execution_id=?1 AND decision_id=?2 AND validated_object_hash=?3 ORDER BY created_at ASC, proof_id ASC LIMIT 3
-      const existingProofs = await env.DB.prepare(`SELECT * FROM proof_registry WHERE decision_hash=?1 ORDER BY created_at ASC, proof_id ASC LIMIT 3`).bind(decision_hash).all<any>()
+      const existingProofs = await env.DB.prepare(`SELECT p.* FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.decision_hash=?1 AND p.execution_id=?2 AND p.decision_id=?3 AND p.validated_object_hash=?4 AND e.invocation_nonce=?5 ORDER BY p.created_at ASC, p.proof_id ASC LIMIT 3`).bind(decision_hash,execution_id,decision_id,validated_object_hash,invocation_nonce).all<any>()
       const canonicalProofResolution = resolveCanonicalProofEvidence(existingProofs.results || [], execution)
       const proofCandidates = canonicalProofResolution.candidates
       const canonicalProofCandidates = proofCandidates.filter((proof: any) => proofExecutionLineageMatches(proof, execution))
@@ -7308,7 +7339,8 @@ export default {
       const canonicalExistingProof = canonicalProofResolution.canonical_proof
       if (canonicalExistingProof) {
         const canonicalEvidenceReplay = proofReplayEvidence(canonicalExistingProof, proofCandidates.length)
-        await emitTelemetry(env, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, proof_id: String(canonicalExistingProof.proof_id || ""), severity: "HIGH", payload: { route: "/proof", validated_object_hash, indicator: "duplicate_proof_or_transaction_conflict", replay: canonicalEvidenceReplay }, drift_class: "replay_drift" })
+        await emitTelemetry(env, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, proof_id: String(canonicalExistingProof.proof_id || ""), severity: "HIGH", payload: { route: "/proof", validated_object_hash, indicator: "duplicate_proof_or_transaction_conflict", replay: canonicalEvidenceReplay } })
+        await recordDrift(env, { drift_class: "replay_drift", severity: "HIGH", decision_id, execution_id, payload: { route: "/proof", validated_object_hash, indicator: "duplicate_proof_or_transaction_conflict", replay: canonicalEvidenceReplay } })
         return json({ status:"NULL", result:"INVALID", reason:"proof_replay", proof_id: String(canonicalExistingProof.proof_id || ""), replay: canonicalEvidenceReplay })
       }
       const continuity = await activeContinuity(env, String(execution.continuity_id || ""), session, decision_id)
@@ -7391,11 +7423,11 @@ export default {
             FROM authority_registry a JOIN session_registry s ON s.session_id=a.session_id JOIN continuity_registry c ON c.continuity_id=a.continuity_id
             WHERE a.decision_id=?4 AND a.session_id=?2 AND a.status='EXECUTED' AND c.status='ACTIVE' AND c.expires_at>?13
               AND a.continuity_id=?14
-              AND EXISTS (SELECT 1 FROM execution_registry WHERE execution_id=?3 AND decision_id=?4 AND validated_object_hash=?5 AND session_id=?2 AND continuity_id=a.continuity_id AND status='EXECUTED')
-              AND EXISTS (SELECT 1 FROM validation_registry WHERE decision_id=?4 AND validated_object_hash=?5 AND session_id=?2 AND continuity_id=a.continuity_id AND status='VALID' AND result='VALID')
-              AND s.continuity_status='ACTIVE' AND s.expires_at>?13`).bind(proof_id,session_id,execution_id,decision_id,validated_object_hash,authorityLineage,executionLineage,String(b.surface||""),provenance.workflow_run_id,provenance.workflow_sha,String(b.workflow||GOVERNED_WORKFLOW),String(b.environment||""),created_at,String(execution.continuity_id || ""),provenance.repository,provenance.branch,provenance.pull_request_id,provenance.merge_commit_sha,provenance.source_tree_hash,provenance.workflow_run_id,provenance.workflow_sha,decision_hash,parent_execution_hash,proofLineageOriginHash),
-          env.DB.prepare(`UPDATE authority_registry SET status='CONSUMED' WHERE decision_id=?1 AND session_id=?2 AND status='EXECUTED' AND continuity_id=?5 AND EXISTS (SELECT 1 FROM proof_registry WHERE proof_id=?3 AND decision_id=?1 AND validated_object_hash=?4)`).bind(decision_id,session_id,proof_id,validated_object_hash,String(execution.continuity_id || "")),
-          env.DB.prepare(`INSERT OR IGNORE INTO proof_propagation_outbox (outbox_id,proof_id,decision_id,execution_id,validated_object_hash,event_type,payload,status,publish_attempts,created_at,replay_neutral,fail_closed) SELECT ?1,?2,?3,?4,?5,'LEGITIMACY_PROOF_PERSISTED',?6,'PENDING',0,?7,'true','true' WHERE EXISTS (SELECT 1 FROM proof_registry WHERE proof_id=?2 AND decision_id=?3 AND execution_id=?4 AND validated_object_hash=?5)`).bind(crypto.randomUUID(),proof_id,decision_id,execution_id,validated_object_hash,canonicalize({ proof_id, decision_id, execution_id, validated_object_hash, route: "/proof", lineage_stage: "proof" }),created_at)
+              AND EXISTS (SELECT 1 FROM execution_registry WHERE execution_id=?3 AND decision_id=?4 AND validated_object_hash=?5 AND invocation_nonce=?25 AND session_id=?2 AND continuity_id=a.continuity_id AND status='EXECUTED')
+              AND EXISTS (SELECT 1 FROM validation_registry WHERE decision_id=?4 AND validated_object_hash=?5 AND invocation_nonce=?25 AND session_id=?2 AND continuity_id=a.continuity_id AND status='VALID' AND result='VALID')
+              AND s.continuity_status='ACTIVE' AND s.expires_at>?13`).bind(proof_id,session_id,execution_id,decision_id,validated_object_hash,authorityLineage,executionLineage,String(b.surface||""),provenance.workflow_run_id,provenance.workflow_sha,String(b.workflow||GOVERNED_WORKFLOW),String(b.environment||""),created_at,String(execution.continuity_id || ""),provenance.repository,provenance.branch,provenance.pull_request_id,provenance.merge_commit_sha,provenance.source_tree_hash,provenance.workflow_run_id,provenance.workflow_sha,decision_hash,parent_execution_hash,proofLineageOriginHash,invocation_nonce),
+          env.DB.prepare(`UPDATE authority_registry SET status='CONSUMED' WHERE decision_id=?1 AND session_id=?2 AND status='EXECUTED' AND continuity_id=?5 AND EXISTS (SELECT 1 FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.proof_id=?3 AND p.decision_id=?1 AND p.validated_object_hash=?4 AND e.invocation_nonce=?6)`).bind(decision_id,session_id,proof_id,validated_object_hash,String(execution.continuity_id || ""),invocation_nonce),
+          env.DB.prepare(`INSERT OR IGNORE INTO proof_propagation_outbox (outbox_id,proof_id,decision_id,execution_id,validated_object_hash,event_type,payload,status,publish_attempts,created_at,replay_neutral,fail_closed) SELECT ?1,?2,?3,?4,?5,'LEGITIMACY_PROOF_PERSISTED',?6,'PENDING',0,?7,'true','true' WHERE EXISTS (SELECT 1 FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.proof_id=?2 AND p.decision_id=?3 AND p.execution_id=?4 AND p.validated_object_hash=?5 AND e.invocation_nonce=?8)`).bind(crypto.randomUUID(),proof_id,decision_id,execution_id,validated_object_hash,canonicalize({ proof_id, decision_id, execution_id, validated_object_hash, invocation_nonce, route: "/proof", lineage_stage: "proof" }),created_at,invocation_nonce)
         ]
         if (validatedAttestation) {
           proofStatements.push(env.DB.prepare(`INSERT INTO attestation_registry (attestation_id,envelope_hash,payload_hash,payload_type,signer_identity,decision_id,validated_object_hash,workflow_run_id,workflow_sha,canonical_aeo_hash,transparency_log_id,transparency_integrated_time,status,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'VALIDATED',?13)`).bind(crypto.randomUUID(), validatedAttestation.envelope_hash, validatedAttestation.payload_hash, validatedAttestation.payload_type, validatedAttestation.signer_identity, validatedAttestation.decision_id, validatedAttestation.validated_object_hash, validatedAttestation.workflow_run_id, validatedAttestation.workflow_sha, validatedAttestation.canonical_aeo_hash, validatedAttestation.transparency_log_id, validatedAttestation.transparency_integrated_time, created_at))
