@@ -4,7 +4,6 @@ import { mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { createHmac } from 'node:crypto'
 
 function runSqlite(args, options = {}) {
   const result = spawnSync('sqlite3', args, { encoding: 'utf8', ...options })
@@ -243,52 +242,12 @@ function provenanceFor(decision_id, overrides = {}) {
   }
 }
 
-const PROVENANCE_PAYLOAD_TYPE = 'application/vnd.mindshift.cryptographic-provenance.v1+json'
 const provenanceFixtureRoot = new URL('./fixtures/provenance/', import.meta.url)
 const validProvenancePayloadFixture = JSON.parse(readFileSync(new URL('valid-provenance-payload.json', provenanceFixtureRoot), 'utf8'))
 const validDsseEnvelopeFixture = JSON.parse(readFileSync(new URL('valid-dsse-envelope.json', provenanceFixtureRoot), 'utf8'))
 const apiKeySignedDsseEnvelopeFixture = JSON.parse(readFileSync(new URL('api-key-signed-dsse-envelope.json', provenanceFixtureRoot), 'utf8'))
 const mutatedPayloadDsseEnvelopeFixture = JSON.parse(readFileSync(new URL('mutated-payload-dsse-envelope.json', provenanceFixtureRoot), 'utf8'))
 const provenanceFixtureSecret = 'fixture-provenance-secret'
-
-function normalizeCanonicalValue(value) {
-  if (value === undefined) return null
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  if (Array.isArray(value)) return value.map(normalizeCanonicalValue)
-  if (value && typeof value === 'object') {
-    return Object.freeze(Object.keys(value).sort().reduce((normalized, key) => {
-      normalized[key] = normalizeCanonicalValue(value[key])
-      return normalized
-    }, {}))
-  }
-  return null
-}
-
-function canonicalize(value) {
-  const normalized = normalizeCanonicalValue(value)
-  if (Array.isArray(normalized)) return `[${normalized.map(canonicalize).join(',')}]`
-  if (normalized && typeof normalized === 'object') return `{${Object.keys(normalized).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(normalized[key])}`).join(',')}}`
-  return JSON.stringify(normalized)
-}
-
-function dsseLengthPrefixed(bytes) {
-  return Buffer.concat([Buffer.from(String(bytes.length)), Buffer.from(' '), bytes])
-}
-
-function dssePreAuthenticationEncoding(payloadType, payloadBytes) {
-  return Buffer.concat([Buffer.from('DSSEv1 '), dsseLengthPrefixed(Buffer.from(payloadType)), dsseLengthPrefixed(payloadBytes)])
-}
-
-function provenanceEnvelope(secret, payload, signer_identity) {
-  const payloadBytes = Buffer.from(canonicalize(payload))
-  const pae = dssePreAuthenticationEncoding(PROVENANCE_PAYLOAD_TYPE, payloadBytes)
-  return {
-    payloadType: PROVENANCE_PAYLOAD_TYPE,
-    payload: payloadBytes.toString('base64'),
-    signatures: [{ keyid: signer_identity, sig: createHmac('sha256', secret).update(pae).digest('base64') }]
-  }
-}
 
 async function persistPreo(post, decision_id, validated_object_hash, provenance) {
   const preo = await post('/preo', {
