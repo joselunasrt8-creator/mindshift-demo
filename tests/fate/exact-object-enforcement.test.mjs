@@ -210,7 +210,7 @@ test('execute_rejects_unvalidated_hash', () => {
 test('execute_rejects_cross_context_hash', () => {
   assert.match(
     source,
-    /if \(String\(validation\.continuity_id \|\| ""\) !== String\(authority\.continuity_id \|\| ""\)\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"lineage_mismatch" \}/,
+    /if \(String\(validation\.continuity_id \|\| ""\) !== String\(authority\.continuity_id \|\| ""\)\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"hash_mismatch" \}/,
     'execute must reject validation rows that do not match authority continuity lineage',
   )
 
@@ -283,7 +283,7 @@ test('execute_requires_prior_valid_validation', () => {
 test('execute_rejects_validate_execute_hash_drift', () => {
   assert.match(
     source,
-    /if \(String\(validation\.validated_object_hash \|\| ""\) !== validated_object_hash\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"lineage_mismatch" \}/,
+    /if \(String\(validation\.validated_object_hash \|\| ""\) !== validated_object_hash\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"hash_mismatch" \}/,
     'execute must reject when validation row hash drifts from execute hash',
   )
 })
@@ -291,7 +291,7 @@ test('execute_rejects_validate_execute_hash_drift', () => {
 test('execute_rejects_cross_authority_valid_hash', () => {
   assert.match(
     source,
-    /if \(String\(validation\.delegated_authority_id \|\| ""\) !== String\(authority\.delegated_authority_id \|\| ""\) \|\| String\(validation\.delegated_replay_chain_hash \|\| ""\) !== String\(authority\.delegated_replay_chain_hash \|\| ""\)\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"lineage_mismatch" \}/,
+    /if \(String\(validation\.delegated_authority_id \|\| ""\) !== String\(authority\.delegated_authority_id \|\| ""\) \|\| String\(validation\.delegated_replay_chain_hash \|\| ""\) !== String\(authority\.delegated_replay_chain_hash \|\| ""\)\) return rejectWithTelemetry\(env, \{ status:"NULL", result:"INVALID", reason:"hash_mismatch" \}/,
     'execute must reject cross-authority/cross-replay lineage reuse where delegated lineage fields exist',
   )
 })
