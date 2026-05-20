@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   canonicalizeSkillMetadata,
   hashSkillMetadata,
+  hashSkillMetadataProvenancePayload,
   validateSkillMetadata
 } from '../src/skill-metadata/validator.mjs';
 
@@ -47,6 +48,15 @@ const p3Skill = {
     replay_domain: 'production_deploy',
     max_executions: 1
   }
+};
+
+
+const p3PayloadHash = hashSkillMetadataProvenancePayload(p3Skill);
+p3Skill.provenance.dsse_envelope = {
+  schema_version: 'DSSE_SKILL_PROVENANCE_SCHEMA_V1',
+  payload_type: 'SKILL_METADATA_SCHEMA_V1',
+  payload_hash: `sha256:${p3PayloadHash}`,
+  signatures: [{ keyid: 'root-prod', sig: 'abc_DEF-123' }]
 };
 
 test('valid P0 skill fixture validates', () => {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 export const SKILL_METADATA_SCHEMA_VERSION = 'SKILL_METADATA_SCHEMA_V1';
+export const DSSE_SKILL_PROVENANCE_SCHEMA_VERSION = 'DSSE_SKILL_PROVENANCE_SCHEMA_V1';
 
 const REQUIRED_FIELDS = [
   'schema_version',
@@ -20,6 +21,7 @@ const RISK_CLASSES = new Set(['P0', 'P1', 'P2', 'P3']);
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9._-]+)?$/;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export function canonicalizeSkillMetadata(value) {
   if (Array.isArray(value)) {
@@ -40,6 +42,26 @@ export function hashSkillMetadata(value) {
   return createHash('sha256').update(canonicalizeSkillMetadata(value)).digest('hex');
 }
 
+export function canonicalizeSkillMetadataProvenancePayload(value) {
+  return canonicalizeSkillMetadata(deriveProvenancePayload(value));
+}
+
+export function hashSkillMetadataProvenancePayload(value) {
+  return createHash('sha256')
+    .update(canonicalizeSkillMetadataProvenancePayload(value))
+    .digest('hex');
+}
+
+
+function deriveProvenancePayload(value) {
+  if (!isPlainObject(value)) return value;
+  const clone = structuredClone(value);
+  if (isPlainObject(clone.provenance) && 'dsse_envelope' in clone.provenance) {
+    delete clone.provenance.dsse_envelope;
+  }
+  return clone;
+}
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -58,6 +80,49 @@ function validateNameArray(value, field, errors, { minItems = 0 } = {}) {
       errors.push(`${field}: invalid capability name ${JSON.stringify(item)}`);
     }
   }
+}
+
+function validateDsseSkillProvenanceEnvelope(envelope, expectedPayloadHash) {
+  const errors = [];
+
+  if (!isPlainObject(envelope)) {
+    return { status: 'NULL', valid: false, errors: ['provenance.dsse_envelope: expected object'] };
+  }
+
+  if (envelope.schema_version !== DSSE_SKILL_PROVENANCE_SCHEMA_VERSION) {
+    errors.push('provenance.dsse_envelope.schema_version: must equal DSSE_SKILL_PROVENANCE_SCHEMA_V1');
+  }
+
+  if (envelope.payload_type !== SKILL_METADATA_SCHEMA_VERSION) {
+    errors.push('provenance.dsse_envelope.payload_type: must equal SKILL_METADATA_SCHEMA_V1');
+  }
+
+  if (typeof envelope.payload_hash !== 'string' || !DIGEST_PATTERN.test(envelope.payload_hash)) {
+    errors.push('provenance.dsse_envelope.payload_hash: invalid sha256 digest');
+  } else if (`sha256:${expectedPayloadHash}` !== envelope.payload_hash) {
+    errors.push('provenance.dsse_envelope.payload_hash: canonical hash mismatch');
+  }
+
+  if (!Array.isArray(envelope.signatures) || envelope.signatures.length < 1) {
+    errors.push('provenance.dsse_envelope.signatures: expected non-empty array');
+  } else {
+    for (const [index, signature] of envelope.signatures.entries()) {
+      if (!isPlainObject(signature)) {
+        errors.push(`provenance.dsse_envelope.signatures[${index}]: expected object`);
+        continue;
+      }
+      if (typeof signature.keyid !== 'string' || signature.keyid.length < 1) {
+        errors.push(`provenance.dsse_envelope.signatures[${index}].keyid: expected non-empty string`);
+      }
+      if (typeof signature.sig !== 'string' || !BASE64URL_PATTERN.test(signature.sig)) {
+        errors.push(`provenance.dsse_envelope.signatures[${index}].sig: expected base64url signature`);
+      }
+    }
+  }
+
+  if (errors.length > 0) return { status: 'NULL', valid: false, errors };
+
+  return { status: 'VALID', valid: true, errors: [] };
 }
 
 export function validateSkillMetadata(candidate) {
@@ -102,7 +167,7 @@ export function validateSkillMetadata(candidate) {
       if (!provenanceKeys.has(required)) errors.push(`provenance.${required}: missing required field`);
     }
     for (const key of provenanceKeys) {
-      if (!['source', 'digest', 'signature_required'].includes(key)) errors.push(`provenance.${key}: unknown field`);
+      if (!['source', 'digest', 'signature_required', 'dsse_envelope'].includes(key)) errors.push(`provenance.${key}: unknown field`);
     }
     if (typeof candidate.provenance.source !== 'string' || candidate.provenance.source.length < 1) {
       errors.push('provenance.source: invalid source');
@@ -135,11 +200,22 @@ export function validateSkillMetadata(candidate) {
 
   if (errors.length > 0) return { status: 'NULL', valid: false, errors };
 
+  const canonical = canonicalizeSkillMetadata(candidate);
+  const hash = hashSkillMetadata(candidate);
+
+  if (candidate.provenance.signature_required === true) {
+    const provenancePayloadHash = hashSkillMetadataProvenancePayload(candidate);
+    const dsseResult = validateDsseSkillProvenanceEnvelope(candidate.provenance.dsse_envelope, provenancePayloadHash);
+    if (!dsseResult.valid) {
+      return { status: 'NULL', valid: false, errors: dsseResult.errors };
+    }
+  }
+
   return {
     status: 'VALID',
     valid: true,
     errors: [],
-    canonical: canonicalizeSkillMetadata(candidate),
-    hash: hashSkillMetadata(candidate)
+    canonical,
+    hash
   };
 }

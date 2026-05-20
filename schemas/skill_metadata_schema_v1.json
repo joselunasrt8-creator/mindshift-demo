@@ -17,7 +17,9 @@
     "replay_semantics"
   ],
   "properties": {
-    "schema_version": { "const": "SKILL_METADATA_SCHEMA_V1" },
+    "schema_version": {
+      "const": "SKILL_METADATA_SCHEMA_V1"
+    },
     "skill_id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9._-]*$",
@@ -46,7 +48,12 @@
       }
     },
     "risk_class": {
-      "enum": ["P0", "P1", "P2", "P3"]
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3"
+      ]
     },
     "required_authority": {
       "type": "array",
@@ -67,17 +74,35 @@
     "provenance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "digest", "signature_required"],
+      "required": [
+        "source",
+        "digest",
+        "signature_required"
+      ],
       "properties": {
-        "source": { "type": "string", "minLength": 1 },
-        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-        "signature_required": { "type": "boolean" }
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "signature_required": {
+          "type": "boolean"
+        },
+        "dsse_envelope": {
+          "$ref": "https://mindshift.local/schemas/dsse_skill_provenance_schema_v1.json"
+        }
       }
     },
     "replay_semantics": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["replay_domain", "max_executions"],
+      "required": [
+        "replay_domain",
+        "max_executions"
+      ],
       "properties": {
         "replay_domain": {
           "type": "string",
