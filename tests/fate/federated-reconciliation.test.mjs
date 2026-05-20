@@ -82,6 +82,7 @@ test('federated verification fails closed without remote authority inheritance',
   assert.match(source, /async function verifyFederatedLegitimacyBundle/)
   assert.match(source, /canonicalize\(payload\) !== canonicalize\(bundle\)/)
   assert.match(source, /verifyFederatedProofEnvelope/)
+  assert.match(source, /if \(!hmac_secret\) return false/)
   assert.match(source, /federated_exact_object_drift/)
   assert.match(source, /federated_replay_drift/)
   assert.match(source, /remote_authority_inherited: false/)
