@@ -1,0 +1,10 @@
+{
+  "constraints": {
+    "remote_validator_divergence_null": true,
+    "remote_validator_quorum_requires_canonical_lineage": true,
+    "remote_validator_output_non_authoritative_without_binding": true,
+    "stale_remote_validator_evidence_rejected": true
+  },
+  "canonical_requirement": "Only canonical federated continuity may reach VALID",
+  "else_result": "NULL"
+}

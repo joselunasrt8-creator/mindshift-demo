@@ -1,0 +1,38 @@
+{
+  "required_invariant": "cross_runtime_quorum != legitimacy",
+  "fail_closed_response": "NULL",
+  "bypass_paths": [
+    {
+      "bypass_id": "federated_replay_continuation",
+      "class": "replay"
+    },
+    {
+      "bypass_id": "cross_runtime_lineage_fragmentation",
+      "class": "lineage"
+    },
+    {
+      "bypass_id": "split_brain_authority_execution",
+      "class": "authority"
+    },
+    {
+      "bypass_id": "detached_remote_continuation",
+      "class": "continuity"
+    },
+    {
+      "bypass_id": "independent_runtime_quorum_synthesis",
+      "class": "consensus"
+    },
+    {
+      "bypass_id": "stale_remote_proof_reuse",
+      "class": "staleness"
+    },
+    {
+      "bypass_id": "cross_cluster_authority_escalation",
+      "class": "escalation"
+    },
+    {
+      "bypass_id": "remote_validator_divergence",
+      "class": "validator"
+    }
+  ]
+}

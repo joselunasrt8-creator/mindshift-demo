@@ -1,0 +1,6 @@
+{
+  "fixture": "divergent_validator_consensus",
+  "lineage_state": "VALIDATOR_DIVERGENCE",
+  "reason": "remote_validator_divergence",
+  "expected_result": "NULL"
+}

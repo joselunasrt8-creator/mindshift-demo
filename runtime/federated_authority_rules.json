@@ -1,0 +1,13 @@
+{
+  "execution_gate": "VALID && AUTHORIZED && UNUSED && POLICY_VALID && CANONICAL_LINEAGE_CONTINUITY",
+  "federated_gate": "CANONICAL_FEDERATED_CONTINUITY && REMOTE_PROOF_BOUND_TO_LOCAL_AUTHORITY && REMOTE_VALIDATORS_CONVERGED",
+  "else_result": "NULL",
+  "rules": {
+    "remote_proof_not_local_authority": true,
+    "cross_runtime_quorum_not_legitimacy": true,
+    "cross_runtime_authority_aggregation_without_binding_null": true,
+    "remote_authority_requires_local_binding": true,
+    "federated_continuity_non_transferable": true,
+    "stale_remote_proof_rejected": true
+  }
+}

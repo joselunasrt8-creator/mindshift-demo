@@ -1,0 +1,25 @@
+{
+  "failure_modes": [
+    {
+      "failure_id": "split_brain_runtime",
+      "condition": "independent_runtime_heads > 1",
+      "result": "NULL"
+    },
+    {
+      "failure_id": "partitioned_lineage",
+      "condition": "lineage_continuity_partitioned == true",
+      "result": "NULL"
+    },
+    {
+      "failure_id": "detached_federation_continuation",
+      "condition": "remote_execution_without_canonical_continuity == true",
+      "result": "NULL"
+    },
+    {
+      "failure_id": "remote_validator_divergence",
+      "condition": "validator_consensus_diverged == true",
+      "result": "NULL"
+    }
+  ],
+  "determinism": "fail_closed"
+}
