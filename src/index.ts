@@ -7263,6 +7263,7 @@ export default {
       let validation: any = null
       let proofInserted = 0
       let authorityConsumed = 0
+      let proofBoundary: any[] = []
       try {
         const proofReads = await env.DB.batch<any>([
           env.DB.prepare(`SELECT * FROM execution_registry WHERE execution_id=?1 AND decision_id=?2 AND validated_object_hash=?3 AND status='EXECUTED'`).bind(execution_id,decision_id,validated_object_hash),
@@ -7399,7 +7400,7 @@ export default {
         if (validatedAttestation) {
           proofStatements.push(env.DB.prepare(`INSERT INTO attestation_registry (attestation_id,envelope_hash,payload_hash,payload_type,signer_identity,decision_id,validated_object_hash,workflow_run_id,workflow_sha,canonical_aeo_hash,transparency_log_id,transparency_integrated_time,status,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'VALIDATED',?13)`).bind(crypto.randomUUID(), validatedAttestation.envelope_hash, validatedAttestation.payload_hash, validatedAttestation.payload_type, validatedAttestation.signer_identity, validatedAttestation.decision_id, validatedAttestation.validated_object_hash, validatedAttestation.workflow_run_id, validatedAttestation.workflow_sha, validatedAttestation.canonical_aeo_hash, validatedAttestation.transparency_log_id, validatedAttestation.transparency_integrated_time, created_at))
         }
-        const proofBoundary = await env.DB.batch<any>(proofStatements)
+        proofBoundary = await env.DB.batch<any>(proofStatements)
         proofInserted = proofBoundary[0]?.meta?.changes || 0
         authorityConsumed = proofBoundary[1]?.meta?.changes || 0
         if (proofInserted === 0) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"proof_replay" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, proof_id, severity: "HIGH", payload: { route: "/proof", validated_object_hash, indicator: "duplicate_proof_or_transaction_conflict" }, drift_class: "replay_drift" })
