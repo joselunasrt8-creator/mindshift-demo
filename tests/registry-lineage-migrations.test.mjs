@@ -348,7 +348,7 @@ test('runtime provenance attestations never use API key as HMAC fallback', async
         }
         if (envelope) proofPayload.dsse_envelope = envelope
         const proof = await post('/proof', proofPayload)
-        assert.equal(proof.status, 'PROVEN', `${name} proof status`)
+        assert.equal(proof.status, 'PROOF_RECORDED', `${name} proof status`)
         assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM proof_registry WHERE decision_id='${decision_id}'`]).trim(), '1')
         assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM attestation_registry WHERE decision_id='${decision_id}'`]).trim(), envelope ? '1' : '0')
       }
@@ -442,7 +442,7 @@ test('runtime lifecycle persists against migration-built canonical registries', 
       session_id: session.session_id,
       ...provenance
     })
-    assert.equal(proof.status, 'PROVEN')
+    assert.equal(proof.status, 'PROOF_RECORDED')
     assert.ok(proof.proof_id)
     assert.equal(proof.proof?.validated_object_hash, compiled.validated_object_hash)
 
@@ -456,7 +456,7 @@ test('runtime lifecycle persists against migration-built canonical registries', 
     assert.equal(runSqlite([dbPath, `SELECT environment FROM proof_registry WHERE decision_id='${decision_id}'`]).trim(), 'production')
     assert.equal(runSqlite([dbPath, `SELECT status FROM authority_registry WHERE decision_id='${decision_id}'`]).trim(), 'CONSUMED')
     const eventTypes = runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${decision_id}' ORDER BY created_at, rowid`]).trim().split('\n')
-    assert.deepEqual(eventTypes, ['AUTHORITY_CREATED', 'AEO_COMPILED', 'VALIDATION_GRANTED', 'VALIDATION_GRANTED', 'EXECUTION_STARTED', 'EXECUTION_COMPLETED', 'PROOF_PERSISTED', 'AUTHORITY_CONSUMED'])
+    assert.deepEqual(eventTypes, ['AUTHORITY_CREATED', 'AEO_COMPILED', 'VALIDATION_GRANTED', 'VALIDATION_GRANTED', 'EXECUTION_STARTED', 'EXECUTION_COMPLETED', 'PROOF_RECORDED', 'AUTHORITY_CONSUMED'])
     assert.equal(runSqlite([dbPath, `SELECT COUNT(*) FROM observability_registry WHERE decision_id='${decision_id}' AND execution_id='${execution.execution_id}'`]).trim(), '3')
     assert.match(runSqlite([dbPath, `SELECT payload FROM observability_registry WHERE decision_id='${decision_id}' AND event_type='VALIDATION_GRANTED'`]), /"authority_status":"RESERVED"/)
   } finally {
@@ -526,8 +526,8 @@ test('runtime telemetry records replay, hash mismatch, proof, and bypass drift',
     const proofCompiled = await prepareDecision(proofDecision, 'nonce-proof')
     const execution = await post('/execute', { session_id: proofCompiled.session_id, decision_id: proofDecision, validated_object_hash: proofCompiled.validated_object_hash, invocation_nonce: 'nonce-proof', ...proofCompiled.provenance })
     const proof = await post('/proof', { session_id: proofCompiled.session_id, execution_id: execution.execution_id, decision_id: proofDecision, validated_object_hash: proofCompiled.validated_object_hash, workflow: 'governed-deploy.yml', ...proofCompiled.provenance })
-    assert.equal(proof.status, 'PROVEN')
-    assert.deepEqual(runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${proofDecision}' AND event_type IN ('PROOF_PERSISTED','AUTHORITY_CONSUMED') ORDER BY created_at, rowid`]).trim().split('\n'), ['PROOF_PERSISTED', 'AUTHORITY_CONSUMED'])
+    assert.equal(proof.status, 'PROOF_RECORDED')
+    assert.deepEqual(runSqlite([dbPath, `SELECT event_type FROM observability_registry WHERE decision_id='${proofDecision}' AND event_type IN ('PROOF_RECORDED','AUTHORITY_CONSUMED') ORDER BY created_at, rowid`]).trim().split('\n'), ['PROOF_RECORDED', 'AUTHORITY_CONSUMED'])
 
     const bypass = await worker.fetch(new Request('https://runtime.test/unmanaged-deploy', { method: 'POST', body: '{}' }), env)
     assert.equal(bypass.status, 404)

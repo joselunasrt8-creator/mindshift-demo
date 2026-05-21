@@ -81,8 +81,8 @@ test('duplicate proof is rejected as proof replay', () => {
 test('proof persistence emits proof telemetry', () => {
   assert.match(
     source,
-    /event_type: "PROOF_PERSISTED"/,
-    'successful proof persistence must emit PROOF_PERSISTED telemetry',
+    /event_type: "PROOF_RECORDED"/,
+    'successful proof persistence must emit PROOF_RECORDED telemetry',
   )
 
   assert.match(
@@ -161,7 +161,7 @@ test('valid_execute_proof_path_preserved', () => {
 
   assert.match(
     source,
-    /return json\(\{ status:"PROVEN", result:"OK", proof_id, proof:/,
+    /return json\(\{ status:"PROOF_RECORDED", result:"VALID", proof_id, proof:/,
     'proof success path must remain intact',
   )
 })

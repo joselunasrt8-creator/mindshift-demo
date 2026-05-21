@@ -30,7 +30,7 @@ test('proof requirements are represented in proof persistence behavior', () => {
     'execution_id',
     'decision_id',
     'validated_object_hash',
-    'PROOF_PERSISTED',
+    'PROOF_RECORDED',
   ];
 
   for (const signal of requiredRuntimeSignals) {

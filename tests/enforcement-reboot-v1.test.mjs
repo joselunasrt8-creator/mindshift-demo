@@ -157,7 +157,7 @@ test('proof persists session lineage and consumes authority', () => {
   assert.match(source, /INSERT INTO proof_registry \(proof_id,identity_id,session_id,continuity_id,continuity_hash,execution_id/)
   assert.match(source, /proof: \{ proof_id, identity_id: String\(authority\.identity_id \|\| ""\), session_id, continuity_id: String\(authority\.continuity_id/)
   assert.match(source, /SET status='CONSUMED'/)
-  assert.match(source, /status:"PROVEN"/)
+  assert.match(source, /status:"PROOF_RECORDED"/)
   assert.match(source, /proof_id/)
 })
 

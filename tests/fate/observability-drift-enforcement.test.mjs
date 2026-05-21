@@ -58,7 +58,7 @@ test('runtime classifies core legitimacy drift types', () => {
 test('runtime emits telemetry for core legitimacy transitions and failures', () => {
   assert.match(source, /event_type: "REPLAY_BLOCKED"/, 'replay blocking must emit telemetry')
   assert.match(source, /event_type: "HASH_MISMATCH"/, 'hash mismatch must emit telemetry')
-  assert.match(source, /event_type: "PROOF_PERSISTED"/, 'proof persistence must emit telemetry')
+  assert.match(source, /event_type: "PROOF_RECORDED"/, 'proof persistence must emit telemetry')
   assert.match(source, /event_type: "AUTHORITY_CONSUMED"/, 'authority consumption must emit telemetry')
   assert.match(source, /event_type: "VALIDATION_REJECTED"/, 'validation rejection must emit telemetry')
 })
