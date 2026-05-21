@@ -28,6 +28,7 @@ export interface TemporalReplayInspectionResult {
   status: 'PASS' | 'DRIFT'
   deterministic_conclusion: 'VALID' | 'NULL'
   fail_closed_epoch_disagreement: boolean
+  distributed_quorum_classification: 'AGREED_VALID' | 'AGREED_INVALID' | 'PARTIAL_VISIBILITY' | 'TEMPORAL_DRIFT' | 'REVOKED_CONFLICT' | 'AMBIGUOUS' | 'STALE_REPLAY'
   replay_neutral: true
   issues: ReplayInspectionIssue[]
 }
@@ -52,6 +53,24 @@ function lineageHash(lineage: TemporalLineageNode[]): string {
   return JSON.stringify(ordered)
 }
 
+
+function classifyDistributedQuorum(states: Array<{ authority_status: string, authority_timestamp: string, continuity_id: string, replay_state?: string }>): 'AGREED_VALID' | 'AGREED_INVALID' | 'PARTIAL_VISIBILITY' | 'TEMPORAL_DRIFT' | 'REVOKED_CONFLICT' | 'AMBIGUOUS' | 'STALE_REPLAY' {
+  if (states.length === 0) return 'AMBIGUOUS'
+  const statusSet = new Set(states.map((state) => String(state.authority_status || 'UNKNOWN')))
+  const hasUnknown = statusSet.has('UNKNOWN')
+  const hasAuthorized = statusSet.has('AUTHORIZED')
+  const hasRevoked = statusSet.has('REVOKED')
+  const hasStaleReplay = states.some((state) => String(state.authority_status) === 'STALE' || String(state.replay_state || 'FRESH') === 'REPLAYED')
+  const temporalSet = new Set(states.map((state) => Date.parse(state.authority_timestamp)).filter((v) => Number.isFinite(v)))
+
+  if (hasStaleReplay) return 'STALE_REPLAY'
+  if (temporalSet.size > 1) return 'TEMPORAL_DRIFT'
+  if (hasRevoked && (hasUnknown || hasAuthorized)) return 'REVOKED_CONFLICT'
+  if (hasUnknown) return 'PARTIAL_VISIBILITY'
+  if (statusSet.size === 1 && hasAuthorized) return 'AGREED_VALID'
+  if (statusSet.size === 1 && hasRevoked) return 'AGREED_INVALID'
+  return 'AMBIGUOUS'
+}
 export function inspectTemporalLineageReplay(input: TemporalReplayInspectionInput): TemporalReplayInspectionResult {
   const issues: ReplayInspectionIssue[] = []
 
@@ -111,13 +130,16 @@ export function inspectTemporalLineageReplay(input: TemporalReplayInspectionInpu
   }
 
   const failClosedEpochDisagreement = issues.some((issue) => issue.class === 'epoch-induced')
-  const status = issues.length === 0 ? 'PASS' : 'DRIFT'
+  const distributedQuorumClassification = classifyDistributedQuorum(registryAuthorityStates)
+  const hasDistributedDrift = registryAuthorityStates.length > 0 && distributedQuorumClassification !== 'AGREED_VALID'
+  const status = issues.length === 0 && !hasDistributedDrift ? 'PASS' : 'DRIFT'
   const deterministic_conclusion: 'VALID' | 'NULL' = status === 'PASS' ? 'VALID' : 'NULL'
 
   return {
     status,
     deterministic_conclusion,
     fail_closed_epoch_disagreement: failClosedEpochDisagreement,
+    distributed_quorum_classification: distributedQuorumClassification,
     replay_neutral: true,
     issues,
   }
