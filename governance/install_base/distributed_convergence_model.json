@@ -1,0 +1,79 @@
+{
+  "artifact_type": "distributed_legitimacy_observability_convergence_model",
+  "version": "v1",
+  "semantics": "non_authoritative_observational_only",
+  "evidence_only": true,
+  "read_only": true,
+  "creates_authority": false,
+  "mutations_runtime": false,
+  "runtime_mutation": false,
+  "authority_inheritance": false,
+  "validator_mutation": false,
+  "execution_semantics_change": false,
+  "distributed_consensus_creates_legitimacy": false,
+  "convergence_classifications": [
+    "CONVERGED",
+    "PARTIAL_CONVERGENCE",
+    "TOPOLOGY_FRAGMENTED",
+    "STALE_REGISTRY",
+    "QUORUM_DISAGREEMENT",
+    "REPLAY_DIVERGENCE",
+    "PROOF_CONTINUITY_LOST",
+    "UNKNOWN"
+  ],
+  "partial_information_taxonomy": {
+    "stale_topology": "remote registry snapshot predates acceptable freshness window",
+    "quorum_disagreement": "participating runtimes cannot agree on canonical projection",
+    "topology_fragmentation": "distributed graph has disconnected legitimacy components",
+    "distributed_freshness_loss": "convergence evidence is beyond freshness threshold",
+    "replay_divergence": "replay state differs across distributed legitimacy registries",
+    "proof_continuity_gap": "proof lineage cannot be continuously verified across runtimes"
+  },
+  "visibility_scopes": [
+    "distributed_legitimacy_registry",
+    "federated_checkpoint_registry",
+    "reconciliation_projections",
+    "continuity_lineage_projections",
+    "topology_graphs",
+    "drift_registries",
+    "replay_observability",
+    "proof_lineage_projections",
+    "install_base_telemetry_projections"
+  ],
+  "invariants": [
+    "distributed_observability_ne_distributed_authority",
+    "projection_ne_canonical_truth",
+    "visibility_ne_execution_legitimacy",
+    "remote_evidence_cannot_create_validity",
+    "remote_evidence_may_narrow_acceptance_not_create_validity"
+  ],
+  "canonical_source_of_truth_hierarchy": [
+    "local_authority_registry",
+    "local_validator_result",
+    "local_proof_registry",
+    "local_continuity_registry",
+    "federated_checkpoint_evidence",
+    "remote_reconciliation_projection"
+  ],
+  "null_conditions": [
+    "convergence_requires_runtime_mutation",
+    "convergence_requires_validator_mutation",
+    "convergence_creates_authority",
+    "convergence_triggers_execution",
+    "convergence_rewrites_proof_lineage",
+    "convergence_enables_replay_resurrection",
+    "distributed_consensus_creating_execution_legitimacy"
+  ],
+  "evidence_only_federation_boundary": {
+    "remote_evidence_role": "narrows_acceptance_range_only",
+    "cannot_create": ["execution_legitimacy", "authority", "proof", "validator_result"],
+    "canonical_runtime_closure": "explicit_and_local"
+  },
+  "convergence_confidence_classifications": [
+    "HIGH_CONFIDENCE",
+    "MODERATE_CONFIDENCE",
+    "LOW_CONFIDENCE",
+    "INSUFFICIENT_EVIDENCE",
+    "NULL"
+  ]
+}

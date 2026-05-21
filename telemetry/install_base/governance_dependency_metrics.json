@@ -1,0 +1,73 @@
+{
+  "artifact_type": "governance_dependency_metrics",
+  "version": "v1",
+  "semantics": "evidence_only",
+  "non_authoritative": true,
+  "creates_execution_permission": false,
+  "creates_authority": false,
+  "append_only": true,
+  "metric_keys": [
+    "governance_dependency_ratio",
+    "fail_closed_interception_ratio",
+    "proof_attachment_ratio",
+    "replay_rejection_ratio",
+    "continuity_integrity_ratio",
+    "distributed_governance_participation_ratio"
+  ],
+  "metric_definitions": {
+    "governance_dependency_ratio": {
+      "numerator": "governed_executions",
+      "denominator": "total_executions",
+      "description": "fraction of executions passing through legitimacy infrastructure"
+    },
+    "fail_closed_interception_ratio": {
+      "numerator": "invalid_attempts_blocked",
+      "denominator": "invalid_attempts_observed",
+      "description": "fraction of invalid attempts successfully blocked"
+    },
+    "proof_attachment_ratio": {
+      "numerator": "executions_with_valid_proof",
+      "denominator": "governed_executions",
+      "description": "fraction of governed executions that produced valid proof"
+    },
+    "replay_rejection_ratio": {
+      "numerator": "replay_attempts_rejected",
+      "denominator": "replay_attempts_observed",
+      "description": "fraction of replay attempts correctly rejected"
+    },
+    "continuity_integrity_ratio": {
+      "numerator": "valid_continuity_executions",
+      "denominator": "continuity_bound_executions",
+      "description": "fraction of continuity-bound executions that passed lineage checks"
+    },
+    "distributed_governance_participation_ratio": {
+      "numerator": "governed_distributed_operations",
+      "denominator": "distributed_operations",
+      "description": "fraction of distributed operations under governance"
+    }
+  },
+  "dimensions": [
+    "surface_id",
+    "organization_id",
+    "runtime_id",
+    "policy_version",
+    "deployment_target",
+    "time_window",
+    "governance_layer",
+    "validator_version"
+  ],
+  "time_windows": ["hourly", "daily", "weekly", "monthly"],
+  "null_conditions": [
+    "metrics_create_execution_permission",
+    "metrics_bypass_validator_requirements",
+    "metrics_used_as_authority",
+    "aggregation_mutates_execution_state",
+    "telemetry_lineage_incomplete",
+    "proof_lineage_detached"
+  ],
+  "invariants": [
+    "usage_ne_legitimacy",
+    "adoption_ne_authority",
+    "metrics_ne_proof"
+  ]
+}

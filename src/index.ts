@@ -351,6 +351,11 @@ function schemaDiagnosticReason(error: unknown): SchemaDiagnosticReason {
 
 type TelemetryEventType = "SESSION_CREATED" | "CONTINUITY_CREATED" | "AUTHORITY_CREATED" | "AEO_COMPILED" | "VALIDATION_GRANTED" | "VALIDATION_REJECTED" | "EXECUTION_STARTED" | "EXECUTION_COMPLETED" | "PROOF_PERSISTED" | "REPLAY_BLOCKED" | "HASH_MISMATCH" | "AUTHORITY_CONSUMED"
 type InstallBaseTelemetryEventType = "governed_execution_attempted" | "governed_execution_completed" | "invalid_execution_blocked" | "replay_rejected" | "continuity_rejected" | "workflow_integrity_drift" | "reconciliation_failure_detected" | "proof_generated" | "proof_rejected"
+type GovernanceDependencyMetricKey = "governance_dependency_ratio" | "fail_closed_interception_ratio" | "proof_attachment_ratio" | "replay_rejection_ratio" | "continuity_integrity_ratio" | "distributed_governance_participation_ratio"
+type GovernanceObservabilityQueryCategory = "execution_governance_trends" | "invalid_execution_trends" | "validator_rejection_trends" | "continuity_failure_trends" | "replay_rejection_trends" | "proof_lineage_completeness" | "deployment_governance_participation" | "authority_source_distribution"
+type GovernanceObservabilityAggregationWindow = "hourly" | "daily" | "weekly" | "monthly"
+type DistributedConvergenceClassification = "CONVERGED" | "PARTIAL_CONVERGENCE" | "TOPOLOGY_FRAGMENTED" | "STALE_REGISTRY" | "QUORUM_DISAGREEMENT" | "REPLAY_DIVERGENCE" | "PROOF_CONTINUITY_LOST" | "UNKNOWN"
+type DistributedConvergenceConfidence = "HIGH_CONFIDENCE" | "MODERATE_CONFIDENCE" | "LOW_CONFIDENCE" | "INSUFFICIENT_EVIDENCE" | "NULL"
 
 
 type RecursiveMutationClass = "runtime_route_mutation" | "validator_mutation" | "schema_mutation" | "authority_semantics_mutation" | "proof_semantics_mutation" | "replay_semantics_mutation" | "policy_mutation" | "observability_mutation" | "federation_semantics_mutation" | "governance_surface_expansion"
@@ -1238,6 +1243,15 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE INDEX IF NOT EXISTS idx_install_base_telemetry_registry_decision ON install_base_telemetry_registry(decision_id)`,
       `CREATE TRIGGER IF NOT EXISTS trg_install_base_telemetry_registry_no_update BEFORE UPDATE ON install_base_telemetry_registry BEGIN SELECT RAISE(ABORT, 'install_base_telemetry_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_install_base_telemetry_registry_no_delete BEFORE DELETE ON install_base_telemetry_registry BEGIN SELECT RAISE(ABORT, 'install_base_telemetry_registry is append-only'); END`,
+      `CREATE TABLE IF NOT EXISTS governance_dependency_metrics_registry (metric_id TEXT PRIMARY KEY, metric_key TEXT NOT NULL CHECK (metric_key IN ('governance_dependency_ratio','fail_closed_interception_ratio','proof_attachment_ratio','replay_rejection_ratio','continuity_integrity_ratio','distributed_governance_participation_ratio')), surface_id TEXT, organization_id TEXT, runtime_id TEXT, policy_version TEXT, deployment_target TEXT, time_window TEXT NOT NULL CHECK (time_window IN ('hourly','daily','weekly','monthly')), governance_layer TEXT, validator_version TEXT, numerator INTEGER NOT NULL, denominator INTEGER NOT NULL, ratio_value REAL NOT NULL, evidence_only TEXT NOT NULL CHECK (evidence_only='true'), non_authoritative TEXT NOT NULL CHECK (non_authoritative='true'), creates_execution_permission TEXT NOT NULL CHECK (creates_execution_permission='false'), computed_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_governance_dependency_metrics_key_window ON governance_dependency_metrics_registry(metric_key, time_window, computed_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_governance_dependency_metrics_surface ON governance_dependency_metrics_registry(surface_id, organization_id, runtime_id)`,
+      `CREATE TRIGGER IF NOT EXISTS trg_governance_dependency_metrics_registry_no_update BEFORE UPDATE ON governance_dependency_metrics_registry BEGIN SELECT RAISE(ABORT, 'governance_dependency_metrics_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_governance_dependency_metrics_registry_no_delete BEFORE DELETE ON governance_dependency_metrics_registry BEGIN SELECT RAISE(ABORT, 'governance_dependency_metrics_registry is append-only'); END`,
+      `CREATE TABLE IF NOT EXISTS governance_observability_query_registry (query_id TEXT PRIMARY KEY, query_category TEXT NOT NULL CHECK (query_category IN ('execution_governance_trends','invalid_execution_trends','validator_rejection_trends','continuity_failure_trends','replay_rejection_trends','proof_lineage_completeness','deployment_governance_participation','authority_source_distribution')), aggregation_window TEXT NOT NULL CHECK (aggregation_window IN ('hourly','daily','weekly','monthly')), source_lineage_preserved TEXT NOT NULL CHECK (source_lineage_preserved='true'), validator_lineage_preserved TEXT NOT NULL CHECK (validator_lineage_preserved='true'), proof_lineage_preserved TEXT NOT NULL CHECK (proof_lineage_preserved='true'), policy_version_lineage_preserved TEXT NOT NULL CHECK (policy_version_lineage_preserved='true'), read_only TEXT NOT NULL CHECK (read_only='true'), evidence_only TEXT NOT NULL CHECK (evidence_only='true'), creates_authority TEXT NOT NULL CHECK (creates_authority='false'), triggers_execution TEXT NOT NULL CHECK (triggers_execution='false'), mutates_runtime TEXT NOT NULL CHECK (mutates_runtime='false'), query_hash TEXT NOT NULL, computed_at TEXT NOT NULL, created_at TEXT NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_governance_observability_query_category_window ON governance_observability_query_registry(query_category, aggregation_window, computed_at)`,
+      `CREATE TRIGGER IF NOT EXISTS trg_governance_observability_query_registry_no_update BEFORE UPDATE ON governance_observability_query_registry BEGIN SELECT RAISE(ABORT, 'governance_observability_query_registry is read-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_governance_observability_query_registry_no_delete BEFORE DELETE ON governance_observability_query_registry BEGIN SELECT RAISE(ABORT, 'governance_observability_query_registry is read-only'); END`,
       `CREATE INDEX IF NOT EXISTS idx_observability_decision ON observability_registry(decision_id)`,
       `CREATE INDEX IF NOT EXISTS idx_observability_execution ON observability_registry(execution_id)`,
       `CREATE INDEX IF NOT EXISTS idx_observability_type ON observability_registry(event_type)`,
@@ -4979,6 +4993,62 @@ async function recordDrift(env: Env, drift: {
     .run()
 }
 
+
+function governanceDependencyMetricKeys(): GovernanceDependencyMetricKey[] {
+  return ["governance_dependency_ratio", "fail_closed_interception_ratio", "proof_attachment_ratio", "replay_rejection_ratio", "continuity_integrity_ratio", "distributed_governance_participation_ratio"]
+}
+
+function governanceDependencyMetricDimensions() {
+  return { dimensions: ["surface_id", "organization_id", "runtime_id", "policy_version", "deployment_target", "time_window", "governance_layer", "validator_version"] as const, time_windows: ["hourly", "daily", "weekly", "monthly"] as const, evidence_only: true, non_authoritative: true, creates_execution_permission: false, creates_authority: false, append_only: true }
+}
+
+function governanceDependencyMetricNullConditions() {
+  return ["metrics_create_execution_permission", "metrics_bypass_validator_requirements", "metrics_used_as_authority", "aggregation_mutates_execution_state", "telemetry_lineage_incomplete", "proof_lineage_detached"] as const
+}
+
+function governanceObservabilityQueryCategories(): GovernanceObservabilityQueryCategory[] {
+  return ["execution_governance_trends", "invalid_execution_trends", "validator_rejection_trends", "continuity_failure_trends", "replay_rejection_trends", "proof_lineage_completeness", "deployment_governance_participation", "authority_source_distribution"]
+}
+
+function governanceObservabilityAggregationWindows(): GovernanceObservabilityAggregationWindow[] {
+  return ["hourly", "daily", "weekly", "monthly"]
+}
+
+function governanceObservabilityIntegrityPreservation() {
+  return { source_lineage_preserved: true, validator_lineage_preserved: true, proof_lineage_preserved: true, policy_version_lineage_preserved: true, read_only: true, evidence_only: true, creates_authority: false, triggers_execution: false, mutates_runtime: false }
+}
+
+function governanceObservabilityNullConditions() {
+  return ["dashboards_mutate_runtime_state", "query_systems_create_authority", "aggregation_rewrites_proof_lineage", "observability_bypasses_validator_boundaries", "dashboards_trigger_execution_directly", "telemetry_metrics_used_as_execution_eligibility"] as const
+}
+
+function distributedLegitimacyConvergenceClassifications(): DistributedConvergenceClassification[] {
+  return ["CONVERGED", "PARTIAL_CONVERGENCE", "TOPOLOGY_FRAGMENTED", "STALE_REGISTRY", "QUORUM_DISAGREEMENT", "REPLAY_DIVERGENCE", "PROOF_CONTINUITY_LOST", "UNKNOWN"]
+}
+
+function distributedLegitimacyConvergenceConfidenceLevels(): DistributedConvergenceConfidence[] {
+  return ["HIGH_CONFIDENCE", "MODERATE_CONFIDENCE", "LOW_CONFIDENCE", "INSUFFICIENT_EVIDENCE", "NULL"]
+}
+
+function distributedLegitimacyConvergenceModel() {
+  return {
+    convergence_semantics: "non_authoritative_observational_only",
+    evidence_only: true,
+    read_only: true,
+    creates_authority: false,
+    mutations_runtime: false,
+    classifications: distributedLegitimacyConvergenceClassifications(),
+    confidence_levels: distributedLegitimacyConvergenceConfidenceLevels(),
+    visibility_scopes: ["distributed_legitimacy_registry", "federated_checkpoint_registry", "reconciliation_projections", "continuity_lineage_projections", "topology_graphs", "drift_registries", "replay_observability", "proof_lineage_projections", "install_base_telemetry_projections"] as const,
+    invariants: ["distributed_observability_ne_distributed_authority", "projection_ne_canonical_truth", "visibility_ne_execution_legitimacy", "remote_evidence_cannot_create_validity", "remote_evidence_may_narrow_acceptance_not_create_validity"] as const,
+    null_conditions: ["convergence_requires_runtime_mutation", "convergence_requires_validator_mutation", "convergence_creates_authority", "convergence_triggers_execution", "convergence_rewrites_proof_lineage", "convergence_enables_replay_resurrection", "distributed_consensus_creating_execution_legitimacy"] as const,
+    canonical_source_hierarchy: ["local_authority_registry", "local_validator_result", "local_proof_registry", "local_continuity_registry", "federated_checkpoint_evidence", "remote_reconciliation_projection"] as const
+  }
+}
+
+function distributedConvergenceVisibilityScopes() {
+  return ["distributed_legitimacy_registry", "federated_checkpoint_registry", "reconciliation_projections", "continuity_lineage_projections", "topology_graphs", "drift_registries", "replay_observability", "proof_lineage_projections", "install_base_telemetry_projections"] as const
+}
 
 function continuousFateFlags() {
   return { evidence_only: true, replay_neutral: true, append_only: true, authoritative: false, mutation_capable: false, creates_authority: false, execution_started: false, replay_consumed: false, remote_authority_denied: true, read_only: true }

@@ -1,0 +1,36 @@
+{
+  "artifact_type": "governance_observability_query_layer",
+  "version": "v1",
+  "semantics": "evidence_only",
+  "read_only": true,
+  "evidence_only": true,
+  "creates_authority": false,
+  "triggers_execution": false,
+  "mutates_runtime": false,
+  "query_categories": [
+    "execution_governance_trends",
+    "invalid_execution_trends",
+    "validator_rejection_trends",
+    "continuity_failure_trends",
+    "replay_rejection_trends",
+    "proof_lineage_completeness",
+    "deployment_governance_participation",
+    "authority_source_distribution"
+  ],
+  "aggregation_windows": ["hourly", "daily", "weekly", "monthly"],
+  "integrity_requirements": {
+    "source_lineage_preserved": true,
+    "validator_lineage_preserved": true,
+    "proof_lineage_preserved": true,
+    "policy_version_lineage_preserved": true
+  },
+  "null_conditions": [
+    "dashboards_mutate_runtime_state",
+    "query_systems_create_authority",
+    "aggregation_rewrites_proof_lineage",
+    "observability_bypasses_validator_boundaries",
+    "dashboards_trigger_execution_directly",
+    "telemetry_metrics_used_as_execution_eligibility"
+  ],
+  "boundary": "observability_explains_governance_dependency_not_creates_governance_authority"
+}
