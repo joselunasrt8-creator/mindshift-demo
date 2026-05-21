@@ -335,7 +335,10 @@ const REQUIRED_SCHEMA_COLUMNS: Record<string, string[]> = {
   semantic_equivalence_registry: ["semantic_equivalence_id", "semantic_hash", "schema_semantic_hash", "topology_semantic_hash", "governance_semantic_hash", "portability_semantic_hash", "equivalence_hash", "drift_classes", "legitimacy_status", "semantic_envelope", "evidence_only", "replay_neutral", "non_authoritative", "read_only", "mutation_capable", "creates_authority", "executable", "deployment_capable", "proof_generating", "merge_authorizing", "generated_at", "created_at"],
   portable_governance_checkpoint_registry: ["checkpoint_id", "checkpoint_hash", "reconciliation_hash", "topology_hash", "semantic_equivalence_hash", "conformance_hash", "portable_envelope", "dsse_payload_type", "jcs_canonical", "drift_classes", "legitimacy_status", "evidence_only", "replay_neutral", "non_authoritative", "read_only", "mutation_capable", "creates_authority", "executable", "deployment_capable", "proof_generating", "merge_authorizing", "generated_at", "created_at"],
   external_conformance_verification_registry: ["verification_id", "runtime_compatibility_hash", "governance_semantic_hash", "checkpoint_equivalence_hash", "federated_conformance_hash", "conformance_status", "drift_classes", "verification_envelope", "evidence_only", "replay_neutral", "non_authoritative", "read_only", "mutation_capable", "creates_authority", "executable", "deployment_capable", "proof_generating", "merge_authorizing", "remote_authority_denied", "generated_at", "created_at"],
-  install_base_telemetry_registry: ["event_id", "event_type", "decision_id", "authority_id", "execution_id", "proof_id", "lineage_origin_hash", "lineage_origin_match", "evidence_only", "non_authoritative", "append_only", "payload", "created_at"]
+  install_base_telemetry_registry: ["event_id", "event_type", "decision_id", "authority_id", "execution_id", "proof_id", "lineage_origin_hash", "lineage_origin_match", "evidence_only", "non_authoritative", "append_only", "payload", "created_at"],
+  deployment_provenance_registry: ["provenance_id", "proof_id", "commit_sha", "workflow_hash", "artifact_hash", "deploy_actor", "deployment_timestamp", "environment_classification", "deployment_proof_id", "append_only", "immutable", "created_at"],
+  deployment_proof_registry: ["deployment_proof_id", "provenance_id", "proof_id", "commit_sha", "workflow_hash", "artifact_hash", "environment_classification", "proof_hash", "append_only", "immutable", "created_at"],
+  deployment_rollback_registry: ["rollback_id", "prior_proof_id", "prior_deployment_proof_id", "commit_sha", "workflow_hash", "artifact_hash", "rollback_lineage_hash", "environment_classification", "append_only", "immutable", "created_at"]
 }
 
 type SchemaDiagnosticReason = "missing_required_table" | "missing_required_column" | "migration_required" | "database_unavailable" | "schema_initialization_failed"
@@ -1195,6 +1198,45 @@ function missingDeploymentProvenance(provenance: DeploymentProvenance): string[]
   return Object.entries(provenance).filter(([, value]) => !value).map(([key]) => key)
 }
 
+async function computeDeploymentProofHash(fields: {
+  commit_sha: string
+  workflow_hash: string
+  artifact_hash: string
+  environment_classification: string
+}): Promise<string> {
+  return sha256Hex(canonicalize(fields))
+}
+
+async function computeRollbackLineageHash(fields: {
+  prior_proof_id: string
+  prior_deployment_proof_id: string
+  commit_sha: string
+  workflow_hash: string
+  artifact_hash: string
+  environment_classification: string
+}): Promise<string> {
+  return sha256Hex(canonicalize(fields))
+}
+
+async function verifyDeploymentRollbackLineage(
+  env: Env,
+  prior_proof_id: string,
+  commit_sha: string,
+  workflow_hash: string,
+  artifact_hash: string,
+  environment_classification: string
+): Promise<{ ok: boolean; reason?: string; prior_deployment_proof_id?: string }> {
+  const priorProof = await env.DB.prepare(
+    `SELECT deployment_proof_id, commit_sha, workflow_hash, artifact_hash, environment_classification FROM deployment_proof_registry WHERE proof_id=?1 LIMIT 1`
+  ).bind(prior_proof_id).first<any>()
+  if (!priorProof) return { ok: false, reason: "rollback_lineage_not_found" }
+  if (String(priorProof.commit_sha || "") !== commit_sha) return { ok: false, reason: "rollback_commit_sha_mismatch" }
+  if (String(priorProof.workflow_hash || "") !== workflow_hash) return { ok: false, reason: "rollback_workflow_hash_mismatch" }
+  if (String(priorProof.artifact_hash || "") !== artifact_hash) return { ok: false, reason: "rollback_artifact_hash_mismatch" }
+  if (String(priorProof.environment_classification || "") !== environment_classification) return { ok: false, reason: "rollback_environment_mismatch" }
+  return { ok: true, prior_deployment_proof_id: String(priorProof.deployment_proof_id || "") }
+}
+
 function proofDecisionHash(decision_id: string, validated_object_hash: string) {
   return `${decision_id}\u001f${validated_object_hash}`
 }
@@ -1259,6 +1301,16 @@ async function ensureSchema(env: Env, options: { stabilizeProofRegistry?: boolea
       `CREATE INDEX IF NOT EXISTS idx_install_base_telemetry_registry_decision ON install_base_telemetry_registry(decision_id)`,
       `CREATE TRIGGER IF NOT EXISTS trg_install_base_telemetry_registry_no_update BEFORE UPDATE ON install_base_telemetry_registry BEGIN SELECT RAISE(ABORT, 'install_base_telemetry_registry is append-only'); END`,
       `CREATE TRIGGER IF NOT EXISTS trg_install_base_telemetry_registry_no_delete BEFORE DELETE ON install_base_telemetry_registry BEGIN SELECT RAISE(ABORT, 'install_base_telemetry_registry is append-only'); END`,
+      `CREATE TABLE IF NOT EXISTS deployment_provenance_registry (provenance_id TEXT PRIMARY KEY, proof_id TEXT NOT NULL, commit_sha TEXT NOT NULL, workflow_hash TEXT NOT NULL, artifact_hash TEXT NOT NULL, deploy_actor TEXT NOT NULL, deployment_timestamp TEXT NOT NULL, environment_classification TEXT NOT NULL, deployment_proof_id TEXT, append_only TEXT NOT NULL CHECK (append_only='true'), immutable TEXT NOT NULL CHECK (immutable='true'), created_at TEXT NOT NULL, UNIQUE(proof_id), UNIQUE(commit_sha, workflow_hash, artifact_hash, environment_classification))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_deployment_provenance_registry_proof_unique ON deployment_provenance_registry(proof_id)`,
+      `CREATE TRIGGER IF NOT EXISTS trg_deployment_provenance_registry_no_update BEFORE UPDATE ON deployment_provenance_registry BEGIN SELECT RAISE(ABORT, 'deployment_provenance_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_deployment_provenance_registry_no_delete BEFORE DELETE ON deployment_provenance_registry BEGIN SELECT RAISE(ABORT, 'deployment_provenance_registry is append-only'); END`,
+      `CREATE TABLE IF NOT EXISTS deployment_proof_registry (deployment_proof_id TEXT PRIMARY KEY, provenance_id TEXT NOT NULL, proof_id TEXT NOT NULL, commit_sha TEXT NOT NULL, workflow_hash TEXT NOT NULL, artifact_hash TEXT NOT NULL, environment_classification TEXT NOT NULL, proof_hash TEXT NOT NULL, append_only TEXT NOT NULL CHECK (append_only='true'), immutable TEXT NOT NULL CHECK (immutable='true'), created_at TEXT NOT NULL, UNIQUE(proof_id), UNIQUE(proof_hash))`,
+      `CREATE TRIGGER IF NOT EXISTS trg_deployment_proof_registry_no_update BEFORE UPDATE ON deployment_proof_registry BEGIN SELECT RAISE(ABORT, 'deployment_proof_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_deployment_proof_registry_no_delete BEFORE DELETE ON deployment_proof_registry BEGIN SELECT RAISE(ABORT, 'deployment_proof_registry is append-only'); END`,
+      `CREATE TABLE IF NOT EXISTS deployment_rollback_registry (rollback_id TEXT PRIMARY KEY, prior_proof_id TEXT NOT NULL, prior_deployment_proof_id TEXT NOT NULL, commit_sha TEXT NOT NULL, workflow_hash TEXT NOT NULL, artifact_hash TEXT NOT NULL, rollback_lineage_hash TEXT NOT NULL, environment_classification TEXT NOT NULL, append_only TEXT NOT NULL CHECK (append_only='true'), immutable TEXT NOT NULL CHECK (immutable='true'), created_at TEXT NOT NULL, UNIQUE(rollback_lineage_hash))`,
+      `CREATE TRIGGER IF NOT EXISTS trg_deployment_rollback_registry_no_update BEFORE UPDATE ON deployment_rollback_registry BEGIN SELECT RAISE(ABORT, 'deployment_rollback_registry is append-only'); END`,
+      `CREATE TRIGGER IF NOT EXISTS trg_deployment_rollback_registry_no_delete BEFORE DELETE ON deployment_rollback_registry BEGIN SELECT RAISE(ABORT, 'deployment_rollback_registry is append-only'); END`,
       `CREATE INDEX IF NOT EXISTS idx_observability_decision ON observability_registry(decision_id)`,
       `CREATE INDEX IF NOT EXISTS idx_observability_execution ON observability_registry(execution_id)`,
       `CREATE INDEX IF NOT EXISTS idx_observability_type ON observability_registry(event_type)`,
@@ -5285,7 +5337,7 @@ const RUNTIME_PROOF_TOPOLOGY = Object.freeze(["attestation_registry", "proof_qua
 const RUNTIME_GOVERNANCE_TOPOLOGY = Object.freeze(["bootstrap_sovereignty_registry", "external_authority_registry", "recursive_governance_registry", "runtime_governance_lock_registry", "runtime_sovereignty_registry", REQUIRE_PREO_LINEAGE, RECURSIVE_GOVERNANCE_ADMISSION_ROUTE, RECURSIVE_GOVERNANCE_ROUTE].sort())
 const CANONICAL_EXECUTION_AUTHORITY_SURFACE = Object.freeze(["authority:create", "compile:aeo", "validate:exact-object", "execute:governed-deploy", "proof:persist-consume"].sort())
 const CANONICAL_MIGRATION_CHAIN = Object.freeze([
-  "0001_init.sql", "0002_governed_deploy_schema.sql", "0003_authority_registry_schema_fix.sql", "0004_enforcement_lock.sql", "0004_execution_replay_protection.sql", "0005_invocation_registry.sql", "0006_enforcement_reboot_v1.sql", "0007_canonical_aeo_registry_rebuild.sql", "0008_canonical_runtime_registry_rebuild.sql", "0009_runtime_observability_and_drift_registry.sql", "0010_identity_session_continuity.sql", "0011_proof_atomicity_unique_guard.sql", "0012_continuity_registry.sql", "0013_preo_registry.sql", "0014_deployment_provenance_lineage.sql", "0015_cryptographic_provenance_attestations.sql", "0016_federated_revocation_observability.sql", "0017_federated_trust_topology_observability.sql", "0018_distributed_legitimacy_interoperability.sql", "0019_distributed_reconciliation_governance.sql", "0020_governance_compression.sql", "0021_federation_conformance.sql", "0022_proof_quarantine_registry.sql", "0022_recursive_governance_registry.sql", "0023_recursive_governance_enforcement_boundary.sql", "0024_runtime_sovereignty_registry.sql", "0026_external_authority_registry.sql", "0027_bootstrap_sovereignty_registry.sql", "0028_legitimacy_graph_registry.sql", "0029_reconciliation_closure_registry.sql"
+  "0001_init.sql", "0002_governed_deploy_schema.sql", "0003_authority_registry_schema_fix.sql", "0004_enforcement_lock.sql", "0004_execution_replay_protection.sql", "0005_invocation_registry.sql", "0006_enforcement_reboot_v1.sql", "0007_canonical_aeo_registry_rebuild.sql", "0008_canonical_runtime_registry_rebuild.sql", "0009_runtime_observability_and_drift_registry.sql", "0010_identity_session_continuity.sql", "0011_proof_atomicity_unique_guard.sql", "0012_continuity_registry.sql", "0013_preo_registry.sql", "0014_deployment_provenance_lineage.sql", "0015_cryptographic_provenance_attestations.sql", "0016_federated_revocation_observability.sql", "0017_federated_trust_topology_observability.sql", "0018_distributed_legitimacy_interoperability.sql", "0019_distributed_reconciliation_governance.sql", "0020_governance_compression.sql", "0021_federation_conformance.sql", "0022_proof_quarantine_registry.sql", "0022_recursive_governance_registry.sql", "0023_recursive_governance_enforcement_boundary.sql", "0024_runtime_sovereignty_registry.sql", "0026_external_authority_registry.sql", "0027_bootstrap_sovereignty_registry.sql", "0028_legitimacy_graph_registry.sql", "0029_reconciliation_closure_registry.sql", "0046_deployment_legitimacy_spine.sql"
 ].sort())
 
 function canonicalSovereigntyRoutes(): { canonical_routes: readonly string[], observability_routes: readonly string[], governance_routes: readonly string[] } {
@@ -7850,6 +7902,20 @@ export default {
       if (String(executionSnapshot.workflow_hash || "") !== String(validation.workflow_integrity_hash || "") || String(executionSnapshot.workflow_hash || "") !== String(execution.workflow_integrity_hash || "")) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"workflow_integrity_drift" }, { event_type: "HASH_MISMATCH", decision_id, execution_id, severity: "CRITICAL", payload: { route: "/proof", indicator: "workflow_integrity_drift", expected_validation_workflow_integrity_hash: String(validation.workflow_integrity_hash || ""), expected_execution_workflow_integrity_hash: String(execution.workflow_integrity_hash || ""), provided_workflow_integrity_hash: String(executionSnapshot.workflow_hash || "") }, drift_class: "workflow_source_drift" })
       const proofLineageCheck = verifyLineageOrigin({ stage: "proof", decision_id, validated_object_hash, lineage_stage: "proof", lineage_origin_hash: proofLineageOriginHash, parent_execution_hash, execution_hash: parent_execution_hash })
       if (!proofLineageCheck.ok) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason: proofLineageCheck.reason }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, severity: "HIGH", payload: { route: "/proof", indicator: proofLineageCheck.reason }, drift_class: "proof_drift" })
+      // Deployment legitimacy spine pre-flight: #890-#893
+      const deploymentEnvironment = String(b.environment || "production")
+      const deploymentWorkflowHash = String(executionSnapshot.workflow_hash || "")
+      const deploymentCommitSha = provenance.merge_commit_sha
+      const deploymentActor = String(authority.identity_id || "")
+      // Stale workflow rejection: provenance.workflow_sha must match execution snapshot workflow_hash
+      if (String(provenance.workflow_sha || "") && String(provenance.workflow_sha || "") !== deploymentWorkflowHash) return rejectWithTelemetry(env, { status: "NULL", result: "INVALID", reason: "stale_workflow_deployment" }, { event_type: "HASH_MISMATCH", decision_id, execution_id, proof_id, severity: "HIGH", payload: { route: "/proof", indicator: "stale_workflow_artifact", expected_workflow_hash: deploymentWorkflowHash, provided_workflow_sha: provenance.workflow_sha }, drift_class: "workflow_source_drift" })
+      // Artifact mismatch rejection: execution artifact_hash must equal validated_object_hash
+      const deploymentArtifactHash = String(execution.validated_object_hash || "")
+      if (deploymentArtifactHash !== validated_object_hash) return rejectWithTelemetry(env, { status: "NULL", result: "INVALID", reason: "artifact_hash_mismatch" }, { event_type: "HASH_MISMATCH", decision_id, execution_id, proof_id, severity: "CRITICAL", payload: { route: "/proof", indicator: "artifact_lineage_mismatch", expected: validated_object_hash, provided: deploymentArtifactHash }, drift_class: "hash_drift" })
+      const deploymentProofHashValue = await computeDeploymentProofHash({ commit_sha: deploymentCommitSha, workflow_hash: deploymentWorkflowHash, artifact_hash: deploymentArtifactHash, environment_classification: deploymentEnvironment })
+      // Deployment replay rejection: same commit+workflow+artifact+environment already deployed
+      const existingDeploymentProof = await env.DB.prepare(`SELECT deployment_proof_id FROM deployment_proof_registry WHERE proof_hash=?1 LIMIT 1`).bind(deploymentProofHashValue).first<any>()
+      if (existingDeploymentProof) return rejectWithTelemetry(env, { status: "NULL", result: "INVALID", reason: "deployment_proof_replay" }, { event_type: "REPLAY_BLOCKED", decision_id, execution_id, proof_id, severity: "HIGH", payload: { route: "/proof", indicator: "deployment_replay_rejected", existing_deployment_proof_id: String(existingDeploymentProof.deployment_proof_id || "") }, drift_class: "replay_drift" })
       try {
         const proofStatements = [
           env.DB.prepare(`INSERT OR IGNORE INTO proof_registry (proof_id,identity_id,session_id,continuity_id,continuity_hash,execution_id,decision_id,validated_object_hash,decision_hash,authority_lineage,execution_lineage,surface,run_id,commit_sha,workflow,environment,created_at,repository,branch,pull_request_id,merge_commit_sha,source_tree_hash,workflow_run_id,workflow_sha,workflow_integrity_hash,delegated_authority_id,delegated_replay_chain_hash,delegation_lineage_hash,delegation_root_hash,parent_execution_hash,lineage_stage,lineage_origin_hash)
@@ -7879,6 +7945,11 @@ export default {
       if (outboxQueued !== 1) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"proof_outbox_enqueue_failed" }, { event_type: "VALIDATION_REJECTED", decision_id, execution_id, proof_id, severity: "CRITICAL", payload: { route: "/proof", outbox_queued: outboxQueued }, drift_class: "proof_drift" })
       await emitTelemetry(env, { event_type: "PROOF_PERSISTED", decision_id, authority_id: String(authority.authority_id || ""), execution_id, proof_id, severity: "INFO", payload: { route: "/proof", session_id, validated_object_hash, repository: provenance.repository, branch: provenance.branch, workflow_run_id: provenance.workflow_run_id } })
       await emitTelemetry(env, { event_type: "AUTHORITY_CONSUMED", decision_id, authority_id: String(authority.authority_id || ""), execution_id, proof_id, severity: "INFO", payload: { route: "/proof", authority_status: "CONSUMED" } })
+      // Persist deployment legitimacy spine: provenance and proof registries (#890, #891)
+      const deployment_provenance_id = crypto.randomUUID()
+      const deployment_proof_id = crypto.randomUUID()
+      await env.DB.prepare(`INSERT OR IGNORE INTO deployment_provenance_registry (provenance_id,proof_id,commit_sha,workflow_hash,artifact_hash,deploy_actor,deployment_timestamp,environment_classification,deployment_proof_id,append_only,immutable,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'true','true',?10)`).bind(deployment_provenance_id,proof_id,deploymentCommitSha,deploymentWorkflowHash,deploymentArtifactHash,deploymentActor,created_at,deploymentEnvironment,deployment_proof_id,created_at).run()
+      await env.DB.prepare(`INSERT OR IGNORE INTO deployment_proof_registry (deployment_proof_id,provenance_id,proof_id,commit_sha,workflow_hash,artifact_hash,environment_classification,proof_hash,append_only,immutable,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'true','true',?9)`).bind(deployment_proof_id,deployment_provenance_id,proof_id,deploymentCommitSha,deploymentWorkflowHash,deploymentArtifactHash,deploymentEnvironment,deploymentProofHashValue,created_at).run()
       return json({ status:"PROVEN", result:"OK", proof_id, proof: { proof_id, identity_id: String(authority.identity_id || ""), session_id, continuity_id: String(authority.continuity_id || ""), execution_id, decision_id, validated_object_hash, repository: provenance.repository, branch: provenance.branch, pull_request_id: provenance.pull_request_id, merge_commit_sha: provenance.merge_commit_sha, source_tree_hash: provenance.source_tree_hash, workflow_run_id: provenance.workflow_run_id, workflow_sha: provenance.workflow_sha } })
     }
 
