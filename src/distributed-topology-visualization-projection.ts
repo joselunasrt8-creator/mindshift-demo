@@ -165,7 +165,7 @@ function buildNullProjection(
     nodes: Object.freeze([]),
     edges: Object.freeze([]),
     projection_hash: computeTopologyVisualizationProjectionHash(fields),
-  }) as DistributedTopologyVisualizationProjection
+  }) as unknown as DistributedTopologyVisualizationProjection
 }
 
 // ── Projection builder ─────────────────────────────────────────────────────────

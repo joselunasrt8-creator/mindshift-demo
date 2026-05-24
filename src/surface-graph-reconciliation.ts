@@ -14,11 +14,11 @@
  *   coordination telemetry → topology observation
  */
 
-import { createHash } from 'node:crypto'
+import { canonicalize, sha256Hex } from './canonical.js'
 
 import {
   INTER_SURFACE_COORDINATION_RESULTS,
-} from './inter-surface-coordination.ts'
+} from './inter-surface-coordination.js'
 
 // Re-export #1040 result constants under the names required by #1047
 export const COORDINATION_ALLOWED = INTER_SURFACE_COORDINATION_RESULTS.COORDINATION_ALLOWED
@@ -76,17 +76,6 @@ export type CoordinationTelemetryMetrics = typeof COORDINATION_TELEMETRY_METRICS
 
 // ── Internal helpers ───────────────────────────────────────────────────────────
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value)
-  }
-  if (Array.isArray(value)) {
-    return '[' + (value as unknown[]).map(canonicalJson).join(',') + ']'
-  }
-  const obj = value as Record<string, unknown>
-  const keys = Object.keys(obj).sort()
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJson(obj[k])).join(',') + '}'
-}
 
 function safeObj(input: unknown): Record<string, unknown> {
   if (input === null || input === undefined || typeof input !== 'object' || Array.isArray(input)) {
@@ -159,7 +148,7 @@ export function computeSurfaceEdgeHash(fields: Record<string, unknown>): string 
       : rest.coordination_classes,
   }
 
-  return createHash('sha256').update(canonicalJson(payload), 'utf8').digest('hex')
+  return sha256Hex(canonicalize(payload))
 }
 
 /**
@@ -180,7 +169,7 @@ export function computeSurfaceGraphHash(fields: Record<string, unknown>): string
       : rest.reconciliation_classes,
   }
 
-  return createHash('sha256').update(canonicalJson(payload), 'utf8').digest('hex')
+  return sha256Hex(canonicalize(payload))
 }
 
 // ── Surface graph edge builder ─────────────────────────────────────────────────
@@ -224,7 +213,7 @@ export function buildSurfaceGraphEdge(input: unknown): Record<string, unknown> {
   }
 
   // coordination_result must be a known value
-  const knownResults = new Set([COORDINATION_ALLOWED, COORDINATION_FORBIDDEN, NULL])
+  const knownResults = new Set<string>([COORDINATION_ALLOWED, COORDINATION_FORBIDDEN, NULL])
   if (!knownResults.has(coordination_result)) {
     return buildNullEdge(obj, SURFACE_GRAPH_RECONCILIATION_CLASSES.SURFACE_GRAPH_MALFORMED_EDGE)
   }
