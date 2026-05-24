@@ -1,0 +1,19 @@
+{
+  "object_type": "OntologyCompressionRegistry",
+  "status": "NON_EXECUTABLE",
+  "compression_targets": [
+    "duplicate_theorems",
+    "semantic_overlap",
+    "redundant_invariants",
+    "equivalent_topologies",
+    "recursive_governance_duplication"
+  ],
+  "compression_methods": [
+    "canonicalization",
+    "semantic_deduplication",
+    "lineage_equivalence_resolution",
+    "deterministic_normalization"
+  ],
+  "compression_goal": "maximum_legitimacy_density",
+  "ambiguity_resolution": "NULL"
+}

@@ -1,0 +1,19 @@
+{
+  "object_type": "CanonicalPrimitiveRegistry",
+  "status": "NON_EXECUTABLE",
+  "primitives": [
+    "authority",
+    "continuity",
+    "validation",
+    "execution",
+    "proof",
+    "replay",
+    "lineage",
+    "reconciliation",
+    "topology",
+    "containment",
+    "sovereignty",
+    "equivalence"
+  ],
+  "invariant": "all_runtime_legitimacy_derives_from_canonical_primitives"
+}

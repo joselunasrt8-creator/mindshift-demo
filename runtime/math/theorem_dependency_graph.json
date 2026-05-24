@@ -1,0 +1,37 @@
+{
+  "object_type": "TheoremDependencyGraph",
+  "status": "NON_EXECUTABLE",
+  "root_axioms": [
+    "VALID ∧ AUTHORIZED ∧ UNUSED ∧ POLICY_VALID",
+    "REPLAY → NULL",
+    "HASH_DRIFT → NULL"
+  ],
+  "derived_theorems": [
+    {
+      "theorem_id": "CRT-001",
+      "depends_on": ["REPLAY → NULL"]
+    },
+    {
+      "theorem_id": "CRT-002",
+      "depends_on": [
+        "execution_lineage",
+        "proof_integrity"
+      ]
+    },
+    {
+      "theorem_id": "CRT-003",
+      "depends_on": [
+        "authority_consumption",
+        "replay_protection"
+      ]
+    },
+    {
+      "theorem_id": "CRT-004",
+      "depends_on": [
+        "hash_integrity",
+        "exact_object_equality"
+      ]
+    }
+  ],
+  "closure_rule": "invalid_dependency_resolution → NULL"
+}

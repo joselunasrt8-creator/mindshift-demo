@@ -1,0 +1,13 @@
+{
+  "object_type": "CategoryLock",
+  "category": "Distributed Legitimacy Infrastructure",
+  "non_categories": [
+    "workflow_engine",
+    "policy_engine",
+    "deployment_framework",
+    "agent_orchestrator",
+    "observability_stack"
+  ],
+  "core_function": "deterministic_legitimacy_governance",
+  "status": "ONTOLOGY_STABILIZED"
+}

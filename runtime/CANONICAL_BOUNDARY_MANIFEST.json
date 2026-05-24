@@ -1,0 +1,22 @@
+{
+  "object_type": "CanonicalBoundaryManifest",
+  "authoritative_surfaces": [
+    "/session",
+    "/continuity",
+    "/authority",
+    "/compile",
+    "/validate",
+    "/execute",
+    "/proof"
+  ],
+  "evidence_only_surfaces": [
+    "/telemetry",
+    "/reconcile",
+    "/topology",
+    "/observability"
+  ],
+  "canonical_invariant": "validated_object_must_equal_executed_object",
+  "replay_safe": true,
+  "fail_closed": true,
+  "proof_required": true
+}

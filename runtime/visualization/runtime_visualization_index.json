@@ -1,0 +1,18 @@
+{
+  "object_type": "RuntimeVisualizationIndex",
+  "status": "NON_EXECUTABLE",
+  "visualization_layers": [
+    "authority_flow",
+    "validation_flow",
+    "execution_lineage",
+    "proof_topology",
+    "reconciliation_graph",
+    "distributed_legitimacy",
+    "governance_recursion",
+    "null_propagation",
+    "replay_containment",
+    "topology_sovereignty"
+  ],
+  "canonical_rendering": "deterministic_graph_projection",
+  "ambiguity_resolution": "NULL"
+}

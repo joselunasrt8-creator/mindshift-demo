@@ -1,0 +1,15 @@
+{
+  "object_type": "CanonicalRuntimeManifest",
+  "status": "NON_EXECUTABLE",
+  "canonical_primitives": "runtime/primitives/canonical_primitives.json",
+  "minimal_invariants": "runtime/invariants/minimal_invariant_core.json",
+  "runtime_theorems": "runtime/math/canonical_runtime_theorems.json",
+  "legitimacy_calculus": "runtime/math/legitimacy_calculus.json",
+  "federation_protocol": "runtime/federation/federated_legitimacy_protocol.json",
+  "recursive_governance": "runtime/governance/recursive_governance_model.json",
+  "null_semantics": "runtime/null/null_semantics.json",
+  "topology_ontology": "runtime/topology/topology_ontology.json",
+  "reconciliation_ontology": "runtime/reconciliation/reconciliation_ontology.json",
+  "root_sovereignty_model": "runtime/sovereignty/root_sovereignty_model.json",
+  "canonical_result": "deterministic_execution_legitimacy"
+}

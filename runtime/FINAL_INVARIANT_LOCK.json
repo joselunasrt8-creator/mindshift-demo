@@ -1,0 +1,13 @@
+{
+  "object_type": "FinalInvariantLock",
+  "core_invariant": "validated_object_must_equal_executed_object",
+  "secondary_invariants": [
+    "proof_requires_execution",
+    "execution_requires_validation",
+    "authority_requires_continuity",
+    "replay_resolves_NULL",
+    "observability_cannot_create_legitimacy"
+  ],
+  "ontology_state": "STABILIZED",
+  "status": "NON_MUTATING"
+}

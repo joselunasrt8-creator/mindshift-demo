@@ -1,0 +1,18 @@
+{
+  "object_type": "LegitimacyDecayModel",
+  "status": "NON_EXECUTABLE",
+  "decay_classes": [
+    "expired_authority",
+    "stale_validation",
+    "expired_proof",
+    "revoked_continuity",
+    "temporal_lineage_drift"
+  ],
+  "revocation_rules": [
+    "revoked_continuity → NULL",
+    "expired_validation → INVALID",
+    "expired_proof → NULL"
+  ],
+  "reconciliation_behavior": "revocation_propagates_downstream",
+  "fail_closed": true
+}

@@ -1,0 +1,21 @@
+{
+  "object_type": "TopologyOntology",
+  "canonical_chain": [
+    "/session",
+    "/continuity",
+    "/authority",
+    "/compile",
+    "/validate",
+    "/execute",
+    "/proof"
+  ],
+  "topology_classes": [
+    "authority_topology",
+    "execution_topology",
+    "proof_topology",
+    "reconciliation_topology",
+    "replay_topology",
+    "federation_topology"
+  ],
+  "fail_closed": true
+}

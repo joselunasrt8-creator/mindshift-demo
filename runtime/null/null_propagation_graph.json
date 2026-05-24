@@ -1,0 +1,30 @@
+{
+  "object_type": "NullPropagationGraph",
+  "status": "NON_EXECUTABLE",
+  "propagation_rules": [
+    {
+      "condition": "authority_missing",
+      "downstream_effect": [
+        "validation_invalid",
+        "execution_invalid",
+        "proof_invalid"
+      ]
+    },
+    {
+      "condition": "replay_detected",
+      "downstream_effect": [
+        "execution_invalid",
+        "proof_invalid",
+        "reconciliation_invalid"
+      ]
+    },
+    {
+      "condition": "hash_mismatch",
+      "downstream_effect": [
+        "proof_invalid",
+        "lineage_invalid"
+      ]
+    }
+  ],
+  "canonical_result": "NULL"
+}

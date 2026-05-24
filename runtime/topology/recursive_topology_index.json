@@ -1,0 +1,16 @@
+{
+  "object_type": "RecursiveTopologyIndex",
+  "status": "NON_EXECUTABLE",
+  "topologies": [
+    "authority_topology",
+    "validation_topology",
+    "execution_topology",
+    "proof_topology",
+    "reconciliation_topology",
+    "governance_topology",
+    "federation_topology",
+    "containment_topology"
+  ],
+  "governance_rule": "topology_mutation_requires_reconciliation",
+  "ambiguity_resolution": "NULL"
+}

@@ -1,0 +1,18 @@
+{
+  "object_type": "AuthorityOntology",
+  "authority_classes": [
+    "root_authority",
+    "delegated_authority",
+    "execution_authority",
+    "validation_authority",
+    "proof_authority",
+    "observational_authority"
+  ],
+  "constraints": [
+    "authority_must_be_consumed",
+    "authority_cannot_self_issue",
+    "authority_requires_continuity",
+    "authority_without_lineage_resolves_NULL"
+  ],
+  "status": "AUTHORITATIVE_MODEL"
+}

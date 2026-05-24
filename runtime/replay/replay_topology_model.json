@@ -1,0 +1,14 @@
+{
+  "object_type": "ReplayTopologyModel",
+  "replay_classes": [
+    "authority_replay",
+    "execution_replay",
+    "proof_replay",
+    "continuity_replay",
+    "topology_replay",
+    "semantic_replay"
+  ],
+  "resolution": "NULL",
+  "containment": "FAIL_CLOSED",
+  "replay_neutral": true
+}
