@@ -1,0 +1,16 @@
+{
+  "object_type": "CanonicalDriftTaxonomy",
+  "status": "NON_AUTHORITATIVE",
+  "drift_classes": [
+    "authority_drift",
+    "replay_drift",
+    "topology_drift",
+    "proof_drift",
+    "continuity_drift",
+    "reconciliation_drift",
+    "sovereignty_drift",
+    "governance_drift",
+    "mutation_drift"
+  ],
+  "fail_closed": true
+}

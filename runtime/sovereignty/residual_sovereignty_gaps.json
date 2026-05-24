@@ -1,0 +1,24 @@
+{
+  "object_type": "ResidualSovereigntyGapRegistry",
+  "status": "EVIDENCE_ONLY",
+  "gaps": [
+    {
+      "surface": "raw_d1_access",
+      "authority_root": "infrastructure_credentials",
+      "containment_status": "EXTERNAL_DEPENDENCY",
+      "closure_condition": "scoped_credentials_and_external_attestation"
+    },
+    {
+      "surface": "wrangler_direct_deploy",
+      "authority_root": "cloudflare_token",
+      "containment_status": "BREAK_GLASS",
+      "closure_condition": "deployment_attestation_binding"
+    },
+    {
+      "surface": "github_release_mutation",
+      "authority_root": "repository_writer",
+      "containment_status": "UNBOUND_RELEASE_PROVENANCE",
+      "closure_condition": "signed_release_lineage"
+    }
+  ]
+}
