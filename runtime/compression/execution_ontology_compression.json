@@ -1,0 +1,13 @@
+{
+  "object_type": "ExecutionOntologyCompression",
+  "status": "NON_EXECUTABLE",
+  "compressed_execution_chain": [
+    "authority",
+    "validation",
+    "execution",
+    "proof"
+  ],
+  "canonical_equation": "VALID ∧ AUTHORIZED ∧ UNUSED ∧ POLICY_VALID",
+  "terminal_failure": "NULL",
+  "compression_goal": "minimal_deterministic_execution_model"
+}
