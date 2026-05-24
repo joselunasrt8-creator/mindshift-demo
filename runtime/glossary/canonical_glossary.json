@@ -1,0 +1,48 @@
+{
+  "object_type": "CanonicalGlossary",
+  "status": "NON_EXECUTABLE",
+  "terms": [
+    {
+      "term": "authority",
+      "definition": "permission-bound legitimacy object permitting execution eligibility"
+    },
+    {
+      "term": "continuity",
+      "definition": "persistent lineage identity across canonical lifecycle stages"
+    },
+    {
+      "term": "validation",
+      "definition": "deterministic verification of canonical object legitimacy"
+    },
+    {
+      "term": "execution",
+      "definition": "authorized state transition after successful validation"
+    },
+    {
+      "term": "proof",
+      "definition": "immutable lineage-bound execution evidence"
+    },
+    {
+      "term": "reconciliation",
+      "definition": "deterministic equivalence resolution across distributed states"
+    },
+    {
+      "term": "topology",
+      "definition": "governed relationship graph between legitimacy surfaces"
+    },
+    {
+      "term": "containment",
+      "definition": "restriction of unauthorized mutation propagation"
+    },
+    {
+      "term": "sovereignty",
+      "definition": "root control authority over execution-capable infrastructure"
+    },
+    {
+      "term": "equivalence",
+      "definition": "deterministic semantic equality under canonical normalization"
+    }
+  ],
+  "ambiguity_resolution": "NULL",
+  "fail_closed": true
+}

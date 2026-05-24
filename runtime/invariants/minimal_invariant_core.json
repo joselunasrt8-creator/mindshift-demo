@@ -1,0 +1,16 @@
+{
+  "object_type": "MinimalInvariantCore",
+  "status": "NON_EXECUTABLE",
+  "irreducible_invariants": [
+    "validated_object_equals_executed_object",
+    "authority_required_before_execution",
+    "proof_requires_execution_lineage",
+    "replay_invalidates_legitimacy",
+    "continuity_required_for_lineage",
+    "mutation_after_validation_invalidates_legitimacy",
+    "observability_cannot_create_authority",
+    "authority_consumption_prevents_reuse"
+  ],
+  "replacement_policy": "replaceable_structures_allowed_nonreplaceable_invariants_forbidden",
+  "canonical_failure_result": "NULL"
+}

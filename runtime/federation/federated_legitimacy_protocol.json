@@ -1,0 +1,21 @@
+{
+  "object_type": "FederatedLegitimacyProtocol",
+  "status": "EVIDENCE_ONLY",
+  "principles": [
+    "remote_authority_non_inheritance",
+    "local_validation_required",
+    "distributed_reconciliation_required",
+    "cross_runtime_lineage_resolution",
+    "federated_replay_protection",
+    "portable_proof_non_authority"
+  ],
+  "federation_failures": [
+    "remote_replay_detected",
+    "semantic_equivalence_failure",
+    "cross_runtime_lineage_ambiguity",
+    "authority_scope_mismatch",
+    "distributed_topology_drift"
+  ],
+  "ambiguity_resolution": "NULL",
+  "fail_closed": true
+}
