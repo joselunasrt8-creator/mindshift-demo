@@ -14,7 +14,7 @@
 
 import { canonicalize, sha256Hex } from './canonical.js'
 
-import { LEGITIMACY_CONFLICT_RESULTS } from './legitimacy-conflict-arbitration.ts'
+import { LEGITIMACY_CONFLICT_RESULTS } from './legitimacy-conflict-arbitration.js'
 
 // ── Result constants ───────────────────────────────────────────────────────────
 

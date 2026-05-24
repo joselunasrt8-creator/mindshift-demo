@@ -16,7 +16,7 @@ import {
   DISTRIBUTED_TOPOLOGY_RESULTS,
   DISTRIBUTED_TOPOLOGY_CLASSES,
   computeDistributedTopologyHash,
-} from './distributed-topology-convergence.ts'
+} from './distributed-topology-convergence.js'
 
 // ── Result constants ───────────────────────────────────────────────────────────
 
