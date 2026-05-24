@@ -1,0 +1,22 @@
+{
+  "object_type": "SovereigntyTierModel",
+  "tiers": [
+    {
+      "tier": "S0",
+      "classification": "canonical_runtime_sovereignty"
+    },
+    {
+      "tier": "S1",
+      "classification": "adapter_bound_execution"
+    },
+    {
+      "tier": "S2",
+      "classification": "external_dependency_surface"
+    },
+    {
+      "tier": "S3",
+      "classification": "infrastructure_root_authority"
+    }
+  ],
+  "status": "EVIDENCE_ONLY"
+}

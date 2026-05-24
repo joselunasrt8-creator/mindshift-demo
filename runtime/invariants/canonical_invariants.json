@@ -1,0 +1,30 @@
+{
+  "object_type": "CanonicalInvariantRegistry",
+  "status": "NON_EXECUTABLE",
+  "invariants": [
+    {
+      "id": "INV-001",
+      "statement": "validated_object_must_equal_executed_object"
+    },
+    {
+      "id": "INV-002",
+      "statement": "execution_requires_authority"
+    },
+    {
+      "id": "INV-003",
+      "statement": "proof_requires_execution"
+    },
+    {
+      "id": "INV-004",
+      "statement": "replay_detected_resolves_NULL"
+    },
+    {
+      "id": "INV-005",
+      "statement": "observability_cannot_create_legitimacy"
+    },
+    {
+      "id": "INV-006",
+      "statement": "mutation_after_validation_invalidates_legitimacy"
+    }
+  ]
+}
