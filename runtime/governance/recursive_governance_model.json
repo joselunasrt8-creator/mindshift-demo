@@ -1,0 +1,12 @@
+{
+  "object_type": "RecursiveGovernanceModel",
+  "status": "NON_EXECUTABLE",
+  "principles": [
+    "governance_itself_requires_governance",
+    "mutation_of_rules_requires_lineage",
+    "topology_changes_require_reconciliation",
+    "authority_cannot_self_validate",
+    "proof_cannot_authorize_itself"
+  ],
+  "fail_closed": true
+}

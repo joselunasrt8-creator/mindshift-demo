@@ -1,0 +1,15 @@
+{
+  "object_type": "LegitimacyStateMachine",
+  "states": [
+    "PROPOSED",
+    "AUTHORIZED",
+    "COMPILED",
+    "VALIDATED",
+    "EXECUTED",
+    "PROVEN",
+    "RECONCILED",
+    "NULL"
+  ],
+  "terminal_fail_state": "NULL",
+  "replay_safe": true
+}
