@@ -52,6 +52,8 @@
     "runtime/governance/SCHEMA_POLICY.json",
     "runtime/governance/SCO_POLICY.json",
     "runtime/governance/TOPOLOGY_RECONCILIATION_POLICY.json",
+    "runtime/governance/governance_calculus.json",
+    "runtime/governance/recursive_governance_model.json",
     "docs/BREAK_GLASS_DEPLOYMENT.md",
     "docs/cloudflare-sovereignty-check.md",
     "docs/codex-execution-protocol.md",
@@ -92,7 +94,8 @@
     "docs/topology/legitimacy-topology.md",
     "docs/topology/lineage-graph-inspection.md",
     "docs/topology/neo4j-runtime-topology.md",
-    "archive/DELETION_REPORT_2026-05-21.md"
+    "archive/DELETION_REPORT_2026-05-21.md",
+    "archive/session/runtime_ontology_inventory.txt"
   ],
   "authoritative_owners": {
     "continuity": [],
@@ -106,6 +109,7 @@
   },
   "duplicate_mentions": {
     "continuity": [
+      "archive/session/runtime_ontology_inventory.txt",
       "docs/BREAK_GLASS_DEPLOYMENT.md",
       "docs/continuity-threat-mapping.md",
       "docs/continuous-reconciliation-hardening.md",
@@ -157,9 +161,11 @@
       "governance/runtime/RUNTIME_VERIFICATION_REPORT.json",
       "governance/runtime/SEMANTIC_COLLAPSE_REGISTRY.json",
       "governance/runtime/SEMANTIC_COLLAPSE_REPORT.json",
-      "governance/runtime/WORKFLOW_DISPATCH_DEPLOYMENT_SURFACE_INVENTORY.json"
+      "governance/runtime/WORKFLOW_DISPATCH_DEPLOYMENT_SURFACE_INVENTORY.json",
+      "runtime/governance/governance_calculus.json"
     ],
     "lineage": [
+      "archive/session/runtime_ontology_inventory.txt",
       "docs/continuity-threat-mapping.md",
       "docs/continuous-reconciliation-hardening.md",
       "docs/cross-registry-reconciliation-closure.md",
@@ -214,9 +220,12 @@
       "governance/runtime/SEMANTIC_COLLAPSE_REPORT.json",
       "governance/runtime/WORKFLOW_DISPATCH_DEPLOYMENT_SURFACE_INVENTORY.json",
       "runtime/governance/DEPLOY_POLICY.json",
-      "runtime/governance/TOPOLOGY_RECONCILIATION_POLICY.json"
+      "runtime/governance/TOPOLOGY_RECONCILIATION_POLICY.json",
+      "runtime/governance/governance_calculus.json",
+      "runtime/governance/recursive_governance_model.json"
     ],
     "observability": [
+      "archive/session/runtime_ontology_inventory.txt",
       "docs/BREAK_GLASS_DEPLOYMENT.md",
       "docs/continuous-reconciliation-hardening.md",
       "docs/cross-registry-reconciliation-closure.md",
@@ -265,6 +274,7 @@
       "runtime/governance/TOPOLOGY_RECONCILIATION_POLICY.json"
     ],
     "orchestration": [
+      "archive/session/runtime_ontology_inventory.txt",
       "docs/semantic-collapse.md",
       "governance/runtime/BRANCH_PROTECTION_POLICY.json",
       "governance/runtime/MERGE_GOVERNANCE_RULES.json",
@@ -272,6 +282,7 @@
       "governance/runtime/SEMANTIC_COLLAPSE_REPORT.json"
     ],
     "governance": [
+      "archive/session/runtime_ontology_inventory.txt",
       "docs/cloudflare-sovereignty-check.md",
       "docs/codex-execution-protocol.md",
       "docs/continuity-threat-mapping.md",
@@ -337,7 +348,9 @@
       "runtime/governance/REPLAY_POLICY.json",
       "runtime/governance/SCHEMA_POLICY.json",
       "runtime/governance/SCO_POLICY.json",
-      "runtime/governance/TOPOLOGY_RECONCILIATION_POLICY.json"
+      "runtime/governance/TOPOLOGY_RECONCILIATION_POLICY.json",
+      "runtime/governance/governance_calculus.json",
+      "runtime/governance/recursive_governance_model.json"
     ]
   },
   "conflicts": [],
