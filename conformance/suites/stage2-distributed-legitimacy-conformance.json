@@ -137,11 +137,18 @@
       "label": "topology_invisibility_returns_null_or_ambiguous",
       "description": "When topology is not visible, classification must return NULL or AMBIGUOUS — never GLOBAL_VALID.",
       "fixture": "tests/fixtures/stage2/topology_invisible.json",
+      "test": "tests/fate/stage2-conf-dist-09.test.mjs",
       "expected_result": "AMBIGUOUS",
       "forbidden_results": ["GLOBAL_VALID", "LOCAL_VALID"],
-      "required_module": "src/runtime-topology-intelligence.ts",
+      "classification_layer": "classifyTopologyVisibility + topologyVisibilityToFinalityClassification",
+      "required_module": "src/lib/topology-visibility.ts",
+      "required_migration": "migrations/0059_topology_visibility_enforcement.sql",
+      "db_guard": "tvsr_non_visible_blocks_finality_guard + tvsr_no_authority_creation + tvsr_no_execution_creation",
       "related_issue": "#1352",
-      "status": "PENDING — Slice I"
+      "anchor_issue": "#1408",
+      "supporting_issues": ["#1352", "#1418", "#1442", "#1340", "#1440", "#1405"],
+      "slice": "I",
+      "status": "IMPLEMENTED"
     },
     {
       "check_id": "CONF-DIST-10",

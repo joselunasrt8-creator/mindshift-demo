@@ -1,0 +1,131 @@
+{
+  "_fixture_id": "CONF-DIST-09",
+  "_description": "Topology invisibility must return NULL or AMBIGUOUS — never GLOBAL_VALID. Missing, invisible, stale, partial, and ambiguous topology snapshots must all block GLOBAL_VALID.",
+  "_expected_outcome": "AMBIGUOUS (ambiguous/partition topology); NULL (invisible or null snapshot); STALE_VISIBLE (stale topology); PARTITION_SUSPENDED (partial topology).",
+  "_non_operative": true,
+  "_planning_artifact": "docs/stage2-distributed-legitimacy-enforcement-plan-v1.md",
+  "_related_issue": "#1352",
+  "_anchor_issue": "#1408",
+  "_supporting_issues": ["#1352", "#1418", "#1442", "#1340", "#1440", "#1405"],
+  "_invariant": "topology visibility ≠ legitimacy. Invisible, missing, stale, partial, or ambiguous topology snapshots block GLOBAL_VALID without exception. Topology observation is evidence — it is not authority and it is not execution eligibility.",
+  "_guard": "classifyTopologyVisibility enforces: only TOPOLOGY_VISIBLE produces finality_guard=true. All non-visible states produce finality_guard=false. topologyVisibilityToFinalityClassification maps non-visible states to blocking finality classifications. topologyVisibilityToFinalityGuard maps non-visible states to false, which when passed as topologyPresent=false to classifyFromPredicates produces PARTITION_SUSPENDED.",
+  "_classification_function": "classifyTopologyVisibility(snapshot) → TopologyVisibilityResult; topologyVisibilityToFinalityClassification(state) → FinalityClassification | null",
+  "_module": "src/lib/topology-visibility.ts",
+  "scenario": "topology_invisible",
+  "topology_present": false,
+  "predicate_snapshot": {
+    "V": true,
+    "A": true,
+    "U": true,
+    "P": true,
+    "R": true,
+    "T": false,
+    "C": true,
+    "Q": true,
+    "G": true,
+    "L": true,
+    "X": true
+  },
+  "epoch_status": "EPOCH_GLOBAL_AUTHORITATIVE",
+  "expected_classification": "AMBIGUOUS",
+  "forbidden_classifications": ["GLOBAL_VALID", "LOCAL_VALID"],
+  "cases": [
+    {
+      "_name": "null_topology_snapshot",
+      "_description": "Missing topology snapshot → TOPOLOGY_NULL → finality_guard=false → forced NULL",
+      "topology_snapshot": null,
+      "expected_topology_visibility": "TOPOLOGY_NULL",
+      "expected_finality_guard": false,
+      "expected_finality_classification": "NULL",
+      "forbidden_finality_classifications": ["GLOBAL_VALID", "LOCAL_VALID", "CONVERGENCE_VALID"]
+    },
+    {
+      "_name": "invisible_topology_no_observed_nodes",
+      "_description": "Snapshot with no observed nodes → TOPOLOGY_INVISIBLE → finality_guard=false → forced NULL",
+      "topology_snapshot": {
+        "topology_snapshot_id": "tsn_invisible_test_01",
+        "topology_snapshot_hash": "aabbccdd00112233aabbccdd00112233aabbccdd00112233aabbccdd00112233",
+        "observed_nodes": [],
+        "missing_nodes": ["validator-1", "validator-2", "validator-3"],
+        "stale_nodes": [],
+        "partitioned_nodes": [],
+        "observed_at": "2026-05-26T00:00:00Z",
+        "epoch_id": "epoch-test-invisible-01",
+        "visibility_classification": "TOPOLOGY_INVISIBLE",
+        "creates_authority": false,
+        "creates_execution": false,
+        "raw_production_apply_path": "DENIED"
+      },
+      "expected_topology_visibility": "TOPOLOGY_INVISIBLE",
+      "expected_finality_guard": false,
+      "expected_finality_classification": "NULL",
+      "forbidden_finality_classifications": ["GLOBAL_VALID", "LOCAL_VALID", "CONVERGENCE_VALID"]
+    },
+    {
+      "_name": "stale_topology_snapshot",
+      "_description": "Snapshot with stale nodes present → TOPOLOGY_STALE → finality_guard=false → forced STALE_VISIBLE",
+      "topology_snapshot": {
+        "topology_snapshot_id": "tsn_stale_test_01",
+        "topology_snapshot_hash": "1122334455667788112233445566778811223344556677881122334455667788",
+        "observed_nodes": ["validator-1", "validator-2"],
+        "missing_nodes": [],
+        "stale_nodes": ["validator-1"],
+        "partitioned_nodes": [],
+        "observed_at": "2026-05-26T00:00:00Z",
+        "epoch_id": "epoch-test-stale-old",
+        "visibility_classification": "TOPOLOGY_STALE",
+        "creates_authority": false,
+        "creates_execution": false,
+        "raw_production_apply_path": "DENIED"
+      },
+      "expected_topology_visibility": "TOPOLOGY_STALE",
+      "expected_finality_guard": false,
+      "expected_finality_classification": "STALE_VISIBLE",
+      "forbidden_finality_classifications": ["GLOBAL_VALID", "LOCAL_VALID", "CONVERGENCE_VALID"]
+    },
+    {
+      "_name": "partial_topology_snapshot_missing_nodes",
+      "_description": "Snapshot with missing nodes → TOPOLOGY_PARTIAL → finality_guard=false → forced PARTITION_SUSPENDED",
+      "topology_snapshot": {
+        "topology_snapshot_id": "tsn_partial_test_01",
+        "topology_snapshot_hash": "556677889900aabb556677889900aabb556677889900aabb556677889900aabb",
+        "observed_nodes": ["validator-1"],
+        "missing_nodes": ["validator-2", "validator-3"],
+        "stale_nodes": [],
+        "partitioned_nodes": [],
+        "observed_at": "2026-05-26T00:00:00Z",
+        "epoch_id": "epoch-test-partial-01",
+        "visibility_classification": "TOPOLOGY_PARTIAL",
+        "creates_authority": false,
+        "creates_execution": false,
+        "raw_production_apply_path": "DENIED"
+      },
+      "expected_topology_visibility": "TOPOLOGY_PARTIAL",
+      "expected_finality_guard": false,
+      "expected_finality_classification": "PARTITION_SUSPENDED",
+      "forbidden_finality_classifications": ["GLOBAL_VALID", "LOCAL_VALID", "CONVERGENCE_VALID"]
+    },
+    {
+      "_name": "ambiguous_topology_partition_detected",
+      "_description": "Snapshot with partitioned nodes → TOPOLOGY_AMBIGUOUS → finality_guard=false → forced AMBIGUOUS",
+      "topology_snapshot": {
+        "topology_snapshot_id": "tsn_ambiguous_test_01",
+        "topology_snapshot_hash": "99aabbccddeeff0099aabbccddeeff0099aabbccddeeff0099aabbccddeeff00",
+        "observed_nodes": ["validator-1", "validator-2"],
+        "missing_nodes": [],
+        "stale_nodes": [],
+        "partitioned_nodes": ["validator-2"],
+        "observed_at": "2026-05-26T00:00:00Z",
+        "epoch_id": "epoch-test-ambiguous-01",
+        "visibility_classification": "TOPOLOGY_AMBIGUOUS",
+        "creates_authority": false,
+        "creates_execution": false,
+        "raw_production_apply_path": "DENIED"
+      },
+      "expected_topology_visibility": "TOPOLOGY_AMBIGUOUS",
+      "expected_finality_guard": false,
+      "expected_finality_classification": "AMBIGUOUS",
+      "forbidden_finality_classifications": ["GLOBAL_VALID", "LOCAL_VALID", "CONVERGENCE_VALID"]
+    }
+  ]
+}
