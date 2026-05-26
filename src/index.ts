@@ -70,6 +70,11 @@ type GovernCandidate = {
   finality: Record<string, unknown>
 }
 
+type GovernTopologyEvidence = {
+  topology_attestation_hash: string
+  continuity_id: string
+}
+
 type GovernResult = "VALID_CANDIDATE" | "NULL"
 
 function parseGovernCandidate(input: unknown): { ok: true, candidate: GovernCandidate } | { ok: false, reason: string } {
@@ -82,6 +87,15 @@ function parseGovernCandidate(input: unknown): { ok: true, candidate: GovernCand
   if (!isPlainRecord(input.target)) return { ok: false, reason: "missing_target" }
   if (!isPlainRecord(input.finality)) return { ok: false, reason: "missing_finality" }
   return { ok: true, candidate: { intent: input.intent, scope: input.scope, target: input.target, finality: input.finality } }
+}
+
+function parseGovernTopologyEvidence(input: unknown): { ok: true, evidence: GovernTopologyEvidence } | { ok: false, reason: string } {
+  if (!isPlainRecord(input)) return { ok: false, reason: "missing_topology_evidence" }
+  const topology_attestation_hash = String(input.topology_attestation_hash || input.topology_digest || "").trim()
+  const continuity_id = String(input.continuity_id || "").trim()
+  if (!topology_attestation_hash) return { ok: false, reason: "missing_topology_evidence" }
+  if (!continuity_id) return { ok: false, reason: "missing_continuity_id" }
+  return { ok: true, evidence: { topology_attestation_hash, continuity_id } }
 }
 type BootstrapDiagnosticEvent =
   | "BOOTSTRAP_SCHEMA_INITIALIZED"
@@ -146,6 +160,7 @@ const PROVENANCE_PAYLOAD_TYPE = "application/vnd.mindshift.cryptographic-provena
 const SESSION_TTL_MS = 3600_000
 const VALIDATION_FRESHNESS_WINDOW_MS = 5 * 60_000
 const PROOF_FRESHNESS_WINDOW_MS = 10 * 60_000
+const GOVERN_TOPOLOGY_FRESHNESS_WINDOW_MS = 10 * 60_000
 const SYSTEM_MAX_CONTINUITY_DEPTH = 32
 const CANONICAL_RUNTIME_ROUTES = ["/session", "/continuity", "/authority", "/compile", "/validate", "/execute", "/proof"] as const
 const EXECUTABLE_RUNTIME_ROUTES = Object.freeze(["/authority", "/compile", "/validate", "/execute", "/proof"] as const)
@@ -7674,18 +7689,47 @@ export default {
       const body = await request.json().catch(() => null)
       const nonce = String(request.headers.get("X-Nonce") || "")
       const parsed = parseGovernCandidate(body)
+      const topologyEvidence = parseGovernTopologyEvidence(body)
       const candidate = parsed.ok ? parsed.candidate : { intent: "", scope: {}, target: {}, finality: {} }
       const candidate_canonical = canonicalize(candidate)
       const candidate_hash = await sha256Hex(candidate_canonical)
       const timestamp = new Date().toISOString()
       let result: GovernResult = parsed.ok ? "VALID_CANDIDATE" : "NULL"
       let reason = parsed.ok ? "" : parsed.reason
+      let topology_attestation_hash = topologyEvidence.ok ? topologyEvidence.evidence.topology_attestation_hash : ""
+      let continuity_id = topologyEvidence.ok ? topologyEvidence.evidence.continuity_id : ""
       if (!nonce) {
         result = "NULL"
         reason = "missing_nonce"
       }
+      if (!topologyEvidence.ok) {
+        result = "NULL"
+        reason = topologyEvidence.reason
+      }
       await env.DB.prepare(`CREATE TABLE IF NOT EXISTS govern_nonce_registry (nonce TEXT PRIMARY KEY, candidate_hash TEXT NOT NULL, created_at TEXT NOT NULL)`).run()
       await env.DB.prepare(`CREATE TABLE IF NOT EXISTS govern_evidence_registry (evidence_id TEXT PRIMARY KEY, candidate_hash TEXT NOT NULL, nonce TEXT NOT NULL, result TEXT NOT NULL, reason TEXT, created_at TEXT NOT NULL)`).run()
+      if (result === "VALID_CANDIDATE") {
+        const topologySnapshot = await env.DB.prepare(`SELECT topology_hash,reconciliation_timestamp,created_at FROM runtime_topology_registry WHERE topology_hash=?1 ORDER BY created_at DESC LIMIT 1`).bind(topology_attestation_hash).first<any>()
+        if (!topologySnapshot) {
+          result = "NULL"
+          reason = "topology_evidence_missing"
+        } else if (!isFresh(String(topologySnapshot.reconciliation_timestamp || topologySnapshot.created_at || ""), GOVERN_TOPOLOGY_FRESHNESS_WINDOW_MS)) {
+          result = "NULL"
+          reason = "topology_evidence_stale"
+        }
+        const continuity = await env.DB.prepare(`SELECT continuity_id,status,issued_at,expires_at,revoked_at FROM continuity_registry WHERE continuity_id=?1 ORDER BY issued_at DESC LIMIT 1`).bind(continuity_id).first<any>()
+        if (!continuity || String(continuity.status || "") !== "ACTIVE" || isExpired(String(continuity.expires_at || "")) || String(continuity.revoked_at || "")) {
+          result = "NULL"
+          reason = "continuity_lineage_missing"
+        } else if (topologySnapshot) {
+          const topologyObservedAt = Date.parse(String(topologySnapshot.reconciliation_timestamp || topologySnapshot.created_at || ""))
+          const continuityIssuedAt = Date.parse(String(continuity.issued_at || ""))
+          if (Number.isFinite(topologyObservedAt) && Number.isFinite(continuityIssuedAt) && topologyObservedAt < continuityIssuedAt) {
+            result = "NULL"
+            reason = "topology_lineage_non_reconcilable"
+          }
+        }
+      }
       if (result === "VALID_CANDIDATE") {
         const nonceInsert = await env.DB.prepare(`INSERT OR IGNORE INTO govern_nonce_registry (nonce, candidate_hash, created_at) VALUES (?1,?2,?3)`).bind(nonce, candidate_hash, timestamp).run()
         if ((nonceInsert.meta?.changes || 0) === 0) {
@@ -7695,12 +7739,13 @@ export default {
       }
       const evidence_id = await sha256Hex(canonicalize({ candidate_hash, nonce, timestamp, result, reason }))
       await env.DB.prepare(`INSERT OR IGNORE INTO govern_evidence_registry (evidence_id, candidate_hash, nonce, result, reason, created_at) VALUES (?1,?2,?3,?4,?5,?6)`).bind(evidence_id, candidate_hash, nonce, result, reason || null, timestamp).run()
-      try { await emitTelemetry(env, { event_type: result === "VALID_CANDIDATE" ? "VALIDATION_GRANTED" : "VALIDATION_REJECTED", severity: result === "VALID_CANDIDATE" ? "INFO" : "WARN", payload: { route: "/govern", candidate_hash, nonce, timestamp, result, reason: reason || null, non_operative: true } }) } catch {}
-      return json({ status: result, evidence: { candidate_hash, nonce, timestamp, result, ...(reason ? { reason } : {}) } }, 200)
+      try { await emitTelemetry(env, { event_type: result === "VALID_CANDIDATE" ? "VALIDATION_GRANTED" : "VALIDATION_REJECTED", severity: result === "VALID_CANDIDATE" ? "INFO" : "WARN", payload: { route: "/govern", candidate_hash, nonce, timestamp, result, reason: reason || null, topology_attestation_hash: topology_attestation_hash || null, continuity_id: continuity_id || null, non_operative: true } }) } catch {}
+      return json({ status: result, evidence: { candidate_hash, nonce, timestamp, result, topology_attestation_hash: topology_attestation_hash || null, continuity_id: continuity_id || null, ...(reason ? { reason } : {}) } }, 200)
     }
 
     if (url.pathname === "/validate" && request.method === "POST") {
       const b = await body(request); const decision_id = String(b.decision_id || ""); const validated_object_hash = String(b.validated_object_hash || ""); const invocation_nonce = String(b.invocation_nonce || ""); const environment = b.environment; const session_id = String(b.session_id || "")
+      const topology_attestation_hash = String(b.topology_attestation_hash || b.topology_digest || "")
       if (!decision_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_decision_id" }, { event_type: "VALIDATION_REJECTED", severity: "WARN", payload: { route: "/validate" }, drift_class: "hash_drift" })
       if (!validated_object_hash) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_validated_object_hash" }, { event_type: "HASH_MISMATCH", decision_id, severity: "HIGH", payload: { route: "/validate", indicator: "validation_hash_missing_or_mismatched" }, drift_class: "hash_drift" })
       if (!invocation_nonce) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_invocation_nonce" }, { event_type: "VALIDATION_REJECTED", decision_id, severity: "WARN", payload: { route: "/validate", validated_object_hash }, drift_class: "replay_drift" })
@@ -7757,7 +7802,7 @@ export default {
       const _topology_present = false // topology infrastructure pending (#1346+); fail-closed
       const _predicate_snapshot = { V: true, A: true, U: true, P: true, R: true, T: false, C: true, Q: false, G: false, L: false, X: false }
       const _classification = classifyFromPredicates(_predicate_snapshot, _topology_present)
-      return json({ status:"VALID", result:"VALID", session_id, validated_object_hash, invocation_nonce, classification_evidence: { classification: _classification, predicate_snapshot: _predicate_snapshot, topology_present: _topology_present } })
+      return json({ status:"VALID", result:"VALID", session_id, validated_object_hash, invocation_nonce, topology_attestation_hash: topology_attestation_hash || null, classification_evidence: { classification: _classification, predicate_snapshot: _predicate_snapshot, topology_present: _topology_present } })
     }
 
     if (url.pathname === "/execute" && request.method === "POST") {
@@ -7864,6 +7909,7 @@ export default {
       const decision_id = String(b.decision_id || "")
       const validated_object_hash = String(b.validated_object_hash || "")
       const invocation_nonce = String(b.invocation_nonce || "")
+      const topology_attestation_hash = String(b.topology_attestation_hash || b.topology_digest || "")
       const session_id = String(b.session_id || "")
       if (!execution_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_execution_id" }, { event_type: "VALIDATION_REJECTED", decision_id, severity: "WARN", payload: { route: "/proof" }, drift_class: "proof_drift" })
       if (!decision_id) return rejectWithTelemetry(env, { status:"NULL", result:"INVALID", reason:"missing_decision_id" }, { event_type: "VALIDATION_REJECTED", execution_id, severity: "WARN", payload: { route: "/proof" }, drift_class: "proof_drift" })
@@ -8034,7 +8080,7 @@ export default {
               AND EXISTS (SELECT 1 FROM validation_registry WHERE decision_id=?4 AND validated_object_hash=?5 AND invocation_nonce=?25 AND session_id=?2 AND continuity_id=a.continuity_id AND status='VALID' AND result='VALID')
               AND s.continuity_status='ACTIVE' AND s.expires_at>?13`).bind(proof_id,session_id,execution_id,decision_id,validated_object_hash,authorityLineage,executionLineage,String(b.surface||""),provenance.workflow_run_id,provenance.workflow_sha,String(b.workflow||GOVERNED_WORKFLOW),String(b.environment||""),created_at,String(execution.continuity_id || ""),provenance.repository,provenance.branch,provenance.pull_request_id,provenance.merge_commit_sha,provenance.source_tree_hash,provenance.workflow_run_id,provenance.workflow_sha,decision_hash,parent_execution_hash,proofLineageOriginHash,invocation_nonce,String(execution.workflow_integrity_hash || "")),
           env.DB.prepare(`UPDATE authority_registry SET status='CONSUMED' WHERE decision_id=?1 AND session_id=?2 AND status='EXECUTED' AND continuity_id=?5 AND EXISTS (SELECT 1 FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.proof_id=?3 AND p.decision_id=?1 AND p.validated_object_hash=?4 AND e.invocation_nonce=?6)`).bind(decision_id,session_id,proof_id,validated_object_hash,String(execution.continuity_id || ""),invocation_nonce),
-          env.DB.prepare(`INSERT OR IGNORE INTO proof_propagation_outbox (outbox_id,proof_id,decision_id,execution_id,validated_object_hash,event_type,payload,status,publish_attempts,created_at,replay_neutral,fail_closed) SELECT ?1,?2,?3,?4,?5,'LEGITIMACY_PROOF_PERSISTED',?6,'PENDING',0,?7,'true','true' WHERE EXISTS (SELECT 1 FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.proof_id=?2 AND p.decision_id=?3 AND p.execution_id=?4 AND p.validated_object_hash=?5 AND e.invocation_nonce=?8)`).bind(crypto.randomUUID(),proof_id,decision_id,execution_id,validated_object_hash,canonicalize({ proof_id, decision_id, execution_id, validated_object_hash, invocation_nonce, route: "/proof", lineage_stage: "proof", execution_closure_hash: executionClosureHash }),created_at,invocation_nonce)
+          env.DB.prepare(`INSERT OR IGNORE INTO proof_propagation_outbox (outbox_id,proof_id,decision_id,execution_id,validated_object_hash,event_type,payload,status,publish_attempts,created_at,replay_neutral,fail_closed) SELECT ?1,?2,?3,?4,?5,'LEGITIMACY_PROOF_PERSISTED',?6,'PENDING',0,?7,'true','true' WHERE EXISTS (SELECT 1 FROM proof_registry p JOIN execution_registry e ON e.execution_id=p.execution_id WHERE p.proof_id=?2 AND p.decision_id=?3 AND p.execution_id=?4 AND p.validated_object_hash=?5 AND e.invocation_nonce=?8)`).bind(crypto.randomUUID(),proof_id,decision_id,execution_id,validated_object_hash,canonicalize({ proof_id, decision_id, execution_id, validated_object_hash, invocation_nonce, topology_attestation_hash: topology_attestation_hash || null, route: "/proof", lineage_stage: "proof", execution_closure_hash: executionClosureHash }),created_at,invocation_nonce)
         ]
         if (validatedAttestation) {
           proofStatements.push(env.DB.prepare(`INSERT INTO attestation_registry (attestation_id,envelope_hash,payload_hash,payload_type,signer_identity,decision_id,validated_object_hash,workflow_run_id,workflow_sha,canonical_aeo_hash,transparency_log_id,transparency_integrated_time,status,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'VALIDATED',?13)`).bind(crypto.randomUUID(), validatedAttestation.envelope_hash, validatedAttestation.payload_hash, validatedAttestation.payload_type, validatedAttestation.signer_identity, validatedAttestation.decision_id, validatedAttestation.validated_object_hash, validatedAttestation.workflow_run_id, validatedAttestation.workflow_sha, validatedAttestation.canonical_aeo_hash, validatedAttestation.transparency_log_id, validatedAttestation.transparency_integrated_time, created_at))
@@ -8053,7 +8099,7 @@ export default {
       await emitTelemetry(env, { event_type: "PROOF_PERSISTED", decision_id, authority_id: String(authority.authority_id || ""), execution_id, proof_id, severity: "INFO", payload: { route: "/proof", session_id, validated_object_hash, repository: provenance.repository, branch: provenance.branch, workflow_run_id: provenance.workflow_run_id } })
       await emitInstallBaseTelemetryEvidenceBestEffort(env, { event_type: "proof_generated", decision_id, authority_id: String(authority.authority_id || ""), execution_id, proof_id, payload: { event_type: "proof_generated", continuity_id: String(authority.continuity_id || ""), validated_object_hash, execution_surface: "deploy_runtime", result: "NULL" } })
       await emitTelemetry(env, { event_type: "AUTHORITY_CONSUMED", decision_id, authority_id: String(authority.authority_id || ""), execution_id, proof_id, severity: "INFO", payload: { route: "/proof", authority_status: "CONSUMED" } })
-      return json({ status:"PROVEN", result:"OK", proof_id, proof: { proof_id, identity_id: String(authority.identity_id || ""), session_id, continuity_id: String(authority.continuity_id || ""), execution_id, decision_id, validated_object_hash, repository: provenance.repository, branch: provenance.branch, pull_request_id: provenance.pull_request_id, merge_commit_sha: provenance.merge_commit_sha, source_tree_hash: provenance.source_tree_hash, workflow_run_id: provenance.workflow_run_id, workflow_sha: provenance.workflow_sha } })
+      return json({ status:"PROVEN", result:"OK", proof_id, proof: { proof_id, identity_id: String(authority.identity_id || ""), session_id, continuity_id: String(authority.continuity_id || ""), execution_id, decision_id, validated_object_hash, topology_attestation_hash: topology_attestation_hash || null, repository: provenance.repository, branch: provenance.branch, pull_request_id: provenance.pull_request_id, merge_commit_sha: provenance.merge_commit_sha, source_tree_hash: provenance.source_tree_hash, workflow_run_id: provenance.workflow_run_id, workflow_sha: provenance.workflow_sha } })
     }
 
     return json({ status: "NULL", reason: "not_found" }, 404)
