@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { sha256Hex } from '../canonical.js'
 
 export const creates_authority = false
 export const replay_neutral = true
@@ -11,19 +11,57 @@ const CLASSIFICATIONS = {
   MEMORY_INHERITANCE_SURFACE: 'MEMORY_INHERITANCE_SURFACE',
   BOOTSTRAP_SURFACE: 'BOOTSTRAP_SURFACE',
   NON_GOVERNANCE_SURFACE: 'NON_GOVERNANCE_SURFACE'
+} as const
+
+type SurfaceClassification = (typeof CLASSIFICATIONS)[keyof typeof CLASSIFICATIONS]
+
+interface BehavioralSurfaceMetadata {
+  surface_hash?: string
 }
 
-function normalizePath(path = '') {
+interface BehavioralSurfaceClassificationResult {
+  surface_id: string
+  surface_path: string
+  surface_kind: 'OPENCLAW_BEHAVIORAL_TOPOLOGY_SURFACE'
+  surface_hash: string
+  governance_relevance: boolean
+  mutation_capable: true
+  affects_execution_eligibility: boolean
+  lineage_scope: 'behavioral_instruction_lineage' | 'none'
+  classification: SurfaceClassification
+  status: 'CLASSIFIED' | 'NULL'
+  reason: 'deterministic_path_classification' | 'missing_surface_path'
+  creates_authority: false
+  replay_neutral: true
+  evidence_only: true
+}
+
+interface BehavioralMutationRiskResult {
+  classification: SurfaceClassification
+  mutation_visibility: boolean
+  affects_execution_eligibility: boolean
+  deterministic: true
+  risk_level: 'LOW' | 'ELEVATED'
+  creates_authority: false
+  replay_neutral: true
+  evidence_only: true
+}
+
+function normalizePath(path = ''): string {
   return String(path).replace(/\\/g, '/').toLowerCase()
 }
 
-export function computeBehavioralSurfaceHash(content = '') {
-  return createHash('sha256').update(String(content)).digest('hex')
+export function computeBehavioralSurfaceHash(content = ''): string {
+  return sha256Hex(String(content))
 }
 
-export function classifyBehavioralAuthoritySurface(path, contentOrHash = '', metadata = {}) {
+export function classifyBehavioralAuthoritySurface(
+  path: string,
+  contentOrHash = '',
+  metadata: BehavioralSurfaceMetadata = {}
+): BehavioralSurfaceClassificationResult {
   const normalized = normalizePath(path)
-  const surface_hash = metadata.surface_hash || computeBehavioralSurfaceHash(contentOrHash)
+  const surface_hash = metadata.surface_hash ?? computeBehavioralSurfaceHash(contentOrHash)
   const classification = classifyPath(normalized)
   const governance_relevance = classification !== CLASSIFICATIONS.NON_GOVERNANCE_SURFACE
 
@@ -45,7 +83,7 @@ export function classifyBehavioralAuthoritySurface(path, contentOrHash = '', met
   }
 }
 
-function classifyPath(normalized) {
+function classifyPath(normalized: string): SurfaceClassification {
   if (!normalized) return CLASSIFICATIONS.NON_GOVERNANCE_SURFACE
   if (normalized.endsWith('/agents.md') || normalized === 'agents.md') return CLASSIFICATIONS.BEHAVIORAL_AUTHORITY_SURFACE
   if (normalized.endsWith('/soul.md') || normalized === 'soul.md') return CLASSIFICATIONS.COGNITION_SHAPING_SURFACE
@@ -56,14 +94,16 @@ function classifyPath(normalized) {
   return CLASSIFICATIONS.NON_GOVERNANCE_SURFACE
 }
 
-export function isBehavioralAuthoritySurface(path) {
+export function isBehavioralAuthoritySurface(path: string): boolean {
   return classifyPath(normalizePath(path)) !== CLASSIFICATIONS.NON_GOVERNANCE_SURFACE
 }
 
-export function classifyBehavioralMutationRisk(surface) {
-  const normalized = normalizePath(surface?.surface_path || surface?.path || '')
+export function classifyBehavioralMutationRisk(
+  surface: { surface_path?: string; path?: string } | null | undefined
+): BehavioralMutationRiskResult {
+  const normalized = normalizePath(surface?.surface_path ?? surface?.path ?? '')
   const classification = classifyPath(normalized)
-  const riskLevel = classification === CLASSIFICATIONS.NON_GOVERNANCE_SURFACE ? 'LOW' : 'ELEVATED'
+  const riskLevel: 'LOW' | 'ELEVATED' = classification === CLASSIFICATIONS.NON_GOVERNANCE_SURFACE ? 'LOW' : 'ELEVATED'
   return {
     classification,
     mutation_visibility: classification !== CLASSIFICATIONS.NON_GOVERNANCE_SURFACE,
