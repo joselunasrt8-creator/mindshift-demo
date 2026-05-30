@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "artifact_id": "merge_legitimacy_closure_audit_spec",
+  "status": "non_operative_governance_artifact",
+  "artifact_class": "closure_audit_specification",
+  "closes": "#1636",
+  "depends_on": ["#1630", "#1631", "#1633", "#1635", "#1634"],
+  "scope": {
+    "name": "MERGE_LEGITIMACY_CLOSURE_AUDIT",
+    "purpose": "Define the closure audit that verifies lineage continuity across the entire merge governance topology. The audit classifies lineage state — it does not create legitimacy.",
+    "execution_surface": "none",
+    "operational_effect": "none"
+  },
+  "non_operability": {
+    "runtime_mutation": false,
+    "workflow_mutation": false,
+    "deploy_mutation": false,
+    "proof_generation": false,
+    "authority_creation": false,
+    "registry_mutation": false,
+    "enforcement_implementation": false,
+    "merge_operations": false
+  },
+  "non_goals": {
+    "creates_authority": false,
+    "creates_execution": false,
+    "creates_deployment": false,
+    "creates_merge_permission": false
+  },
+  "closure_audit_defined": true,
+  "audit_chain": [
+    "PREO_CANDIDATE",
+    "PREO_VALID",
+    "SCO_CANDIDATE",
+    "SCO_VALID",
+    "reviewer_legitimacy_validation",
+    "approval_lineage_governance",
+    "merge_proof_generation",
+    "branch_protection_enforcement_proof"
+  ],
+  "required_inputs": {
+    "fields": [
+      "preo_valid_hash",
+      "sco_valid_hash",
+      "approval_lineage_hash",
+      "branch_protection_enforcement_hash",
+      "merge_proof_hash",
+      "validated_head_sha",
+      "merge_commit_sha",
+      "repository",
+      "pr_number"
+    ],
+    "sco_valid_hash_note": "sco_valid_hash must be present when SCO governance applies. When SCO governance does not apply, sco_valid_hash must be explicitly null. It must never be absent from the audit input set."
+  },
+  "lineage_classification": {
+    "values": [
+      "MERGE_LEGITIMACY_CLOSED",
+      "MERGE_LEGITIMACY_OPEN",
+      "LINEAGE_DIVERGENCE",
+      "PROOF_LINEAGE_MISMATCH",
+      "RECONCILIATION_INCOMPLETE"
+    ],
+    "default": "MERGE_LEGITIMACY_OPEN",
+    "rules": {
+      "MERGE_LEGITIMACY_OPEN": "Use when any required input hash is absent. Missing required artifacts mean the chain is open.",
+      "RECONCILIATION_INCOMPLETE": "Use only when required evidence exists but deterministic replay or reconciliation cannot be completed.",
+      "LINEAGE_DIVERGENCE": "Use when required evidence exists but lineage fields disagree — gate artifacts bind to different head_sha values.",
+      "PROOF_LINEAGE_MISMATCH": "Use when MERGE_PROOF does not bind to the same lineage validated by upstream gates — gate hashes in the proof diverge from individually audited gate hashes.",
+      "MERGE_LEGITIMACY_CLOSED": "Full lineage chain reconciles: all gate hashes present, internally consistent, and bound to the same validated_head_sha and merge_commit_sha."
+    }
+  },
+  "stage4_readiness_classification": {
+    "values": [
+      "READY_FOR_STAGE4",
+      "GOVERNANCE_GAPS_REMAIN",
+      "DRIFT_DETECTED",
+      "BYPASS_PATH_PRESENT"
+    ],
+    "mapping": {
+      "MERGE_LEGITIMACY_CLOSED": "READY_FOR_STAGE4",
+      "MERGE_LEGITIMACY_OPEN": "GOVERNANCE_GAPS_REMAIN",
+      "RECONCILIATION_INCOMPLETE": "GOVERNANCE_GAPS_REMAIN",
+      "LINEAGE_DIVERGENCE": "DRIFT_DETECTED",
+      "PROOF_LINEAGE_MISMATCH": "BYPASS_PATH_PRESENT"
+    }
+  },
+  "hashing_model": {
+    "lineage_closure_hash": {
+      "inputs": [
+        "preo_valid_hash",
+        "sco_valid_hash",
+        "approval_lineage_hash",
+        "branch_protection_enforcement_hash",
+        "validated_head_sha",
+        "merge_commit_sha",
+        "repository",
+        "pr_number"
+      ],
+      "semantics": "Stable hash of lineage inputs only. Same lineage_closure_hash with a different audit_record_hash means the same lineage state was audited in a new instance."
+    },
+    "audit_record_hash": {
+      "inputs": ["lineage_closure_hash", "audited_at"],
+      "semantics": "Hash of the full audit record including audited_at. Different audit_record_hash with the same lineage_closure_hash means a new audit instance for the same lineage state."
+    },
+    "algorithm": "SHA-256 over deterministic JSON canonicalization with sorted keys",
+    "invariant": "different lineage_closure_hash = lineage changed"
+  },
+  "pre_hash_guard": {
+    "rule": "Before computing hashes, the audit engine must verify: all required lineage inputs are present, all required metadata fields are present, all non_operability flags are explicitly false.",
+    "incomplete_input_result": "no closure hash, no closure claim",
+    "classification_on_incomplete_input": "MERGE_LEGITIMACY_OPEN",
+    "non_operability_violation_result": "audit rejected"
+  },
+  "verification_requirements": [
+    "no_missing_governance_link",
+    "no_unresolved_bypass_path",
+    "no_stale_head_sha_reuse",
+    "no_governance_drift",
+    "no_required_check_drift",
+    "no_merge_legitimacy_shortcut",
+    "fail_closed_behavior_verified"
+  ],
+  "outputs": {
+    "MERGE_LEGITIMACY_CLOSURE_REPORT": {
+      "required_fields": [
+        "lineage_classification",
+        "stage4_readiness_classification",
+        "lineage_closure_hash",
+        "audit_record_hash",
+        "governance_gap_inventory",
+        "unresolved_dependency_inventory",
+        "audited_at"
+      ],
+      "note": "lineage_closure_hash is omitted when pre-hash guard fails — no closure hash, no closure claim."
+    },
+    "governance_gap_inventory": "List of missing governance links detected during the audit.",
+    "unresolved_dependency_inventory": "List of unresolved dependencies blocking lineage closure.",
+    "stage4_readiness_classification": "One of: READY_FOR_STAGE4, GOVERNANCE_GAPS_REMAIN, DRIFT_DETECTED, BYPASS_PATH_PRESENT"
+  },
+  "boundary_rule": {
+    "statement": "Closure audit classifies lineage state. It does not create legitimacy.",
+    "creates_authority": false,
+    "creates_legitimacy": false,
+    "creates_merge_permission": false
+  },
+  "fail_closed_semantics": {
+    "default_classification": "MERGE_LEGITIMACY_OPEN",
+    "failure_result": "MERGE_LEGITIMACY_NULL",
+    "missing_preo_valid_hash": "MERGE_LEGITIMACY_OPEN",
+    "missing_sco_valid_hash": "MERGE_LEGITIMACY_OPEN",
+    "missing_approval_lineage_hash": "MERGE_LEGITIMACY_OPEN",
+    "missing_branch_protection_enforcement_hash": "MERGE_LEGITIMACY_OPEN",
+    "missing_merge_proof_hash": "MERGE_LEGITIMACY_OPEN",
+    "lineage_fields_disagree": "LINEAGE_DIVERGENCE",
+    "proof_does_not_bind_to_lineage": "PROOF_LINEAGE_MISMATCH",
+    "replay_cannot_complete": "RECONCILIATION_INCOMPLETE"
+  },
+  "canonical_compression": {
+    "rule_1": "Individual controls are not closure.",
+    "rule_2": "Merge legitimacy exists only when the full governance chain reconciles.",
+    "rule_3": "Missing link → NULL.",
+    "rule_4": "Unresolved drift → NULL.",
+    "rule_5": "Bypass path → NULL.",
+    "rule_6": "Closure audit classifies lineage state. It does not create legitimacy."
+  },
+  "deterministic_artifact": {
+    "required": true,
+    "rule": "Identical lineage inputs must produce an identical lineage_closure_hash. The audit_record_hash incorporates audited_at and may differ across audit instances for the same lineage state.",
+    "lineage_closure_hash_must_be_deterministic": true,
+    "audit_logic_must_not_depend_on_provider_specific_ordering": true
+  }
+}
