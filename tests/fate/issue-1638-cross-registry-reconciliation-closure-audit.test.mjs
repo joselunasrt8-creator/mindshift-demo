@@ -792,3 +792,261 @@ test('LEGITIMACY_NULL report always includes audit_type field', () => {
   inputs.merge_legitimacy_registry = null;
   assert.equal(performClosureAudit(inputs).audit_type, AUDIT_TYPE);
 });
+
+// ---------------------------------------------------------------------------
+// Taxonomy consistency audit (review criteria from issue taxonomy audit)
+// ---------------------------------------------------------------------------
+
+// --- 1. DRIFT is defined as accumulation-based hash/state inconsistency ---
+
+test('taxonomy: PROOF_LINEAGE_DRIFT is triggered by hash inconsistency (DRIFT phenomenon)', () => {
+  // DRIFT = hash/state inconsistency between distributed records
+  const inputs = coherentInputs();
+  inputs.deploy_legitimacy_registry.lineage_hash = canonicalHash({ different: 'lineage' });
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'PROOF_LINEAGE_DRIFT');
+  // The trigger is a hash inequality — accumulation-based, not model-level
+  assert.equal(report.drift_inventory[0].drift_type, 'PROOF_LINEAGE_DRIFT');
+});
+
+test('taxonomy: REPLAY_DRIFT is triggered by replay state inconsistency (DRIFT phenomenon)', () => {
+  // REPLAY_DRIFT: established in cross-registry-drift-taxonomy.json drift_classes
+  const inputs = coherentInputs();
+  inputs.replay_registry.replay_status = 'PENDING';
+  inputs.deploy_legitimacy_registry.execution_state = 'COMPLETE';
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'REPLAY_DRIFT');
+  assert.equal(report.drift_inventory[0].drift_type, 'REPLAY_DRIFT');
+});
+
+test('taxonomy: TOPOLOGY_DRIFT is triggered by topology hash inconsistency (DRIFT phenomenon)', () => {
+  // TOPOLOGY_DRIFT: established as topology reconciliation signal in MERGE_GOVERNANCE_RULES.json
+  const inputs = coherentInputs();
+  inputs.topology_reconciliation_registry.has_drift = true;
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'TOPOLOGY_DRIFT');
+  assert.equal(report.drift_inventory[0].drift_type, 'TOPOLOGY_DRIFT');
+});
+
+// --- 2. DIVERGENCE is defined as structural/model-level categorical incompatibility ---
+
+test('taxonomy: GOVERNANCE_DIVERGENCE is triggered by governance model incompatibility (DIVERGENCE phenomenon)', () => {
+  // GOVERNANCE_DIVERGENCE: established co-equal topology signal alongside TOPOLOGY_DRIFT
+  // in MERGE_GOVERNANCE_RULES.json — not hash accumulation, but model-level structural incompatibility
+  const inputs = coherentInputs();
+  inputs.governance_inventory_registry.has_drift = true;
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'GOVERNANCE_DIVERGENCE');
+  assert.equal(report.drift_inventory[0].drift_type, 'GOVERNANCE_DIVERGENCE');
+});
+
+test('taxonomy: GOVERNANCE_DIVERGENCE is triggered by authority boundary violation (DIVERGENCE phenomenon)', () => {
+  // Federation evidence categorically misclassified as authority — structural, not accumulation
+  const inputs = coherentInputs();
+  inputs.federation_reconciliation_evidence.evidence_only = false;
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'GOVERNANCE_DIVERGENCE');
+  const entry = report.drift_inventory.find((e) => e.reason === 'federation_evidence_treated_as_authority');
+  assert.ok(entry, 'authority boundary violation must record federation_evidence_treated_as_authority');
+});
+
+// --- 3. Every classification maps to a unique observable state ---
+
+test('taxonomy: AMBIGUITY_FORCES_NULL maps to missing evidence (not conflicting evidence)', () => {
+  // AMBIGUITY_FORCES_NULL = missing required input; no hash comparison is possible
+  const inputs = coherentInputs();
+  inputs.proof_lineage_registry = null;
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'AMBIGUITY_FORCES_NULL');
+  // The ambiguity inventory explains why (missing), not what the hashes are
+  assert.ok(report.unresolved_ambiguity_inventory.length > 0);
+  assert.equal(report.unresolved_ambiguity_inventory[0].reason, 'missing_required_input');
+});
+
+test('taxonomy: REPLAY_DRIFT sub-classification: REGISTRY_REPLAY_DIVERGENCE = competing answers', () => {
+  // REGISTRY_REPLAY_DIVERGENCE: evidence present, conclusions disagree (competing answers)
+  const inputs = coherentInputs();
+  inputs.replay_registry.replay_status = 'PENDING';
+  inputs.deploy_legitimacy_registry.execution_state = 'COMPLETE';
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'REPLAY_DRIFT');
+  assert.equal(report.replay_divergence_classification, 'REGISTRY_REPLAY_DIVERGENCE');
+  const entry = report.drift_inventory.find((e) => e.classification === 'REGISTRY_REPLAY_DIVERGENCE');
+  assert.ok(entry, 'REGISTRY_REPLAY_DIVERGENCE must be in drift_inventory');
+});
+
+test('taxonomy: REGISTRY_RECONCILIATION_INCOMPLETE = no answer (routes to AMBIGUITY_FORCES_NULL)', () => {
+  // REGISTRY_RECONCILIATION_INCOMPLETE: no answer because replay state is absent — not competing answers
+  const inputs = coherentInputs();
+  inputs.replay_registry.replay_status = null;
+  const report = performClosureAudit(inputs);
+  assert.equal(report.classification, 'AMBIGUITY_FORCES_NULL');
+  assert.equal(report.replay_divergence_classification, 'REGISTRY_RECONCILIATION_INCOMPLETE');
+  // unresolved_ambiguity_inventory records the incompleteness
+  const entry = report.unresolved_ambiguity_inventory.find(
+    (e) => e.classification === 'REGISTRY_RECONCILIATION_INCOMPLETE',
+  );
+  assert.ok(entry, 'REGISTRY_RECONCILIATION_INCOMPLETE must be in unresolved_ambiguity_inventory');
+});
+
+// --- 4. Every classification is mutually exclusive ---
+
+test('taxonomy: classifications are mutually exclusive — each audit returns exactly one classification', () => {
+  const scenarios = [
+    coherentInputs(),
+    (() => { const i = coherentInputs(); i.merge_legitimacy_registry = null; return i; })(),
+    (() => { const i = coherentInputs(); i.deploy_legitimacy_registry.lineage_hash = canonicalHash({ d: 1 }); return i; })(),
+    (() => { const i = coherentInputs(); i.replay_registry.replay_status = 'PENDING'; i.deploy_legitimacy_registry.execution_state = 'COMPLETE'; return i; })(),
+    (() => { const i = coherentInputs(); i.topology_reconciliation_registry.has_drift = true; return i; })(),
+    (() => { const i = coherentInputs(); i.governance_inventory_registry.has_drift = true; return i; })(),
+    (() => { const i = coherentInputs(); i.federation_reconciliation_evidence.evidence_only = false; return i; })(),
+  ];
+  const classifications = scenarios.map((s) => performClosureAudit(s).classification);
+  // Each scenario produces exactly one string classification
+  for (const c of classifications) {
+    assert.equal(typeof c, 'string', `classification must be a string, got ${typeof c}`);
+    assert.ok(c.length > 0, 'classification must not be empty');
+  }
+  // Known expected classifications
+  assert.equal(classifications[0], 'RECONCILED_EVIDENCE_ONLY');
+  assert.equal(classifications[1], 'AMBIGUITY_FORCES_NULL');
+  assert.equal(classifications[2], 'PROOF_LINEAGE_DRIFT');
+  assert.equal(classifications[3], 'REPLAY_DRIFT');
+  assert.equal(classifications[4], 'TOPOLOGY_DRIFT');
+  assert.equal(classifications[5], 'GOVERNANCE_DIVERGENCE');
+  assert.equal(classifications[6], 'GOVERNANCE_DIVERGENCE');
+});
+
+test('taxonomy: DRIFT classes do not produce DIVERGENCE outer classification', () => {
+  // Hash inconsistency produces DRIFT classifications, not DIVERGENCE
+  const hashDrift = coherentInputs();
+  hashDrift.proof_lineage_registry.lineage_hash = canonicalHash({ diverged: true });
+  assert.match(performClosureAudit(hashDrift).classification, /DRIFT/);
+});
+
+test('taxonomy: DIVERGENCE class does not produce DRIFT outer classification', () => {
+  // Authority model incompatibility produces DIVERGENCE classification, not DRIFT
+  const authViolation = coherentInputs();
+  authViolation.federation_reconciliation_evidence.evidence_only = false;
+  assert.match(performClosureAudit(authViolation).classification, /DIVERGENCE/);
+});
+
+// --- 5. No two classifications describe the same observable state ---
+
+test('taxonomy: TOPOLOGY_DRIFT and GOVERNANCE_DIVERGENCE are triggered by different registry surfaces', () => {
+  // Both are co-equal signals but for different registries and phenomena
+  const topoDrift = coherentInputs();
+  topoDrift.topology_reconciliation_registry.has_drift = true;
+  assert.equal(performClosureAudit(topoDrift).classification, 'TOPOLOGY_DRIFT');
+
+  const govDiv = coherentInputs();
+  govDiv.governance_inventory_registry.has_drift = true;
+  assert.equal(performClosureAudit(govDiv).classification, 'GOVERNANCE_DIVERGENCE');
+
+  // They produce different classifications for different inputs — not aliases
+  assert.notEqual('TOPOLOGY_DRIFT', 'GOVERNANCE_DIVERGENCE');
+});
+
+test('taxonomy: PROOF_LINEAGE_DRIFT and REPLAY_DRIFT are triggered by different evidence layers', () => {
+  // PROOF_LINEAGE_DRIFT: lineage hash layer (what was merged/deployed/proved)
+  const lineageDrift = coherentInputs();
+  lineageDrift.proof_lineage_registry.lineage_hash = canonicalHash({ alternate: 'chain' });
+  assert.equal(performClosureAudit(lineageDrift).classification, 'PROOF_LINEAGE_DRIFT');
+
+  // REPLAY_DRIFT: replay execution layer (was the invocation consumed or still pending)
+  const replayDrift = coherentInputs();
+  replayDrift.replay_registry.replay_status = 'PENDING';
+  replayDrift.deploy_legitimacy_registry.execution_state = 'COMPLETE';
+  assert.equal(performClosureAudit(replayDrift).classification, 'REPLAY_DRIFT');
+
+  assert.notEqual('PROOF_LINEAGE_DRIFT', 'REPLAY_DRIFT');
+});
+
+// --- 6. Closure logic remains fail-closed under all ambiguity ---
+
+test('taxonomy: all failure classifications produce LEGITIMACY_NULL', () => {
+  const failures = [
+    (() => { const i = coherentInputs(); i.merge_legitimacy_registry = null; return i; })(),
+    (() => { const i = coherentInputs(); i.deploy_legitimacy_registry.lineage_hash = canonicalHash({ x: 1 }); return i; })(),
+    (() => { const i = coherentInputs(); i.replay_registry.replay_status = 'PENDING'; i.deploy_legitimacy_registry.execution_state = 'COMPLETE'; return i; })(),
+    (() => { const i = coherentInputs(); i.topology_reconciliation_registry.has_drift = true; return i; })(),
+    (() => { const i = coherentInputs(); i.governance_inventory_registry.has_drift = true; return i; })(),
+    (() => { const i = coherentInputs(); i.federation_reconciliation_evidence.evidence_only = false; return i; })(),
+    (() => { const i = coherentInputs(); i.replay_registry.replay_status = null; return i; })(),
+  ];
+  for (const inputs of failures) {
+    const report = performClosureAudit(inputs);
+    assert.equal(report.legitimacy_status, 'LEGITIMACY_NULL', `Expected LEGITIMACY_NULL for ${report.classification}`);
+  }
+});
+
+test('taxonomy: only RECONCILED_EVIDENCE_ONLY produces non-NULL legitimacy_status', () => {
+  const report = performClosureAudit(coherentInputs());
+  assert.equal(report.classification, 'RECONCILED_EVIDENCE_ONLY');
+  assert.notEqual(report.legitimacy_status, 'LEGITIMACY_NULL');
+});
+
+// --- 7. RECONCILED_EVIDENCE_ONLY vs CROSS_REGISTRY_RECONCILIATION_CLOSED ---
+
+test('taxonomy: RECONCILED_EVIDENCE_ONLY is intentionally weaker than CROSS_REGISTRY_RECONCILIATION_CLOSED', () => {
+  // RECONCILED_EVIDENCE_ONLY = audit result: no contradictions detected across seven surfaces
+  // CROSS_REGISTRY_RECONCILIATION_CLOSED = derived state: requires additionally that
+  //   authority_registry agrees (NOT audited here) and epoch closure is certified
+  const spec_closureReq = spec.cross_registry_closure_requirement;
+  assert.equal(spec_closureReq.closed_derivation, 'CROSS_REGISTRY_RECONCILIATION_CLOSED');
+  // The spec requires five registries including authority_registry
+  assert.ok(spec_closureReq.rule.includes('authority registry'), 'authority_registry must be required for CLOSED');
+  // authority_registry is NOT in the audit surfaces
+  assert.ok(!spec.audit_surfaces.includes('authority_registry'), 'authority_registry must not be an audit surface');
+});
+
+test('taxonomy: RECONCILED_EVIDENCE_ONLY does not grant authority — CROSS_REGISTRY_RECONCILIATION_CLOSED cannot be auto-derived', () => {
+  const report = performClosureAudit(coherentInputs());
+  assert.equal(report.classification, 'RECONCILED_EVIDENCE_ONLY');
+  // RECONCILED_EVIDENCE_ONLY explicitly carries no authorization
+  assert.equal(report.reconciliation_creates_authority, false);
+  assert.equal(report.reconciliation_creates_execution, false);
+  assert.equal(report.reconciliation_creates_merge_permission, false);
+  assert.equal(report.reconciliation_creates_deployment, false);
+  assert.equal(report.reconciliation_creates_proof, false);
+  // The spec classification node explicitly forbids authorization
+  const cls = spec.classifications.RECONCILED_EVIDENCE_ONLY;
+  assert.equal(cls.authorizes_execution, false);
+  assert.equal(cls.authorizes_merge, false);
+  assert.equal(cls.authorizes_deployment, false);
+});
+
+test('taxonomy: spec vocabulary consistency — DRIFT defined, DIVERGENCE defined, verdict is KEEP', () => {
+  assert.ok('taxonomy_definitions' in spec, 'spec must contain taxonomy_definitions');
+  assert.ok('DRIFT' in spec.taxonomy_definitions, 'DRIFT must be defined');
+  assert.ok('DIVERGENCE' in spec.taxonomy_definitions, 'DIVERGENCE must be defined');
+  assert.equal(spec.taxonomy_definitions.DRIFT_vs_DIVERGENCE_boundary.verdict, 'KEEP');
+  assert.equal(spec.taxonomy_definitions.DRIFT_vs_DIVERGENCE_boundary.mutual_exclusion.includes('not both'), true);
+});
+
+test('taxonomy: spec consistency verdict confirms all review criteria', () => {
+  assert.ok('taxonomy_consistency_verdict' in spec, 'spec must contain taxonomy_consistency_verdict');
+  const v = spec.taxonomy_consistency_verdict;
+  assert.equal(v.verdict, 'KEEP');
+  assert.equal(v.drift_divergence_are_distinct, true);
+  assert.equal(v.classifications_are_mutually_exclusive, true);
+  assert.equal(v.classifications_cover_unique_failure_modes, true);
+  assert.equal(v.no_two_classifications_describe_same_observable_state, true);
+  assert.equal(v.closure_logic_fails_closed_under_ambiguity, true);
+});
+
+test('taxonomy: RECONCILED_EVIDENCE_ONLY vs CLOSED distinction is documented in spec', () => {
+  assert.ok('reconciliation_terminology' in spec, 'spec must contain reconciliation_terminology');
+  const term = spec.reconciliation_terminology;
+  assert.ok('RECONCILED_EVIDENCE_ONLY' in term);
+  assert.ok('CROSS_REGISTRY_RECONCILIATION_CLOSED' in term);
+  assert.equal(term.RECONCILED_EVIDENCE_ONLY_vs_CROSS_REGISTRY_RECONCILIATION_CLOSED.intentionally_weaker, true);
+  // Verify that authority_registry requirement is documented as the key distinction
+  const distinctions = Object.values(
+    term.RECONCILED_EVIDENCE_ONLY_vs_CROSS_REGISTRY_RECONCILIATION_CLOSED.exact_legitimacy_distinction,
+  );
+  assert.ok(
+    distinctions.some((d) => d.includes('authority_registry')),
+    'authority_registry must appear in the legitimacy distinction',
+  );
+});

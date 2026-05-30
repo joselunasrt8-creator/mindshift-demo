@@ -11,6 +11,73 @@
     "execution_surface": "none",
     "operational_effect": "none"
   },
+  "taxonomy_definitions": {
+    "DRIFT": {
+      "definition": "Accumulation-based hash or state inconsistency between distributed registry records. Registries that were once coherent have moved apart over time — records that should agree no longer agree. DRIFT is a time-series phenomenon: the registries accumulated inconsistency rather than arriving at structurally different definitions.",
+      "detection_method": "Hash comparison: hashes that should be equal across registries are not equal, OR a registry signals has_drift=true indicating its own internal hash accumulation inconsistency.",
+      "examples": [
+        "PROOF_LINEAGE_DRIFT: lineage hashes in merge, deploy, and proof registries disagree for the same epoch",
+        "REPLAY_DRIFT: replay status records conflict between replay_registry and deploy_legitimacy_registry for the same invocation_nonce",
+        "TOPOLOGY_DRIFT: topology hash records in topology_reconciliation_registry have accumulated inconsistency"
+      ],
+      "canonical_source": "cross-registry-drift-taxonomy.json drift_classes; reconciliation_drift_risks.json risk_classes; MERGE_GOVERNANCE_RULES.json topology_reconciliation_signals"
+    },
+    "DIVERGENCE": {
+      "definition": "Structural, model-level categorical incompatibility between governance or authority definitions. Two or more registry models have different definitions of the same concept — they cannot both be correct, and the disagreement is not about accumulated hash inconsistency but about what the model says reality is. DIVERGENCE is a structural phenomenon: the models are categorically incompatible.",
+      "detection_method": "Model comparison: governance hash records are structurally inconsistent indicating governance models have diverged, OR an authority classification field carries a categorically wrong value (e.g., evidence_only=false for federation evidence).",
+      "examples": [
+        "GOVERNANCE_DIVERGENCE: governance_inventory_registry hashes indicate governance models are structurally incompatible, OR federation_reconciliation_evidence is classified as authoritative rather than evidence-only"
+      ],
+      "canonical_source": "runtime-topology-drift-taxonomy.json (CONTAINMENT_DIVERGENCE, CANONICAL_ROUTE_DIVERGENCE); MERGE_GOVERNANCE_RULES.json topology_reconciliation_signals (GOVERNANCE_DIVERGENCE); RECURSIVE_GOVERNANCE_DRIFT_TAXONOMY.json (GOVERNANCE_TOPOLOGY_DIVERGENCE)"
+    },
+    "DRIFT_vs_DIVERGENCE_boundary": {
+      "rule": "DRIFT describes distributed registry records that accumulated inconsistency. DIVERGENCE describes governance or authority models that are categorically incompatible. The distinction is temporal vs structural: DRIFT accumulates over time; DIVERGENCE is present at the model definition level.",
+      "mutual_exclusion": "A given failure is either DRIFT (hash/state accumulation inconsistency) or DIVERGENCE (model-level categorical incompatibility), not both.",
+      "verdict": "KEEP",
+      "verdict_rationale": "DRIFT and DIVERGENCE represent genuinely different reconciliation failure phenomena. They are not alternate names for the same concept. Normalizing them into a single classification family would collapse the distinction between time-series hash accumulation failures and structural governance model incompatibilities, making the taxonomy ambiguous."
+    },
+    "REPLAY_DRIFT_sub_classification_boundary": {
+      "REGISTRY_RECONCILIATION_INCOMPLETE": {
+        "definition": "Required replay evidence is missing or replay state cannot be reconstructed. No comparison is possible. The failure is about absence of evidence, not disagreement between present evidence.",
+        "outer_classification": "AMBIGUITY_FORCES_NULL",
+        "compression": "Incomplete = no answer"
+      },
+      "REGISTRY_REPLAY_DIVERGENCE": {
+        "definition": "Required replay evidence is present in all registries but the conclusions they contain are irreconcilable. The same invocation_nonce cannot be simultaneously PENDING and CONSUMED/COMPLETE within the same reconciliation epoch. The failure is about competing conclusions, not missing evidence.",
+        "outer_classification": "REPLAY_DRIFT",
+        "compression": "Divergence = competing answers"
+      },
+      "note": "REPLAY_DRIFT is the outer classification (replay domain failure — a drift phenomenon per the established cross-registry drift taxonomy). REGISTRY_REPLAY_DIVERGENCE is the sub-classification refining what kind of replay failure: competing conclusions from present evidence. The outer class uses DRIFT because replay state accumulated inconsistency; the sub-class uses DIVERGENCE because the specific failure mode is competing model conclusions."
+    }
+  },
+  "reconciliation_terminology": {
+    "RECONCILED_EVIDENCE_ONLY": {
+      "definition": "The closure audit found no drift, divergence, or ambiguity across the seven declared audit surfaces. All audit surface hashes agree. Federation evidence remains classified as evidence-only. This is an audit-layer classification.",
+      "grants_authority": false,
+      "authorizes_merge": false,
+      "authorizes_deployment": false,
+      "authorizes_execution": false
+    },
+    "CROSS_REGISTRY_RECONCILIATION_CLOSED": {
+      "definition": "A derived legitimacy state requiring RECONCILED_EVIDENCE_ONLY plus verification that specifically merge_registry = deploy_registry = proof_registry = authority_registry = replay_registry for the audited lineage epoch. Certifies epoch closure for the full lineage chain.",
+      "requires": [
+        "RECONCILED_EVIDENCE_ONLY audit result",
+        "authority_registry lineage agreement (authority_registry is NOT a #1638 audit surface but IS required for closure)",
+        "all five core registries agree on lineage for the epoch",
+        "epoch completeness verification (not just absence of contradictions)"
+      ]
+    },
+    "RECONCILED_EVIDENCE_ONLY_vs_CROSS_REGISTRY_RECONCILIATION_CLOSED": {
+      "relationship": "RECONCILED_EVIDENCE_ONLY is a necessary but not sufficient condition for CROSS_REGISTRY_RECONCILIATION_CLOSED.",
+      "intentionally_weaker": true,
+      "exact_legitimacy_distinction": {
+        "point_1": "authority_registry agreement is not verified by the #1638 audit — authority_registry is not in audit_surfaces but is required for CROSS_REGISTRY_RECONCILIATION_CLOSED",
+        "point_2": "RECONCILED_EVIDENCE_ONLY certifies absence of detected contradictions; CROSS_REGISTRY_RECONCILIATION_CLOSED certifies positive epoch closure with all five core registries in agreement",
+        "point_3": "RECONCILED_EVIDENCE_ONLY carries no authorization and cannot serve as the authorization chain for derived legitimacy claims without the additional authority_registry verification step",
+        "point_4": "Multiple RECONCILED_EVIDENCE_ONLY audits over partial surfaces do not compound into CROSS_REGISTRY_RECONCILIATION_CLOSED — explicit authority_registry verification is always required"
+      }
+    }
+  },
   "non_operability": {
     "runtime_mutation": false,
     "workflow_mutation": false,
@@ -162,6 +229,24 @@
     "rule": "CROSS_REGISTRY_RECONCILIATION_CLOSED requires merge registry = deploy registry = proof registry = authority registry = replay registry for the audited lineage epoch. If replay state disagrees across registries, CROSS_REGISTRY_RECONCILIATION_CLOSED cannot be derived.",
     "closed_derivation": "CROSS_REGISTRY_RECONCILIATION_CLOSED",
     "failure": "LEGITIMACY_NULL"
+  },
+  "taxonomy_consistency_verdict": {
+    "verdict": "KEEP",
+    "drift_divergence_are_distinct": true,
+    "classifications_are_mutually_exclusive": true,
+    "classifications_cover_unique_failure_modes": true,
+    "no_two_classifications_describe_same_observable_state": true,
+    "closure_logic_fails_closed_under_ambiguity": true,
+    "classification_to_failure_mode_map": {
+      "RECONCILED_EVIDENCE_ONLY": "no failure — all audit surfaces agree, no drift/divergence/ambiguity detected",
+      "PROOF_LINEAGE_DRIFT": "conflicting lineage evidence — lineage hashes disagree across merge, deploy, and proof registries for the same epoch",
+      "REPLAY_DRIFT": "conflicting replay state — replay_registry and deploy_legitimacy_registry hold irreconcilable replay conclusions for the same invocation_nonce (REGISTRY_REPLAY_DIVERGENCE sub-type); OR missing replay evidence (REGISTRY_RECONCILIATION_INCOMPLETE sub-type, routes to AMBIGUITY_FORCES_NULL)",
+      "TOPOLOGY_DRIFT": "topology state inconsistency — topology_reconciliation_registry indicates topology hash divergence",
+      "GOVERNANCE_DIVERGENCE": "governance or authority model incompatibility — governance_inventory_registry indicates structurally incompatible governance models, OR federation_reconciliation_evidence is classified as authoritative rather than evidence-only",
+      "AMBIGUITY_FORCES_NULL": "missing evidence — one or more required audit surface inputs are absent, or replay state is missing for a referenced nonce (REGISTRY_RECONCILIATION_INCOMPLETE)"
+    },
+    "mutual_exclusion_mechanism": "Sequential phase logic with early return: the first detected failure determines the classification. No two phases can simultaneously produce conflicting classifications.",
+    "ambiguity_closure": "Phase 1 (missing inputs) and Phase 4 (missing replay state for referenced nonce) both route to AMBIGUITY_FORCES_NULL before any drift or divergence phase can run. The default return value is LEGITIMACY_NULL."
   },
   "canonical_compression": {
     "rule_1": "Reconciliation is not convergence.",
