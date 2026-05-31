@@ -13,7 +13,8 @@
     "required_status_checks": [
       "merge-governance-check",
       "generate-preo-candidate",
-      "generate-sco-candidate"
+      "generate-sco-candidate",
+      "constitutional-integrity"
     ],
     "require_branch_up_to_date_before_merge": true,
     "restrict_direct_push_to_main": true,
@@ -89,21 +90,42 @@
       "workflow_name": "merge-governance-check",
       "job_name": "merge-governance-check",
       "emitted_check_run_name": "merge-governance-check",
-      "required_check": "merge-governance-check"
+      "required_check": "merge-governance-check",
+      "trigger": "pull_request"
     },
     {
       "workflow_file": ".github/workflows/preo-candidate.yml",
       "workflow_name": "preo-candidate",
       "job_name": "generate-preo-candidate",
       "emitted_check_run_name": "generate-preo-candidate",
-      "required_check": "generate-preo-candidate"
+      "required_check": "generate-preo-candidate",
+      "trigger": "pull_request"
     },
     {
       "workflow_file": ".github/workflows/sco-candidate.yml",
       "workflow_name": "sco-candidate",
       "job_name": "generate-sco-candidate",
       "emitted_check_run_name": "generate-sco-candidate",
-      "required_check": "generate-sco-candidate"
+      "required_check": "generate-sco-candidate",
+      "trigger": "pull_request"
+    },
+    {
+      "workflow_file": ".github/workflows/constitutional-integrity.yml",
+      "workflow_name": "constitutional-integrity",
+      "job_name": "constitutional-integrity",
+      "emitted_check_run_name": "constitutional-integrity",
+      "required_check": "constitutional-integrity",
+      "trigger": "pull_request"
+    }
+  ],
+  "non_required_checks": [
+    {
+      "workflow_file": ".github/workflows/merge-proof.yml",
+      "workflow_name": "merge-proof",
+      "job_name": "generate-merge-proof",
+      "trigger": "pull_request:closed",
+      "required_check": false,
+      "note": "POST-MERGE ONLY. This workflow runs after a PR is closed/merged. It must NOT be added to the required status checks list — doing so will block all PRs because the check never runs on an open PR (deadlock). If accidentally added to the ruleset, remove it immediately."
     }
   ],
   "governance_drift_policy": {
