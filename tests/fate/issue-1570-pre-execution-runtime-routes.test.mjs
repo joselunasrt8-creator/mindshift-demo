@@ -2,7 +2,7 @@
  * tests/fate/issue-1570-pre-execution-runtime-routes.test.mjs
  * Issue #1570 — FATE: fail-closed coverage for pre-execution runtime routes
  *
- * FATE tests proving each acceptance criterion:
+ * Verifies fail-closed guard structure is present for each acceptance criterion:
  *   AC1: Missing API key fails closed.
  *   AC2: Invalid or revoked continuity cannot create authority.
  *   AC3: Expired lineage returns NULL.
@@ -12,7 +12,8 @@
  *   AC7: No runtime expansion occurs.
  *
  * Scope: /session, /continuity, /authority pre-execution admission guards.
- * Evidence only — source code surface assertions; no runtime or registry mutation.
+ * Evidence only — source-level guard structure assertions; no runtime invocation,
+ * no registry mutation, no authority expansion.
  */
 
 import test from 'node:test'
@@ -56,20 +57,20 @@ test('AC1: authorized() requires X-API-Key header to match env.API_KEY exactly',
   )
 })
 
-test('AC1: mutation endpoint without authorization returns NULL with 403', () => {
+test('AC1: mutation endpoint without authorization — fail-closed guard structure present', () => {
   assert.match(
     source,
     /if \(mutationEndpoint && !authorized\(request, env\)\) return json\(\{ status: "NULL", reason: "unauthorized" \}, 403\)/,
-    'runtime must return NULL/unauthorized 403 when POST mutation endpoint receives no valid API key',
+    'fail-closed guard structure must be present: unauthorized mutation endpoint returns NULL/403',
   )
 })
 
-test('AC1: missing API key guard precedes all route-specific logic', () => {
+test('AC1: API key authorization guard appears before any route-specific handler in source', () => {
   const authGuardPos = source.indexOf('if (mutationEndpoint && !authorized(request, env))')
   const sessionRoutePos = source.indexOf('url.pathname === "/session" && request.method === "POST"')
   assert.ok(
     authGuardPos < sessionRoutePos,
-    'API key authorization guard must execute before /session route handler is reached',
+    'API key authorization guard must appear in source before /session route handler',
   )
 })
 
@@ -83,27 +84,27 @@ test('AC2: /authority fails closed when continuity_id is absent', () => {
   )
 })
 
-test('AC2: /authority fails closed when continuity lookup returns null', () => {
+test('AC2: /authority invalid_continuity guard structure present', () => {
   assert.match(
     authoritySlice,
     /if \(!continuity\) return rejectWithTelemetry[\s\S]*reason: "invalid_continuity"/,
-    '/authority must fail closed with invalid_continuity when activeContinuity returns null',
+    'fail-closed guard structure must be present: /authority returns NULL with invalid_continuity on null activeContinuity',
   )
 })
 
-test('AC2: /authority fails closed on continuity identity mismatch', () => {
+test('AC2: /authority continuity_identity_mismatch guard structure present', () => {
   assert.match(
     authoritySlice,
     /reason: "continuity_identity_mismatch"/,
-    '/authority must fail closed when the resolved continuity identity does not match the session identity',
+    'fail-closed guard structure must be present: /authority returns NULL on continuity identity mismatch',
   )
 })
 
-test('AC2: /authority fails closed when continuity identity is missing', () => {
+test('AC2: /authority missing_continuity_identity guard structure present', () => {
   assert.match(
     authoritySlice,
     /reason: "missing_continuity_identity"/,
-    '/authority must fail closed with missing_continuity_identity when no current continuity identity can be resolved',
+    'fail-closed guard structure must be present: /authority returns NULL when continuity identity cannot be resolved',
   )
 })
 
@@ -125,19 +126,19 @@ test('AC2: /continuity fails closed when parent continuity is invalid', () => {
 
 // ── AC3: Expired lineage returns NULL ────────────────────────────────────────
 
-test('AC3: /session fails closed on expired expiry field', () => {
+test('AC3: /session invalid_session_expiry guard structure present', () => {
   assert.match(
     sessionSlice,
     /isExpired\(expires_at\)[\s\S]*reason: "invalid_session_expiry"/,
-    '/session must return NULL with invalid_session_expiry when the supplied expiry is already expired',
+    'fail-closed guard structure must be present: /session returns NULL with invalid_session_expiry on expired input',
   )
 })
 
-test('AC3: /continuity fails closed on expired continuity expiry', () => {
+test('AC3: /continuity expired_continuity guard structure present', () => {
   assert.match(
     continuitySlice,
     /isExpired\(expires_at\)[\s\S]*reason: "expired_continuity"/,
-    '/continuity must return NULL with expired_continuity when the expiry timestamp is in the past',
+    'fail-closed guard structure must be present: /continuity returns NULL with expired_continuity on expired lineage',
   )
 })
 
