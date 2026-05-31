@@ -54,8 +54,9 @@
     "squash or rebase merge using stale review/check evidence"
   ],
   "enforcement_classification": {
-    "current": "advisory",
-    "target": "branch_protected_enforcement"
+    "current": "partial",
+    "target": "branch_protected_enforcement",
+    "partial_status_note": "Ruleset is active and 'Require a pull request' is enforced. 'Require status checks to pass' is enabled but no checks are wired in yet — GitHub check search returns no results until the workflow jobs run at least once on a PR targeting main. Required checks must be added manually by typing exact job names: merge-governance-check, generate-preo-candidate, generate-sco-candidate."
   },
   "enforcement_activation": {
     "activation_status": "ACTIVATION_RECORDED",
