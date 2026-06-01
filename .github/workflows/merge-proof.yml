@@ -48,6 +48,9 @@ jobs:
           AUTHORITY_ROLE_VALID="false"
           REVIEW_AUTHORITY_RESULT="false"
           FAILURE_REASONS="[]"
+          CHANGED_P3_FILES_JSON='[]'
+          REVIEWER_SCOPE_PATHS_JSON='[]'
+          SCOPE_COVERAGE_VALID="true"
 
           # A3: require APPROVED review where commit_id == current head SHA (object identity)
           APPROVED_ON_HEAD=$(jq -c \
@@ -64,13 +67,56 @@ jobs:
             if [ "$RISK_CLASS" = "P3" ]; then
               AUTHORITY_ROLE_REQUIRED="sovereignty_review"
               HAS_AUTHORITY=$(jq --arg reviewer "$REVIEWER_LOGIN" \
-                '(.authority_roles.sovereignty_review // []) | map(select(. == $reviewer)) | length > 0' \
+                '(.authority_roles.sovereignty_review // []) | map(select(.login == $reviewer)) | length > 0' \
                 governance/merge-legitimacy/MERGE_ACTOR_REGISTRY.json)
               if [ "$HAS_AUTHORITY" = "true" ]; then
-                AUTHORITY_ROLE_VALID="true"
-                REVIEW_AUTHORITY_RESULT="true"
-                REVIEW_STATUS="APPROVED"
+                # AC5: path-scope coverage — every changed P3 file must match a reviewer scope_path
+                REVIEWER_SCOPE_PATHS_JSON=$(jq -c --arg reviewer "$REVIEWER_LOGIN" \
+                  '(.authority_roles.sovereignty_review // []) | map(select(.login == $reviewer)) | .[0].scope_paths // []' \
+                  governance/merge-legitimacy/MERGE_ACTOR_REGISTRY.json)
+
+                CHANGED_P3_FILES_ARR=()
+                while IFS= read -r chfile; do
+                  while IFS= read -r p3pat; do
+                    if [[ "$chfile" == $p3pat ]]; then
+                      CHANGED_P3_FILES_ARR+=("$chfile")
+                      break
+                    fi
+                  done < <(jq -r '.rules[] | select(.risk == "P3") | .patterns[]' \
+                    governance/merge-legitimacy/RISK_CLASSIFICATION_RULES.json)
+                done < changed_files_proof.txt
+
+                if [ "${#CHANGED_P3_FILES_ARR[@]}" -gt 0 ]; then
+                  CHANGED_P3_FILES_JSON=$(printf '%s\n' "${CHANGED_P3_FILES_ARR[@]}" | jq -R . | jq -s .)
+                fi
+
+                SCOPE_COVERAGE_VALID="true"
+                if [ "${#CHANGED_P3_FILES_ARR[@]}" -gt 0 ]; then
+                  for p3file in "${CHANGED_P3_FILES_ARR[@]}"; do
+                    COVERED="false"
+                    while IFS= read -r spath; do
+                      if [[ "$p3file" == $spath ]]; then
+                        COVERED="true"
+                        break
+                      fi
+                    done < <(echo "$REVIEWER_SCOPE_PATHS_JSON" | jq -r '.[]')
+                    if [ "$COVERED" = "false" ]; then
+                      SCOPE_COVERAGE_VALID="false"
+                      break
+                    fi
+                  done
+                fi
+
+                if [ "$SCOPE_COVERAGE_VALID" = "true" ]; then
+                  AUTHORITY_ROLE_VALID="true"
+                  REVIEW_AUTHORITY_RESULT="true"
+                  REVIEW_STATUS="APPROVED"
+                else
+                  FAILURE_REASONS='["p3_files_outside_reviewer_scope"]'
+                  REVIEW_STATUS="LEGITIMACY_NULL"
+                fi
               else
+                SCOPE_COVERAGE_VALID="false"
                 FAILURE_REASONS='["reviewer_not_in_sovereignty_review_for_p3"]'
                 REVIEW_STATUS="LEGITIMACY_NULL"
               fi
@@ -118,7 +164,8 @@ jobs:
             --arg reviewed_head_sha "$REVIEWED_HEAD_SHA" \
             --arg risk_class "$RISK_CLASS" \
             --arg review_status "$REVIEW_STATUS" \
-            '{pr_number: $pr_number, head_sha: $head_sha, reviewer: $reviewer, reviewed_head_sha: $reviewed_head_sha, risk_class: $risk_class, review_status: $review_status}')
+            --argjson scope_coverage_valid "$([ "$SCOPE_COVERAGE_VALID" = "true" ] && echo "true" || echo "false")" \
+            '{pr_number: $pr_number, head_sha: $head_sha, reviewer: $reviewer, reviewed_head_sha: $reviewed_head_sha, risk_class: $risk_class, review_status: $review_status, scope_coverage_valid: $scope_coverage_valid}')
           CANONICAL_INPUT_HASH=$(echo "$CANONICAL_INPUTS" | sha256sum | cut -d' ' -f1)
 
           jq -n \
@@ -137,6 +184,9 @@ jobs:
             --arg review_status "$REVIEW_STATUS" \
             --arg canonical_input_hash "$CANONICAL_INPUT_HASH" \
             --argjson failure_reasons "$FAILURE_REASONS" \
+            --argjson changed_p3_files "$CHANGED_P3_FILES_JSON" \
+            --argjson reviewer_scope_paths "$REVIEWER_SCOPE_PATHS_JSON" \
+            --argjson scope_coverage_valid "$([ "$SCOPE_COVERAGE_VALID" = "true" ] && echo "true" || echo "false")" \
             '{
               version: $version,
               pr_number: $pr_number,
@@ -152,7 +202,10 @@ jobs:
               review_authority_result: $review_authority_result,
               review_status: $review_status,
               canonical_input_hash: $canonical_input_hash,
-              failure_reasons: $failure_reasons
+              failure_reasons: $failure_reasons,
+              changed_p3_files: $changed_p3_files,
+              reviewer_scope_paths: $reviewer_scope_paths,
+              scope_coverage_valid: $scope_coverage_valid
             }' > review_legitimacy_result.json
 
           LEGITIMACY_RESULT_HASH=$(sha256sum review_legitimacy_result.json | cut -d' ' -f1)
@@ -163,6 +216,62 @@ jobs:
           echo "RISK_CLASS=$RISK_CLASS" >> "$GITHUB_ENV"
           echo "LEGITIMACY_RESULT_HASH=$LEGITIMACY_RESULT_HASH" >> "$GITHUB_ENV"
 
+      - name: Verify exact-object admission
+        run: |
+          set -euo pipefail
+
+          REVIEWED_HEAD_SHA="$(jq -r .reviewed_head_sha review_legitimacy_result.json)"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          MERGE_COMMIT_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          # Detect merge method from parent count; fall back to squash_or_rebase on error
+          PARENT_COUNT="$(git cat-file -p "$MERGE_COMMIT_SHA" 2>/dev/null | grep -c '^parent' || echo '1')"
+          if [ "$PARENT_COUNT" -gt 1 ]; then
+            MERGE_METHOD="merge"
+          else
+            MERGE_METHOD="squash_or_rebase"
+          fi
+
+          export REVIEWED_HEAD_SHA HEAD_SHA MERGE_COMMIT_SHA PR_NUMBER REPO MERGE_METHOD
+
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+          import { checkExactObjectAdmission } from './runtime/merge-object-hash.mjs';
+
+          const changedFiles = readFileSync('changed_files_proof.txt', 'utf8').split('\n').filter(Boolean);
+
+          const result = checkExactObjectAdmission({
+            pr_number:          Number(process.env.PR_NUMBER),
+            repo:               process.env.REPO,
+            reviewed_head_sha:  process.env.REVIEWED_HEAD_SHA,
+            head_sha:           process.env.HEAD_SHA,
+            merge_commit_sha:   process.env.MERGE_COMMIT_SHA,
+            changed_files:      changedFiles,
+            review_status:      process.env.REVIEW_STATUS,
+            risk_class:         process.env.RISK_CLASS,
+            merge_method:       process.env.MERGE_METHOD,
+          });
+
+          writeFileSync('EXACT_OBJECT_ADMISSION.json', JSON.stringify(result, null, 2));
+
+          const githubEnv = process.env.GITHUB_ENV;
+          appendFileSync(githubEnv, `MERGE_LEGITIMACY_STATUS=${result.merge_legitimacy_status}\n`);
+          appendFileSync(githubEnv, `REVIEWED_OBJECT_HASH=${result.reviewed_object_hash ?? ''}\n`);
+          appendFileSync(githubEnv, `APPROVED_OBJECT_HASH=${result.approved_object_hash ?? ''}\n`);
+          appendFileSync(githubEnv, `MERGED_OBJECT_HASH=${result.merged_object_hash ?? ''}\n`);
+
+          if (result.merge_legitimacy_status === 'LEGITIMACY_NULL') {
+            console.error('NULL — exact-object admission failed: ' + result.failure_reason);
+            console.error('reviewed_head_sha=' + result.reviewed_head_sha);
+            console.error('head_sha (current)=' + result.head_sha);
+            process.exit(1);
+          }
+
+          console.log('exact_object_admission_status=' + result.merge_legitimacy_status);
+          NODE
+
       - name: Generate merge proof
         run: |
           set -euo pipefail
@@ -171,6 +280,27 @@ jobs:
           if [ "$REVIEW_STATUS" != "APPROVED" ] && [ "$REVIEW_STATUS" != "OWNER_SELF_CERTIFIED" ]; then
             echo "NULL — reviewer legitimacy is $REVIEW_STATUS; proof cannot be emitted"
             jq -c .failure_reasons review_legitimacy_result.json
+            exit 1
+          fi
+
+          # Fail closed (AC7): scope_coverage_valid must be true for P3 PRs
+          # For non-P3 PRs scope_coverage_valid is vacuously true; for OWNER_SELF_CERTIFIED
+          # the scope check is bypassed and SCOPE_COVERAGE_VALID remains true.
+          PROOF_SCOPE_COVERAGE=$(jq -r .scope_coverage_valid review_legitimacy_result.json)
+          if [ "$PROOF_SCOPE_COVERAGE" = "false" ]; then
+            echo "NULL — scope_coverage_valid is false; P3 files outside reviewer scope"
+            jq -c '{changed_p3_files: .changed_p3_files, reviewer_scope_paths: .reviewer_scope_paths}' review_legitimacy_result.json
+            exit 1
+          fi
+
+          # Fail closed: only MERGE_LEGITIMACY_VALID may proceed to canonical proof.
+          # LEGITIMACY_NULL → mismatch; caught in the previous step and here for safety.
+          # UNKNOWN → insufficient visibility to prove reviewed == merged object;
+          #   EXACT_OBJECT_ADMISSION.json is emitted as evidence only; no proof.
+          if [ "$MERGE_LEGITIMACY_STATUS" != "MERGE_LEGITIMACY_VALID" ]; then
+            echo "NULL — exact-object admission is $MERGE_LEGITIMACY_STATUS; canonical merge proof cannot be emitted"
+            echo "EXACT_OBJECT_ADMISSION.json written as evidence artifact"
+            jq -c . EXACT_OBJECT_ADMISSION.json
             exit 1
           fi
 
@@ -198,6 +328,10 @@ jobs:
             --arg current_head_sha "$HEAD_SHA" \
             --arg merged_by "${MERGED_BY:-unknown}" \
             --arg merged_at "${MERGED_AT:-}" \
+            --arg reviewed_object_hash "${REVIEWED_OBJECT_HASH:-}" \
+            --arg approved_object_hash "${APPROVED_OBJECT_HASH:-}" \
+            --arg merged_object_hash "${MERGED_OBJECT_HASH:-}" \
+            --arg merge_legitimacy_status "${MERGE_LEGITIMACY_STATUS:-UNKNOWN}" \
             '{
               pr_number: $pr_number,
               merge_commit_sha: $merge_commit_sha,
@@ -210,7 +344,11 @@ jobs:
               reviewed_head_sha: $reviewed_head_sha,
               current_head_sha: $current_head_sha,
               merged_by: $merged_by,
-              merged_at: $merged_at
+              merged_at: $merged_at,
+              reviewed_object_hash: $reviewed_object_hash,
+              approved_object_hash: $approved_object_hash,
+              merged_object_hash: $merged_object_hash,
+              merge_legitimacy_status: $merge_legitimacy_status
             }' > CANONICAL_PAYLOAD.json
 
           CANONICAL_HASH=$(sha256sum CANONICAL_PAYLOAD.json | cut -d' ' -f1)
@@ -324,6 +462,7 @@ jobs:
           exit 1
 
       - name: Upload merge proof artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: MERGE_PROOF
@@ -331,6 +470,8 @@ jobs:
             MERGE_PROOF.json
             CANONICAL_PAYLOAD.json
             review_legitimacy_result.json
+            EXACT_OBJECT_ADMISSION.json
+          if-no-files-found: ignore
 
       - name: Emit merge proof summary
         run: |
@@ -339,7 +480,14 @@ jobs:
             echo "### Merge Proof Generated"
             echo ""
             echo "proof_hash: $PROOF_HASH"
+            echo "merge_legitimacy_status: ${MERGE_LEGITIMACY_STATUS:-UNKNOWN}"
             echo ""
+            echo "#### Exact-Object Admission"
+            echo '```json'
+            cat EXACT_OBJECT_ADMISSION.json
+            echo '```'
+            echo ""
+            echo "#### MERGE_PROOF.json"
             echo '```json'
             cat MERGE_PROOF.json
             echo '```'
