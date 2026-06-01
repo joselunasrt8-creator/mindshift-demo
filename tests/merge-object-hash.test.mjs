@@ -226,3 +226,30 @@ test('null merge_method falls back to unknown in merged hash', () => {
   assert.equal(a.merge_legitimacy_status, 'MERGE_LEGITIMACY_VALID');
   assert.equal(a.merged_object_hash, b.merged_object_hash);
 });
+
+// ── Proof gate semantics (visibility ≠ authority) ────────────────────────────
+// Only MERGE_LEGITIMACY_VALID may proceed to canonical merge proof.
+// UNKNOWN and LEGITIMACY_NULL must not be treated as proof-valid.
+
+test('proof gate: only MERGE_LEGITIMACY_VALID is proof-eligible', () => {
+  const PROOF_ELIGIBLE = new Set(['MERGE_LEGITIMACY_VALID']);
+  const valid   = checkExactObjectAdmission(BASE);
+  const nullRes = checkExactObjectAdmission({ ...BASE, reviewed_head_sha: SHA_STALE });
+  const unknown = checkExactObjectAdmission({ ...BASE, reviewed_head_sha: '' });
+
+  assert.ok(PROOF_ELIGIBLE.has(valid.merge_legitimacy_status),   'MERGE_LEGITIMACY_VALID is proof-eligible');
+  assert.ok(!PROOF_ELIGIBLE.has(nullRes.merge_legitimacy_status),'LEGITIMACY_NULL is not proof-eligible');
+  assert.ok(!PROOF_ELIGIBLE.has(unknown.merge_legitimacy_status),'UNKNOWN is not proof-eligible');
+});
+
+test('proof gate: UNKNOWN must not equal MERGE_LEGITIMACY_VALID', () => {
+  const result = checkExactObjectAdmission({ ...BASE, reviewed_head_sha: '' });
+  assert.notEqual(result.merge_legitimacy_status, 'MERGE_LEGITIMACY_VALID');
+  assert.equal(result.merge_legitimacy_status, 'UNKNOWN');
+});
+
+test('proof gate: LEGITIMACY_NULL must not equal MERGE_LEGITIMACY_VALID', () => {
+  const result = checkExactObjectAdmission({ ...BASE, reviewed_head_sha: SHA_STALE });
+  assert.notEqual(result.merge_legitimacy_status, 'MERGE_LEGITIMACY_VALID');
+  assert.equal(result.merge_legitimacy_status, 'LEGITIMACY_NULL');
+});

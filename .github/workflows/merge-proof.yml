@@ -293,10 +293,13 @@ jobs:
             exit 1
           fi
 
-          # Fail closed: exact-object admission must be MERGE_LEGITIMACY_VALID or UNKNOWN
-          # LEGITIMACY_NULL was already caught in the previous step; guard here for safety
-          if [ "$MERGE_LEGITIMACY_STATUS" = "LEGITIMACY_NULL" ]; then
-            echo "NULL — exact-object admission is LEGITIMACY_NULL; proof cannot be emitted"
+          # Fail closed: only MERGE_LEGITIMACY_VALID may proceed to canonical proof.
+          # LEGITIMACY_NULL → mismatch; caught in the previous step and here for safety.
+          # UNKNOWN → insufficient visibility to prove reviewed == merged object;
+          #   EXACT_OBJECT_ADMISSION.json is emitted as evidence only; no proof.
+          if [ "$MERGE_LEGITIMACY_STATUS" != "MERGE_LEGITIMACY_VALID" ]; then
+            echo "NULL — exact-object admission is $MERGE_LEGITIMACY_STATUS; canonical merge proof cannot be emitted"
+            echo "EXACT_OBJECT_ADMISSION.json written as evidence artifact"
             jq -c . EXACT_OBJECT_ADMISSION.json
             exit 1
           fi
@@ -459,6 +462,7 @@ jobs:
           exit 1
 
       - name: Upload merge proof artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: MERGE_PROOF
@@ -467,6 +471,7 @@ jobs:
             CANONICAL_PAYLOAD.json
             review_legitimacy_result.json
             EXACT_OBJECT_ADMISSION.json
+          if-no-files-found: ignore
 
       - name: Emit merge proof summary
         run: |
