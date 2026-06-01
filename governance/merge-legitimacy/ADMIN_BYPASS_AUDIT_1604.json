@@ -1,0 +1,185 @@
+{
+  "artifact_id": "ADMIN_BYPASS_AUDIT_1604",
+  "version": "1.0",
+  "issue_reference": "#1604",
+  "audit_date": "2026-06-01",
+  "auditor": "claude-sonnet-4-6",
+  "session_branch": "claude/admin-bypass-audit-1604-iidZT",
+  "source_of_truth": "live_github_runtime + live_api + policy_artifacts (corroboration only)",
+
+  "question": "Can administrators bypass the verified PR admission path?",
+
+  "scope": {
+    "in_scope": [
+      "admin_override_verification",
+      "repository_admin_bypass",
+      "ruleset_exception_authority"
+    ],
+    "out_of_scope": [
+      "workflow admission (addressed by #1687)",
+      "proof registry bypass (addressed by #1687)",
+      "merge-proof append path (addressed by #1687)"
+    ]
+  },
+
+  "directly_observed": [
+    {
+      "item": "main branch protected: true",
+      "source": "mcp__github__list_branches (live GitHub API — prior sessions)",
+      "evidence_class": "DIRECT_LIVE_OBSERVATION",
+      "determination": "CONFIRMED"
+    },
+    {
+      "item": "GH013 rejection of github-actions[bot] direct push",
+      "source": "merge-proof.yml fail-fast branch + PR #1678 commit body (live workflow runtime)",
+      "evidence_class": "DIRECT_LIVE_OBSERVATION",
+      "determination": "CONFIRMED — PR requirement enforced at GitHub infrastructure layer for at least one actor class"
+    },
+    {
+      "item": "50/50 most recent commits entered main via PR pathway",
+      "source": "mcp__github__list_commits (live, 50 most recent on main)",
+      "evidence_class": "DIRECT_LIVE_OBSERVATION",
+      "determination": "CONFIRMED — all squash-merged with (#PR_NUMBER) suffix; committer=web-flow; no raw direct push pattern"
+    },
+    {
+      "item": "0 direct push commits in observable history",
+      "source": "mcp__github__list_commits (live — filtered analysis)",
+      "evidence_class": "DIRECT_LIVE_OBSERVATION",
+      "determination": "CONFIRMED — no commit in observable history entered main via direct push path"
+    },
+    {
+      "item": "Sole collaborator: joselunasrt8-creator (role: admin)",
+      "source": "mcp__github__list_repository_collaborators (live GitHub API — this session)",
+      "evidence_class": "DIRECT_LIVE_OBSERVATION",
+      "determination": "CONFIRMED — repository has exactly one collaborator with admin authority"
+    },
+    {
+      "item": "HTTP 403 on admin direct push probe to main",
+      "source": "git push origin main from admin session context (runtime probe — this session)",
+      "evidence_class": "RUNTIME_OBSERVATION",
+      "observed_error": "error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403 / send-pack: unexpected disconnect while reading sideband packet / fatal: the remote end hung up unexpectedly",
+      "ambiguity": "Source of 403 is ambiguous: could originate from GitHub ruleset enforcement (admin bypass disabled) or from the session proxy layer before reaching GitHub. Cannot distinguish without a direct GitHub API call confirming rejection reason.",
+      "determination": "RUNTIME OBSERVED — direct push rejected at infrastructure layer; source unresolved (proxy vs GitHub ruleset)"
+    }
+  ],
+
+  "not_directly_observed": [
+    {
+      "item": "Ruleset 16177949 bypass_actors list (current live state)",
+      "gap": "mcp__github__get_ruleset tool not available; last inferred state was bypass_actors:[] from PR #1678 commit artifact"
+    },
+    {
+      "item": "Admin bypass configuration in GitHub Ruleset 16177949",
+      "gap": "mcp__github__get_branch_protection tool not available; policy states allow_admin_bypass:false but this is a governance document, not a live GitHub setting read"
+    },
+    {
+      "item": "Definitive source of HTTP 403 (GitHub vs proxy)",
+      "gap": "Push goes through local proxy at 127.0.0.1:40695; cannot confirm 403 originated from GitHub branch protection enforcement vs proxy-layer restriction"
+    }
+  ],
+
+  "ruleset_visibility": {
+    "ruleset_id": "16177949",
+    "status": "PARTIAL",
+    "id_source": "INFERRED_FROM_COMMIT_ARTIFACT (PR #1678 body references PATCH /repos/.../rulesets/16177949)",
+    "direct_inspection_performed": false,
+    "tool_gap": "mcp__github__get_ruleset not available in this session",
+    "known_active_rules": {
+      "require_pull_request": "ACTIVE — confirmed by GH013 live enforcement",
+      "restrict_direct_push": "ACTIVE — confirmed by GH013 live enforcement",
+      "restrict_force_pushes": "LIKELY_ACTIVE — same ruleset, policy artifact; no live force-push rejection observed",
+      "required_status_checks": "PARTIAL — enabled; specific job names not confirmed wired via live ruleset GET",
+      "bypass_actors": "UNVERIFIED_LIVE — inferred empty at PR #1678; current state unknown without live GET",
+      "admin_bypass": "UNVERIFIED_LIVE — policy intent: disallow; live GitHub setting not read"
+    }
+  },
+
+  "admin_bypass_state": {
+    "status": "UNVERIFIED_LIVE",
+    "policy_intent": "disallow",
+    "policy_source": "governance/runtime/BRANCH_PROTECTION_POLICY.json — admin_bypass_policy.allow_admin_bypass: false",
+    "policy_rationale_stated": "Admin bypass creates alternate mutation paths outside governance visibility",
+    "behavioral_evidence": "0 direct push commits in observable main history; all contributions from joselunasrt8-creator entered via PR pathway",
+    "runtime_evidence": "HTTP 403 on direct push probe from admin session context — rejected at infrastructure layer; source ambiguous (proxy vs GitHub)",
+    "live_api_confirmation": false,
+    "determination": "Cannot confirm GOVERNED without live ruleset GET. Weight of evidence (behavioral + runtime + policy) is consistent with admin bypass disabled, but source of HTTP 403 is ambiguous. Admin override capability remains UNVERIFIED via live API."
+  },
+
+  "key_distinction": {
+    "statement": "Administrator authority ≠ Administrator bypass authority",
+    "explanation": "joselunasrt8-creator holds admin authority over the repository (confirmed: sole collaborator, role:admin). Whether GitHub Ruleset 16177949 grants them a bypass exception to the PR requirement is a separate configuration question. Repository ownership does not automatically confer ruleset bypass authority — bypass must be explicitly configured as a bypass_actor entry in the ruleset.",
+    "current_state": "Bypass actor configuration for joselunasrt8-creator not observed in ruleset. Behavioral evidence (0 direct push commits) is consistent with admin bypass being disabled. HTTP 403 on push probe is consistent with bypass disabled but source unresolved."
+  },
+
+  "classification": {
+    "admin_override": "BREAK_GLASS / SUBSTANTIALLY_CONSTRAINED",
+    "prior_classification": "BREAK_GLASS / UNVERIFIED",
+    "advancement_basis": [
+      "HTTP 403 on admin direct push probe (new runtime evidence — source ambiguous)",
+      "0 direct push commits in observable history (behavioral consistency)",
+      "Policy intent confirmed: allow_admin_bypass: false",
+      "Sole admin (joselunasrt8-creator) shows 100% PR-pathway contribution pattern"
+    ],
+    "ceiling_constraint": "Cannot advance to GOVERNED without live ruleset GET confirming admin bypass disabled in Ruleset 16177949",
+    "classification_case": "Case C — Insufficient visibility for GOVERNED determination; substantial evidence constraining BREAK_GLASS toward lower risk"
+  },
+
+  "evidence_tier_summary": {
+    "tier_1_ruleset_visibility": {
+      "status": "PARTIAL",
+      "highest_value_source_attempted": "GET ruleset 16177949",
+      "outcome": "Tool not available (mcp__github__get_ruleset absent from this session)",
+      "fallback_evidence": "INFERRED from commit artifacts + POLICY_ARTIFACT"
+    },
+    "tier_2_runtime_verification": {
+      "status": "OBSERVED_AMBIGUOUS",
+      "test_performed": "admin direct push probe (git push origin main with probe commit)",
+      "result": "HTTP 403 — rejected at infrastructure layer",
+      "ambiguity": "Source unresolved: proxy layer (127.0.0.1:40695) vs GitHub ruleset enforcement",
+      "prior_runtime_signal": "GH013 for github-actions[bot] — confirmed GitHub-layer enforcement (prior session)"
+    }
+  },
+
+  "remaining_closure_gaps": [
+    {
+      "gap_id": "admin_override_verification",
+      "status": "OPEN",
+      "description": "Cannot confirm or rule out owner/admin direct push capability without live ruleset GET of Ruleset 16177949",
+      "resolution_path": "Direct GET /repos/joselunasrt8-creator/mindshift-demo/rulesets/16177949 — inspect bypass_actors list and admin_bypass flag; OR observe live admin direct push rejection with confirmed GitHub error code (GH013-equivalent)",
+      "current_evidence_ceiling": "SUBSTANTIALLY_CONSTRAINED — behavioral + runtime + policy all consistent with bypass disabled; live API confirmation absent"
+    },
+    {
+      "gap_id": "http_403_source_resolution",
+      "status": "OPEN",
+      "description": "HTTP 403 observed on admin push probe; source is ambiguous (proxy vs GitHub)",
+      "resolution_path": "Push from a session with direct GitHub API access (not through proxy) and observe error message; GH013 would confirm GitHub-layer enforcement; a different error would indicate proxy layer"
+    }
+  ],
+
+  "closure_condition": "Direct verification of administrator bypass behavior via: (1) live ruleset GET confirming bypass_actors does not include joselunasrt8-creator and admin_bypass is disabled, OR (2) observed GH013-equivalent rejection of admin direct push attempt with confirmed GitHub-layer source",
+
+  "impact_on_1604": {
+    "admin_override_gap": "ADVANCED from UNVERIFIED to SUBSTANTIALLY_CONSTRAINED — new runtime evidence (HTTP 403) and behavioral evidence (0 direct push commits) are consistent with admin bypass disabled; live confirmation absent",
+    "1604_closure_eligibility": "ENFORCEMENT_CLOSURE_NOT_YET_ELIGIBLE — admin_override_verification remains OPEN; required status checks wiring not confirmed; CI-001 through CI-005 and Phase 1 (#1601) dependency unresolved",
+    "highest_value_unresolved_pathway": "admin_override_verification — remains the narrowest remaining gap in the merge-admission audit"
+  },
+
+  "audit_metadata": {
+    "tools_used": [
+      "mcp__github__list_repository_collaborators (live — this session)",
+      "mcp__github__issue_read (live — this session, #1604)",
+      "mcp__github__list_branches (live — prior sessions)",
+      "mcp__github__list_commits (live — prior sessions)",
+      "git push origin main (runtime probe — this session)",
+      "Read (local — DIRECT_PUSH_AUDIT_REPORT_1604.json, BYPASS_ACTOR_ADMISSION_PATH_ANALYSIS.json, BRANCH_PROTECTION_POLICY.json, PHASE2_CLOSURE_MATRIX.md)"
+    ],
+    "tools_not_available": [
+      "mcp__github__get_ruleset — would enable direct bypass_actors and admin_bypass inspection",
+      "mcp__github__get_branch_protection — would enable admin bypass setting inspection"
+    ],
+    "prior_sessions": [
+      "claude/phase2-1604-direct-push-audit-SIsgE (DIRECT_PUSH_AUDIT_REPORT_1604.json v1-v3)",
+      "claude/bypass-actor-admission-path-NDpjW (BYPASS_ACTOR_ADMISSION_PATH_ANALYSIS.json v1.0, DIRECT_PUSH_AUDIT_REPORT_1604.json v4)"
+    ]
+  }
+}
