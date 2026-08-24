@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf
 const inventory = JSON.parse(readFileSync(new URL('../../runtime/unauthorized_mutation_surface_inventory.json', import.meta.url), 'utf8'))
 const audit = JSON.parse(readFileSync(new URL('../../runtime/unauthorized_mutation_path_closure_audit.json', import.meta.url), 'utf8'))
 const bypass = JSON.parse(readFileSync(new URL('../../runtime/bypass_paths.json', import.meta.url), 'utf8'))
-const executionSurfaces = JSON.parse(readFileSync(new URL('../../runtime/execution_surfaces.json', import.meta.url), 'utf8'))
+const executionSurfaces = JSON.parse(readFileSync(new URL('../../EXECUTION_SURFACES.json', import.meta.url), 'utf8'))
 const rootAuthority = JSON.parse(readFileSync(new URL('../../runtime/sovereignty/root_authority_inventory.json', import.meta.url), 'utf8'))
 
 const hash = (value) => sha256Hex(typeof value === 'string' ? value : canonicalize(value))

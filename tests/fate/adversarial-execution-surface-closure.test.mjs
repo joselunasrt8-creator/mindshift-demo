@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const canonicalChain = ['/session','/continuity','/authority','/compile','/validate','/execute','/proof']
-const executionSurfaces = JSON.parse(readFileSync(new URL('../../runtime/execution_surfaces.json', import.meta.url), 'utf8'))
+const executionSurfaces = JSON.parse(readFileSync(new URL('../../EXECUTION_SURFACES.json', import.meta.url), 'utf8'))
 const bypassPaths = JSON.parse(readFileSync(new URL('../../runtime/bypass_paths.json', import.meta.url), 'utf8'))
 const inventory = JSON.parse(readFileSync(new URL('../../runtime/unauthorized_mutation_surface_inventory.json', import.meta.url), 'utf8'))
 

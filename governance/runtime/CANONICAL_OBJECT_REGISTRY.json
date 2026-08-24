@@ -20,7 +20,8 @@
     "validator_must_read_single_registry": "governance/runtime/CANONICAL_OBJECT_REGISTRY.json",
     "unknown_object_response": "NULL",
     "unknown_surface_response": "UNDECLARED_MUTATION_SURFACE -> NULL",
-    "archive_authority": "ARCHIVED objects are non-authoritative and non-executable"
+    "archive_authority": "ARCHIVED objects are non-authoritative and non-executable",
+    "execution_surfaces_authority": "EXECUTION_SURFACES.json"
   },
   "artifact_inventory": [
     {
@@ -34,33 +35,36 @@
       "path": "governance/runtime/EXECUTION_SURFACES.json",
       "class": "DERIVED",
       "domain": "execution_surfaces",
-      "status": "active",
-      "derives_from": "governance/runtime/CANONICAL_OBJECT_REGISTRY.json"
+      "status": "non_operative_projection",
+      "derives_from": "EXECUTION_SURFACES.json"
     },
     {
       "path": "runtime/surfaces/EXECUTION_SURFACES.json",
       "class": "DERIVED",
       "domain": "execution_surfaces",
-      "status": "active",
-      "derives_from": "governance/runtime/CANONICAL_OBJECT_REGISTRY.json"
+      "status": "non_operative_projection",
+      "derives_from": "EXECUTION_SURFACES.json"
     },
     {
       "path": "runtime/execution_surfaces.json",
-      "class": "INFORMATIONAL",
+      "class": "DERIVED",
       "domain": "execution_surfaces",
-      "status": "legacy_duplicate"
+      "status": "non_operative_projection",
+      "derives_from": "EXECUTION_SURFACES.json"
     },
     {
       "path": "governance/execution_surfaces.json",
-      "class": "INFORMATIONAL",
+      "class": "DERIVED",
       "domain": "execution_surfaces",
-      "status": "legacy_duplicate"
+      "status": "non_operative_projection",
+      "derives_from": "EXECUTION_SURFACES.json"
     },
     {
       "path": "EXECUTION_SURFACES.json",
-      "class": "INFORMATIONAL",
+      "class": "AUTHORITATIVE",
       "domain": "execution_surfaces",
-      "status": "legacy_duplicate"
+      "status": "active",
+      "notes": "ROOT_CANONICAL execution-surface authority selected by issue #2303"
     },
     {
       "path": "governance/runtime/BYPASS_PATHS.json",
@@ -134,7 +138,8 @@
       "path": "governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json",
       "class": "ARCHIVED",
       "domain": "bundle",
-      "status": "generated_bundle"
+      "status": "generated_bundle",
+      "derives_from": "EXECUTION_SURFACES.json"
     },
     {
       "path": "governance/mindshift-validation-bundle/governance/BYPASS_PATHS.json",
@@ -191,7 +196,7 @@
   "archive_only_objects_still_referenced_by_runtime": [
     {
       "path": "governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json",
-      "risk": "bundle-shadowing of active execution surface inventory"
+      "risk": "non-operative generated projection; enforcement references prohibited by issue-2303 validator"
     },
     {
       "path": "governance/mindshift-validation-bundle/governance/BYPASS_PATHS.json",
@@ -199,7 +204,6 @@
     }
   ],
   "elimination_candidates": [
-    "EXECUTION_SURFACES.json",
     "runtime/execution_surfaces.json",
     "governance/execution_surfaces.json",
     "BYPASS_PATHS.json",

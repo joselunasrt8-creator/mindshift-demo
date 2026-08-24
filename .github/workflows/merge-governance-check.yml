@@ -943,6 +943,9 @@ jobs:
           assert.deepEqual(missing, [], `required branch protection checks must be emitted workflow jobs: ${missing.join(', ')}`);
           NODE
 
+      - name: Enforce canonical execution-surface authority
+        run: node scripts/validate-execution-surfaces-authority.mjs
+
       - name: Emit topology reconciliation merge signal
         run: |
           set -euo pipefail
@@ -953,7 +956,7 @@ jobs:
 
           const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
           const runtimeGraph = readJson('runtime/topology/runtime_graph.json');
-          const executionSurfaces = readJson('runtime/surfaces/EXECUTION_SURFACES.json');
+          const executionSurfaces = readJson('EXECUTION_SURFACES.json');
           const observabilitySurfaces = readJson('runtime/surfaces/OBSERVABILITY_SURFACES.json');
           const schemaSourceMap = readJson('runtime/topology/schema_source_map.json');
           const mergeGovernance = readJson('governance/runtime/MERGE_GOVERNANCE_RULES.json');

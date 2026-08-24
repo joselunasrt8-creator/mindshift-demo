@@ -80,10 +80,10 @@ Interpretation rule: a repository-text marker is stronger than filename similari
 | `runtime/maps/EXECUTION_FLOW.md` | Runtime map | Execution flow map | CURRENT_CANONICAL | Canonical runtime flow map; no modification recommended in this issue. |
 | `runtime/maps/CONTINUITY_LINEAGE_MAP.md` | Runtime map | Continuity lineage map | CURRENT_CANONICAL | Canonical lineage map; supports validation phase clarity. |
 | `runtime/maps/RECONCILIATION_GRAPH.md` | Runtime map | Reconciliation graph | CURRENT_CANONICAL | Canonical reconciliation topology view. |
-| `governance/runtime/EXECUTION_SURFACES.json` | Governance/runtime inventory | Runtime execution surface inventory | CURRENT | One of five duplicate-ish `execution_surfaces` artifacts; lineage should be annotated. |
-| `runtime/surfaces/EXECUTION_SURFACES.json` | Runtime surface inventory | Runtime surfaces namespace | CURRENT_CANONICAL_CANDIDATE | More topology-local than root/governance copies; likely canonical location for runtime surface data. |
-| `runtime/execution_surfaces.json` | Runtime surface inventory | Legacy/root runtime copy | DUPLICATE_CANDIDATE | Duplicate-ish basename; lineage to runtime/surfaces copy unclear. |
-| `governance/execution_surfaces.json` | Governance inventory | Governance copy of execution surfaces | DUPLICATE_CANDIDATE | Duplicate-ish; may be canonical only for governance bundle consumers. |
+| `governance/runtime/EXECUTION_SURFACES.json` | Governance/runtime inventory | Compatibility copy | NON_OPERATIVE_COMPATIBILITY | Derived from root canon; legacy schema retained without enforcement authority. |
+| `runtime/surfaces/EXECUTION_SURFACES.json` | Runtime surface inventory | Topology projection | GENERATED_PROJECTION | Evidence-only projection derived from root canon; not enforcement authority. |
+| `runtime/execution_surfaces.json` | Runtime surface inventory | Compatibility copy | NON_OPERATIVE_COMPATIBILITY | Issue-342 schema retained; derived from root canon and prohibited for enforcement. |
+| `governance/execution_surfaces.json` | Governance inventory | Retired artifact | RETIRED | Retained for history; prohibited for enforcement. |
 | `governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json` | Generated validation bundle | Validation bundle copy | CURRENT_GENERATED | Generated/exported bundle artifact; should be labeled generated derivative. |
 | `governance/runtime/BYPASS_PATHS.json` | Governance/runtime inventory | Runtime bypass-path inventory | CURRENT | One of four duplicate-ish bypass path artifacts. |
 | `runtime/surfaces/BYPASS_PATHS.json` | Runtime surface inventory | Runtime surfaces namespace | CURRENT_CANONICAL_CANDIDATE | Likely canonical topology-local bypass surface inventory. |
@@ -115,7 +115,7 @@ Interpretation rule: a repository-text marker is stronger than filename similari
 | `ISSUE_1744_ROOT_CAUSE_ANALYSIS.md` | Issue analysis | Issue #1744 root-cause analysis | CURRENT | Root-level issue artifact; could be indexed or relocated to `docs/analysis/`. |
 | `PHASE3_CLOSURE_MATRIX.md` | Closure artifact | Phase 3 closure matrix | CURRENT | Root-level closure artifact; may be index candidate. |
 | `PHASE3_EXECUTION_SURFACE_INVENTORY.json` | Generated/inventory artifact | Phase 3 execution surface inventory | CURRENT_DERIVATIVE | Root-level inventory overlaps surface registries; lineage should be explicit. |
-| `EXECUTION_SURFACES.json` | Root inventory | Execution surface inventory | DUPLICATE_CANDIDATE | Root copy overlaps governance/runtime/surfaces copies. |
+| `EXECUTION_SURFACES.json` | Root inventory | Execution surface inventory | ROOT_CANONICAL | Sole declared and operative authority under #2303. |
 | `BYPASS_PATHS.json` | Root inventory | Bypass path inventory | DUPLICATE_CANDIDATE | Root copy overlaps governance/runtime/surfaces copies. |
 | `AGENT_BYPASS_INVENTORY.json` | Root inventory/audit | Agent bypass inventory | CURRENT | Root-level audit/inventory; may belong under governance/audit index. |
 | `GOVERNANCE_GAP_REGISTRY.md` | Governance registry | Gap registry | CURRENT | Canonical-looking root governance artifact. |
@@ -143,7 +143,7 @@ Interpretation rule: a repository-text marker is stronger than filename similari
 
 | Duplicate family | Candidate artifacts | Closure note |
 |---|---|---|
-| Execution surfaces | `EXECUTION_SURFACES.json`, `governance/execution_surfaces.json`, `governance/runtime/EXECUTION_SURFACES.json`, `runtime/execution_surfaces.json`, `runtime/surfaces/EXECUTION_SURFACES.json`, validation-bundle copy | Declare one canonical source and mark other copies as generated, legacy, or governance-scope projections. |
+| Execution surfaces | Root canon plus classified derivatives in `EXECUTION_SURFACES_LINEAGE.json` | RESOLVED (#2303): `ROOT_CANONICAL`; derivative hashes and consumers are mechanically checked. |
 | Bypass paths | `BYPASS_PATHS.json`, `governance/runtime/BYPASS_PATHS.json`, `runtime/bypass_paths.json`, `runtime/surfaces/BYPASS_PATHS.json`, validation-bundle copy | Declare canonical source and derivative copies. |
 | Root authority inventories/rules | `governance/ROOT_AUTHORITY_INVENTORY.json`, `runtime/sovereignty/root_authority_inventory.json`, `governance/ROOT_AUTHORITY_CONTAINMENT_RULES.json`, `runtime/sovereignty/root_authority_containment_rules.json` | Preserve both domains if governance-vs-runtime distinction is real; otherwise annotate source-of-truth. |
 | Schema copies | Root `schemas/*`, runtime `runtime/legitimacy/schemas/*`, governance PREO schema, namespace schemas | Add source lineage comments/docs; do not change schemas in this issue. |
@@ -159,7 +159,7 @@ Interpretation rule: a repository-text marker is stronger than filename similari
 | `docs/analysis/*-analysis.md` date/frontier documents | ARCHIVAL_CANDIDATE after indexing | Many are discovery artifacts now partially formalized by canon/closure docs. Preserve as lineage, but index by phase. |
 | `MINDSHIFT_REPO_OBJECTS.zip` | ARCHIVAL_CANDIDATE | Opaque root bundle with unclear generator/retention status. |
 | `archive/session/*` | ARCHIVAL_CURRENT | Already archived; retain only if useful for provenance. |
-| Root-level phase inventories (`PHASE3_*`, root `EXECUTION_SURFACES.json`, root `BYPASS_PATHS.json`) | AMBIGUOUS / DUPLICATE_CANDIDATE | Root placement and relation to runtime/governance copies is unresolved. |
+| Root-level phase inventories (`PHASE3_*`, root `EXECUTION_SURFACES.json`, root `BYPASS_PATHS.json`) | MIXED | `EXECUTION_SURFACES.json` is root canonical; Phase 3 inventory is historical evidence; bypass authority is separately declared. |
 
 ## Orphaned / stale references
 

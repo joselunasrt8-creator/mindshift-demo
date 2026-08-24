@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "purpose": "Singular authoritative ownership registry for runtime/governance semantic domains.",
   "authoritative_sources": {
-    "execution_semantics": "governance/runtime/EXECUTION_SURFACES.json",
+    "execution_semantics": "EXECUTION_SURFACES.json",
     "governance_semantics": "governance/runtime/AEO_REQUIREMENTS.json",
     "topology_semantics": "governance/runtime/RECURSIVE_GOVERNANCE_SPEC.json",
     "authority_semantics": "governance/runtime/PREO_REQUIREMENTS.json",
@@ -16,6 +16,10 @@
   },
   "derived_surfaces": {
     "execution_semantics": [
+      "governance/runtime/EXECUTION_SURFACES.json",
+      "runtime/surfaces/EXECUTION_SURFACES.json",
+      "runtime/execution_surfaces.json",
+      "governance/execution_surfaces.json",
       "governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json"
     ],
     "bypass_path_semantics": [
@@ -23,7 +27,7 @@
     ]
   },
   "generated_artifacts": {
-    "governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json": "governance/runtime/EXECUTION_SURFACES.json",
+    "governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json": "EXECUTION_SURFACES.json",
     "governance/mindshift-validation-bundle/governance/BYPASS_PATHS.json": "governance/runtime/BYPASS_PATHS.json"
   },
   "archive_only_objects": {
@@ -34,7 +38,6 @@
     "archive/runtime-reference-collapse/GOVERNANCE_REQUIREMENTS.json": "deprecated duplicate registry"
   },
   "deprecated_duplicates": {
-    "EXECUTION_SURFACES.json": "moved to archive; canonical source is governance/runtime/EXECUTION_SURFACES.json",
     "BYPASS_PATHS.json": "moved to archive; canonical source is governance/runtime/BYPASS_PATHS.json",
     "GOVERNANCE_REQUIREMENTS.json": "moved to archive; canonical source is governance/runtime/AEO_REQUIREMENTS.json"
   },

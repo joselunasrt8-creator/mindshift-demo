@@ -149,13 +149,13 @@ Declared per #1837. Enforcement tooling must reference canonical paths only.
 
 | Artifact | Canonical Path | Derivative Copies |
 |---|---|---|
-| EXECUTION_SURFACES | `EXECUTION_SURFACES.json` (root) | `governance/runtime/EXECUTION_SURFACES.json`, `runtime/surfaces/EXECUTION_SURFACES.json`, `governance/mindshift-validation-bundle/governance/EXECUTION_SURFACES.json` |
+| EXECUTION_SURFACES | `EXECUTION_SURFACES.json` (`ROOT_CANONICAL`) | All six non-canonical family members are classified and hash-bound in `EXECUTION_SURFACES_LINEAGE.json`; none may be an enforcement input. |
 | BYPASS_PATHS | `BYPASS_PATHS.json` (root) | `governance/runtime/BYPASS_PATHS.json`, `runtime/surfaces/BYPASS_PATHS.json`, `governance/mindshift-validation-bundle/governance/BYPASS_PATHS.json` |
 | Schemas | `schemas/` (root) | `runtime/legitimacy/schemas/`, namespace directories |
 
-All derivative copies carry `derived_from`, `canonical_source`, and `generated_at` metadata fields.
+All derivative classifications and their `derived_from`, source-version, generation-method, and freshness bindings are centralized in `EXECUTION_SURFACES_LINEAGE.json`; this avoids mutating legacy schemas merely to annotate them.
 
-CI enforcement: `.github/workflows/merge-governance-check.yml` updated to reference `EXECUTION_SURFACES.json` (canonical).
+CI enforcement: `.github/workflows/merge-governance-check.yml` reads `EXECUTION_SURFACES.json` and runs `node scripts/validate-execution-surfaces-authority.mjs`. The validator enforces one operative source and derivative attribution; it does not assert semantic equality among compatibility artifacts.
 
 ---
 
