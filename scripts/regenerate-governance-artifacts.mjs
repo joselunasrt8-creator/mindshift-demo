@@ -193,7 +193,7 @@ function regenerate() {
   }
 
   const bypass = json('runtime/bypass_paths.json')
-  const executionSurfaces = json('runtime/execution_surfaces.json')
+  const executionSurfaces = json('EXECUTION_SURFACES.json')
   const rootAuthority = json('runtime/sovereignty/root_authority_inventory.json')
   const audit = {
     artifact: 'UNAUTHORIZED_MUTATION_PATH_CLOSURE_AUDIT',

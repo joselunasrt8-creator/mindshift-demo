@@ -204,7 +204,7 @@ export async function enumerateRuntimeTopologySnapshot(ctx: RuntimeTopologyConte
     "governance/runtime-topology-reconciliation.json",
     "governance/runtime/MERGE_GOVERNANCE_RULES.json",
     "governance/runtime/RECURSIVE_GOVERNANCE_SPEC.json",
-    "governance/runtime/EXECUTION_SURFACES.json",
+    "EXECUTION_SURFACES.json",
   ].sort().map((artifact) =>
     runtimeTopologyNodeObject("governance_artifacts", artifact, {
       artifact, machine_readable: true, authorizes_execution: false,

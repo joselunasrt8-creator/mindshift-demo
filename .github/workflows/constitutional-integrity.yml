@@ -136,7 +136,7 @@ jobs:
 
           REQUIRED_FILES=(
             "governance/governance_mutation_control.json"
-            "governance/execution_surfaces.json"
+            "EXECUTION_SURFACES.json"
             "governance/pr_classification_matrix.json"
           )
 

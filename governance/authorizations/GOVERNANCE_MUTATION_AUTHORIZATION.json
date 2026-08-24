@@ -1,28 +1,34 @@
 {
-  "gma_id": "GMA-claude/merge-proof-lineage-observer-27892510586",
-  "decision_id": "94c217842f5f1a4f8068c59668502e117f77e819b4a76551003c4afcd5420079",
-  "continuity_id": "da1e07e4d6fddb6985d89a975a7f323099c0f852cc5b05c39c096d4bae1342e4",
-  "session_id": "435c6fce54df4197b217657ed1af5b8892266d9c6d0aad92ff91b085fadcd2af",
-  "validated_object_hash": "954c3697f6ef69759a63130299c6ecbd5d39ba49a08d159af8f3ffb936698bf7",
-  "governed_files_hash": "be9edf823fea0c433e4b0434fcfdc89509d317092ef4e5497514d15e98f97cbe",
+  "gma_id": "GMA-codex/reconcile-execution_surfaces-authority-32676498371",
+  "decision_id": "cddf5f392927418d7cd341f9dec7198421669ca5d42b1ef59dcf63a861c25d4d",
+  "continuity_id": "371a568e92828cc9e941394e3908c683ca8ed8bd12d32b50df33f390c0bc7bee",
+  "session_id": "dbca03e02d7876906e2a5cbf8ded82444d100451fc8374c71fb585c05338c901",
+  "validated_object_hash": "196e75a174259d9afad4905bee32da6653399517bf47ac26e53dfe97bf9437b3",
+  "governed_files_hash": "f9a31128eba650cb5786c2bffa57ee32a632c1f2cebf4bae08a98b6d84422e7a",
   "governed_files": [
-    ".github/workflows/lineage-eligibility-observer.yml"
+    ".github/workflows/constitutional-integrity.yml",
+    ".github/workflows/merge-governance-check.yml",
+    "governance/runtime/CANONICAL_OBJECT_REGISTRY.json",
+    "governance/runtime/CANONICAL_RUNTIME_OWNERSHIP.json",
+    "src/lib/runtime-discovery-adapter.ts"
   ],
   "mutation_classes": [
+    "governance_mutation",
+    "runtime_mutation",
     "workflow_mutation"
   ],
   "gm_control_class": "GOVERNANCE_CONTAINED",
   "issuance_method": "LOCAL_DETERMINISTIC",
   "canonical_lifecycle_executed": false,
   "canonical_lifecycle_note": "V1 local-deterministic model. External runtime lifecycle (/session → /continuity → /authority → /compile) is SEQUENCED for post-V1. governed_files_hash provides repo-verifiable content binding. Owner workflow_dispatch provides explicit authorization.",
-  "intent": "Authorize read-only execution-lineage CI observer workflow (lineage-eligibility-observer.yml)",
+  "intent": "Main",
   "authorized_by": "joselunasrt8-creator",
   "authority_lineage_bound": true,
   "repo": "joselunasrt8-creator/ContinuityOS-",
-  "branch": "claude/merge-proof-lineage-observer",
-  "head_sha": "4efe360b7080447f8beff8e741c7ffafb13e331a",
-  "workflow_run_id": "27892510586",
-  "created_at": "2026-06-21T03:41:56Z",
-  "expires_at": "2027-06-21T03:41:56Z",
+  "branch": "codex/reconcile-execution_surfaces-authority",
+  "head_sha": "53a16aba8defbf040413da3936c567a6dd80bcce",
+  "workflow_run_id": "32676498371",
+  "created_at": "2026-08-24T00:23:04Z",
+  "expires_at": "2027-08-24T00:23:04Z",
   "status": "GMA_VALID"
 }

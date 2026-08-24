@@ -12,10 +12,9 @@ test('canonical executable runtime routes exclude governance and observability s
   const rootSurfaces = JSON.parse(readFileSync(new URL('../EXECUTION_SURFACES.json', import.meta.url), 'utf8'))
   assert.deepEqual(rootSurfaces.canonical_runtime_route, canonicalRoutes)
 
-  const runtimeSurfaces = JSON.parse(readFileSync(new URL('../governance/runtime/EXECUTION_SURFACES.json', import.meta.url), 'utf8'))
-  assert.deepEqual(runtimeSurfaces.canonical_executable_routes, canonicalRoutes)
-  assert.equal(runtimeSurfaces.governance_evidence_routes[0].authoritative_for_execution, false)
-  assert.equal(runtimeSurfaces.observability_only_routes[0].authoritative_for_execution, false)
+  assert.deepEqual(rootSurfaces.canonical_executable_routes, canonicalRoutes)
+  assert.equal(rootSurfaces.governance_evidence_routes[0].authoritative_for_execution, false)
+  assert.equal(rootSurfaces.observability_only_routes[0].authoritative_for_execution, false)
 })
 
 test('/reconcile is non-executable and cannot initialize or mutate runtime state', async () => {

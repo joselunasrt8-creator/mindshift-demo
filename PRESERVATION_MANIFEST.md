@@ -12,7 +12,7 @@ Baseline: 1068 tests passing
 |---|---|
 | Authority lineage | `src/index.ts` /authority, /session, /continuity routes; migrations 0001-0045 |
 | Validation lineage | /validate route; `governance/runtime/CANONICAL_OBJECT_REGISTRY.json` |
-| Execution lineage | /compile, /execute routes; `governance/runtime/EXECUTION_SURFACES.json` |
+| Execution lineage | /compile, /execute routes; canonical `EXECUTION_SURFACES.json` |
 | Proof integrity | /proof route; migration 0041_proof_replay_idempotency.sql |
 | Replay protection | migration 0041; `governance/runtime/REPLAY_TESTS.json` |
 | Continuity freshness | /continuity route; migration 0010; runtime continuity TTL tests |
