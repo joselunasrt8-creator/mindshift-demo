@@ -956,14 +956,26 @@ jobs:
 
           const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
           const runtimeGraph = readJson('runtime/topology/runtime_graph.json');
-          const executionSurfaces = readJson('EXECUTION_SURFACES.json');
+          const executionSurfaceAuthority = readJson('EXECUTION_SURFACES.json');
           const observabilitySurfaces = readJson('runtime/surfaces/OBSERVABILITY_SURFACES.json');
           const schemaSourceMap = readJson('runtime/topology/schema_source_map.json');
           const mergeGovernance = readJson('governance/runtime/MERGE_GOVERNANCE_RULES.json');
 
           const topology = {
             runtime_routes: runtimeGraph.nodes,
-            execution_surfaces: executionSurfaces.surfaces,
+            // Reconciliation consumes a non-operative topology view derived in
+            // memory from the canonical authority. Do not feed mutation-capable
+            // inventory records into the evidence-only topology classifier.
+            execution_surfaces: executionSurfaceAuthority.canonical_runtime_route.map((route) => ({
+              id: `canonical_route:${route}`,
+              route,
+              declared: true,
+              classified: true,
+              hidden: false,
+              mutation_capable: false,
+              deployment_capable: false,
+              creates_authority: false,
+            })),
             observability_surfaces: observabilitySurfaces.surfaces,
             governance_inventories: [{ id: 'merge_governance_rules', current: true, required_routes: runtimeGraph.canonical_lifecycle }],
             schema_maps: schemaSourceMap.sources,
